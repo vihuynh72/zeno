@@ -1,3 +1,5 @@
+import { dayBounds } from "@/lib/tz";
+
 export type CalendarEvent = {
   id: string;
   title: string;
@@ -13,15 +15,13 @@ type GoogleEvent = {
   end?: { dateTime?: string; date?: string };
 };
 
-export async function getTodayEvents(accessToken: string): Promise<CalendarEvent[]> {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
+export async function getTodayEvents(accessToken: string, timeZone: string): Promise<CalendarEvent[]> {
+  const { start, end } = dayBounds(timeZone);
 
   const params = new URLSearchParams({
     timeMin: start.toISOString(),
     timeMax: end.toISOString(),
+    timeZone,
     singleEvents: "true",
     orderBy: "startTime",
     maxResults: "20",

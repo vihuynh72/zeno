@@ -9,6 +9,10 @@ export async function GET() {
     return NextResponse.json({ state: "signed-out", emails: [] }, { status: 401 });
   }
 
+  if (session.error === "RefreshTokenError") {
+    return NextResponse.json({ state: "reauth", emails: [] }, { status: 401 });
+  }
+
   if (!session.accessToken) {
     return NextResponse.json({ state: "no-email-access", emails: [] }, { status: 403 });
   }
@@ -19,6 +23,9 @@ export async function GET() {
   } catch (error) {
     console.error("Email read failed:", error);
     if (error instanceof GmailError) {
+      if (error.status === 401) {
+        return NextResponse.json({ state: "reauth", emails: [] }, { status: 401 });
+      }
       if (error.body.includes("accessNotConfigured") || error.body.includes("has not been used")) {
         return NextResponse.json({ state: "not-enabled", emails: [] });
       }

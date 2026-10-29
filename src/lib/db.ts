@@ -34,7 +34,11 @@ export async function ensureSchema() {
         CREATE INDEX IF NOT EXISTS tasks_user_created_idx
         ON tasks (user_email, created_at)
       `;
-    })();
+    })().catch((error) => {
+      // Forget the failure so the next call retries instead of failing forever.
+      schemaReady = null;
+      throw error;
+    });
   }
   return schemaReady;
 }

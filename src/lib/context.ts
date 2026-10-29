@@ -1,9 +1,12 @@
+import type { Session } from "next-auth";
 import { getTodayEvents, type CalendarEvent } from "@/lib/calendar";
 import { databaseConfigured, ensureSchema, getSql } from "@/lib/db";
 import { getRecentEmail, type EmailSummary } from "@/lib/gmail";
+import { formatDate, formatTime } from "@/lib/tz";
 
 export type UserContext = {
   email: string;
+  timeZone: string;
   events: CalendarEvent[];
   calendarState: "ok" | "no-access" | "error";
   tasks: Array<{ title: string; done: boolean }>;
@@ -12,64 +15,79 @@ export type UserContext = {
   emailState: "ok" | "no-access" | "error";
 };
 
-export async function loadUserContext(
-  email: string,
-  accessToken?: string,
-): Promise<UserContext> {
-  let events: CalendarEvent[] = [];
-  let calendarState: UserContext["calendarState"] = "no-access";
-  if (accessToken) {
-    try {
-      events = await getTodayEvents(accessToken);
-      calendarState = "ok";
-    } catch {
-      calendarState = "error";
-    }
-  }
+// shortcut: per-instance cache, move to a shared store if staleness matters
+const googleCache = new Map<string, { at: number; data: unknown }>();
 
-  let tasks: UserContext["tasks"] = [];
-  let tasksState: UserContext["tasksState"] = "not-configured";
-  if (databaseConfigured()) {
-    try {
-      await ensureSchema();
-      const sql = getSql();
-      const rows = await sql`
-        SELECT title, done FROM tasks
-        WHERE user_email = ${email}
-        ORDER BY created_at ASC
-      `;
-      tasks = rows.map((row) => ({
-        title: String(row.title),
-        done: Boolean(row.done),
-      }));
-      tasksState = "ok";
-    } catch {
-      tasksState = "error";
-    }
-  }
-
-  let emails: EmailSummary[] = [];
-  let emailState: UserContext["emailState"] = "no-access";
-  if (accessToken) {
-    try {
-      emails = await getRecentEmail(accessToken);
-      emailState = "ok";
-    } catch {
-      emailState = "error";
-    }
-  }
-
-  return { email, events, calendarState, tasks, tasksState, emails, emailState };
+async function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+  const hit = googleCache.get(key);
+  if (hit && Date.now() - hit.at < 120_000) return hit.data as T;
+  const data = await load();
+  googleCache.set(key, { at: Date.now(), data });
+  return data;
 }
 
-export function contextToText(context: UserContext): string {
+export async function loadUserContext(
+  email: string,
+  session: Pick<Session, "accessToken" | "error">,
+  timeZone: string,
+): Promise<UserContext> {
+  // After a failed refresh the token is dead, so Google sources count as unavailable.
+  const accessToken = session.error ? undefined : session.accessToken;
+  let events: CalendarEvent[] = [];
+  let calendarState: UserContext["calendarState"] = "no-access";
+  let tasks: UserContext["tasks"] = [];
+  let tasksState: UserContext["tasksState"] = "not-configured";
+  let emails: EmailSummary[] = [];
+  let emailState: UserContext["emailState"] = "no-access";
+
+  await Promise.all([
+    (async () => {
+      if (!accessToken) return;
+      try {
+        events = await cached(`calendar:${email}`, () => getTodayEvents(accessToken, timeZone));
+        calendarState = "ok";
+      } catch {
+        calendarState = "error";
+      }
+    })(),
+    // Tasks are always read fresh so a goal added a moment ago is never missing.
+    (async () => {
+      if (!databaseConfigured()) return;
+      try {
+        await ensureSchema();
+        const sql = getSql();
+        const rows = await sql`
+          SELECT title, done FROM tasks
+          WHERE user_email = ${email}
+          ORDER BY created_at ASC
+        `;
+        tasks = rows.map((row) => ({
+          title: String(row.title),
+          done: Boolean(row.done),
+        }));
+        tasksState = "ok";
+      } catch {
+        tasksState = "error";
+      }
+    })(),
+    (async () => {
+      if (!accessToken) return;
+      try {
+        emails = await cached(`email:${email}`, () => getRecentEmail(accessToken));
+        emailState = "ok";
+      } catch {
+        emailState = "error";
+      }
+    })(),
+  ]);
+
+  return { email, timeZone, events, calendarState, tasks, tasksState, emails, emailState };
+}
+
+export function contextToText(context: UserContext, now = new Date()): string {
   const lines: string[] = [];
-  const today = new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
-  lines.push(`Today is ${today}.`);
+  const zone = context.timeZone;
+  lines.push(`Today is ${formatDate(now, zone)}. It is now ${formatTime(now, zone)} (${zone}).`);
 
   if (context.calendarState === "ok") {
     if (context.events.length === 0) {
@@ -77,11 +95,23 @@ export function contextToText(context: UserContext): string {
     } else {
       lines.push("Calendar today:");
       for (const event of context.events) {
-        lines.push(`- ${event.title} (${event.allDay ? "all day" : `${event.start} to ${event.end}`})`);
+        if (event.allDay) {
+          lines.push(`- ${event.title} (all day)`);
+          continue;
+        }
+        const start = new Date(event.start).getTime();
+        const end = new Date(event.end).getTime();
+        const status =
+          end <= now.getTime() ? ", already ended" : start <= now.getTime() ? ", happening now" : "";
+        lines.push(
+          `- ${event.title} (${formatTime(event.start, zone)} to ${formatTime(event.end, zone)}${status})`,
+        );
       }
     }
   } else {
-    lines.push("Calendar today: not available. Do not invent events.");
+    lines.push(
+      "Calendar today: could not be read. Do not describe the calendar as empty or clear, and do not invent events.",
+    );
   }
 
   if (context.tasksState === "ok") {
@@ -94,7 +124,7 @@ export function contextToText(context: UserContext): string {
       }
     }
   } else {
-    lines.push("Goals list: not available. Do not invent goals.");
+    lines.push("Goals list: could not be read. Do not describe it as empty, and do not invent goals.");
   }
 
   if (context.emailState === "ok") {
@@ -109,7 +139,9 @@ export function contextToText(context: UserContext): string {
       }
     }
   } else {
-    lines.push("Recent email: not available. Do not invent emails.");
+    lines.push(
+      "Recent email: could not be read. Do not describe the inbox as empty or clear, do not say no email needs a reply, and do not invent emails.",
+    );
   }
 
   return lines.join("\n");

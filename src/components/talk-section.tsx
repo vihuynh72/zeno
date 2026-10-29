@@ -108,12 +108,21 @@ export default function TalkSection() {
     setMessage("");
     setSending(true);
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // Last 6 answered exchanges, oldest first. Exchanges are stored newest first.
+    const history = exchanges
+      .filter((item) => item.state === "ok" && item.reply)
+      .slice(0, 6)
+      .reverse()
+      .flatMap((item) => [
+        { role: "user", content: item.user },
+        { role: "assistant", content: item.reply },
+      ]);
     setExchanges((prev) => [{ id, user: text, reply: null, state: "thinking" }, ...prev]);
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: text, history }),
       });
       const data = (await response.json().catch(() => ({ state: "error" }))) as {
         state: Exchange["state"];
@@ -161,7 +170,7 @@ export default function TalkSection() {
         <input
           value={message}
           onChange={(event) => setMessage(event.target.value)}
-          onKeyDown={(event) => event.key === "Enter" && send()}
+          onKeyDown={(event) => event.key === "Enter" && !event.nativeEvent.isComposing && send()}
           placeholder={
             voice === "listening"
               ? "Listening. Speak now."

@@ -1,6 +1,5 @@
-import type { CalendarEvent } from "@/lib/calendar";
-
-export type BriefTask = { title: string; done: boolean };
+import type { UserContext } from "@/lib/context";
+import { formatTime, localHour } from "@/lib/tz";
 
 export type Brief = {
   headline: string;
@@ -8,18 +7,9 @@ export type Brief = {
   firstAction: string | null;
 };
 
-function formatTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-}
-
-export function buildBrief(
-  events: CalendarEvent[],
-  tasks: BriefTask[],
-  now = new Date(),
-): Brief {
-  const hour = now.getHours();
+export function buildBrief(context: UserContext, now = new Date()): Brief {
+  const { events, tasks, timeZone } = context;
+  const hour = localHour(timeZone, now);
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const open = tasks.filter((task) => !task.done);
   const doneCount = tasks.length - open.length;
@@ -29,7 +19,9 @@ export function buildBrief(
   const next = upcoming[0];
 
   const parts: string[] = [];
-  if (events.length === 0) {
+  if (context.calendarState !== "ok") {
+    parts.push("I couldn't read your calendar just now.");
+  } else if (events.length === 0) {
     parts.push("Your calendar is clear today.");
   } else {
     parts.push(
@@ -37,10 +29,10 @@ export function buildBrief(
     );
   }
   if (next) {
-    parts.push(`Next up is ${next.title} at ${formatTime(next.start)}.`);
+    parts.push(`Next up is ${next.title} at ${formatTime(next.start, timeZone)}.`);
   }
   if (tasks.length === 0) {
-    parts.push("You have no goals written down yet. Add one small goal below and start there.");
+    parts.push(context.tasksState === "ok" ? "You have no goals written down yet. Add one small goal below and start there." : "I couldn't read your goals just now.");
   } else if (open.length === 0) {
     parts.push("Every goal on your list is done. That is a clean finish.");
   } else {

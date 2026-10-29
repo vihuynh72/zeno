@@ -126,7 +126,7 @@ export default function TasksSection() {
             <input
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => event.key === "Enter" && addTask()}
+              onKeyDown={(event) => event.key === "Enter" && !event.nativeEvent.isComposing && addTask()}
               placeholder="Add a goal for today"
               className="w-full rounded-xl border border-neutral-300 px-4 py-3 outline-none focus:border-black"
             />

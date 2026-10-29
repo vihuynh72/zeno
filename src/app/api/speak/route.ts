@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { synthesizeSpeech, ttsConfigured } from "@/lib/tts";
 
+export const maxDuration = 30;
+
 export async function POST(request: Request) {
   const session = await auth();
   if (!session) {

@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { signIn } from "next-auth/react";
 import type { EmailSummary } from "@/lib/gmail";
 
 type State =
   | "loading"
   | "signed-out"
+  | "reauth"
   | "no-email-access"
   | "not-enabled"
   | "error"
@@ -47,6 +49,17 @@ export default function EmailCard() {
             Sign in with Google above and this will show your real recent inbox mail. Zeno
             reads recent messages only. It does not replace your inbox.
           </p>
+        )}
+        {state === "reauth" && (
+          <>
+            <p>Your Google connection expired.</p>
+            <button
+              onClick={() => signIn("google", { redirectTo: "/" })}
+              className="mt-3 rounded-xl border border-neutral-300 px-4 py-2.5 text-sm font-semibold transition hover:border-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black active:scale-[0.98]"
+            >
+              Reconnect Google
+            </button>
+          </>
         )}
         {state === "no-email-access" && (
           <p>
