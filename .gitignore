@@ -1,0 +1,5 @@
+# Local planning files, never push
+PRODUCT.md
+zeno-onboarding.html
+.lavish/
+scaffold-tmp/
