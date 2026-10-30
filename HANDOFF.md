@@ -39,7 +39,7 @@ Zeno is a voice-first daily helper: it gives a short spoken brief from your cale
 
 Verified on production: time zone and honest brief; `/api/auth/session` has no access token; voice relay end to end (final transcript 0.58 s after speech ends, 10 live partials). The **old UI** (brief, calendar, email, goals, talk cards) is still what users see.
 
-## 5. In flight (see section 9 for the PR links once opened)
+## 5. In flight: three open PRs (links in section 9)
 
 Three parallel tracks were built and adversarially reviewed by sub-agents in git worktrees under `.claude/worktrees/` on this Mac:
 
@@ -80,6 +80,19 @@ Three parallel tracks were built and adversarially reviewed by sub-agents in git
 - Rotate the Meta and Google keys after Nov 4 (they were pasted into a chat once); restrict the Google key to the Text-to-Speech API.
 - Local-only files (gitignored or untracked on purpose): `PRODUCT.md`, `.impeccable/` (design contract, decision sketches, detector config), `zeno-onboarding.html`.
 
-## 9. Pull requests
+## 9. Pull requests (open, not merged)
 
-(Filled in at the end of the session; see the end of this file.)
+All three passed tsc, eslint, next build and their self-checks after an adversarial review and fix pass. Merge in this order (section 5):
+
+1. https://github.com/vihuynh72/zeno/pull/1 `feat/agent-core`: goals, roadmap, memory, warm-friend agent with Muse tool calls. Live-measured: `minimal` effort gives concrete roadmaps with 5-10 min first steps; a turn with one tool call takes about 4-7 s.
+2. https://github.com/vihuynh72/zeno/pull/2 `feat/voice-core`: hands-free voice loop, sentence-pipelined speech, `listenWeb`.
+3. https://github.com/vihuynh72/zeno/pull/3 `feat/guided-day-ui`: the Index Card screens. Keep PR 2's `src/lib/use-voice.ts` over this PR's stub.
+
+Their worktrees (with node_modules installed) are still on this Mac: `.claude/worktrees/wf_5329a5e3-138-1` (PR 1), `-2` (PR 2), `-3` (PR 3). A `/preview?state=<name>&theme=<light|dark>` gallery shows every screen in `next dev`.
+
+Known small issues left (low severity, from the reviews):
+- PR 2: the phase becomes `speaking` slightly before audio starts, so words can lead the voice; without Web Audio, `start()` throws instead of falling back to the browser voice.
+- PR 3: Memory "Forget" loses focus; roadmap titles truncate on phones; a failed turn drops the typed text; "Start my day" after "Not now" replays the opening from page load; Sign out only lives in the Memory sheet.
+- PR 1: the AI opening may say "Good evening" a little before 6 PM (model's call); the 25 s abort path was never triggered live.
+
+Privacy note: one headless voice test used this Mac's real microphone, so about 10 s of ambient audio went to Chrome's speech service; the local log was deleted. Snippets may remain in that sub-agent's local Claude transcript.
