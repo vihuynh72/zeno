@@ -7,10 +7,30 @@ export type Brief = {
   firstAction: string | null;
 };
 
+function greetingAt(timeZone: string, now: Date) {
+  const hour = localHour(timeZone, now);
+  return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+}
+
+// Zeno's first line when the model is unavailable: it offers the next step and never guesses the day.
+export function ruleOpening(context: UserContext, firstName: string | null, now = new Date()): string {
+  const { goal } = context;
+  const next = goal?.steps.find((step) => step.status === "doing" || step.status === "todo");
+  const unread = [context.calendarState !== "ok" && "calendar", context.emailState !== "ok" && "inbox"].filter(Boolean);
+  return [
+    `${greetingAt(context.timeZone, now)}${firstName ? `, ${firstName}` : ""}.`,
+    unread.length > 0 && `I couldn't check your ${unread.join(" or ")} just now.`,
+    goal && next
+      ? `Next up for ${goal.title}: ${next.title}. Want to pick it up?`
+      : "What's one thing you want to move forward today?",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 export function buildBrief(context: UserContext, now = new Date()): Brief {
   const { events, tasks, timeZone } = context;
-  const hour = localHour(timeZone, now);
-  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const greeting = greetingAt(timeZone, now);
   const open = tasks.filter((task) => !task.done);
   const doneCount = tasks.length - open.length;
   const upcoming = events
