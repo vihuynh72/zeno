@@ -34,10 +34,13 @@ export async function GET() {
     firstName,
     opening: ruleOpening(context, firstName),
     openingSource: "rule",
+    options: [],
     goal: context.goal,
     sources: { calendar: context.calendarState, email: context.emailState, goals: context.tasksState },
     events: context.events.map(({ title, start, end, allDay }) => ({ title, start, end, allDay })),
+    emails: context.emails.map(({ from, subject, snippet, unread }) => ({ from, subject, snippet, unread })),
     unreadEmail: context.emails.filter((item) => item.unread).length,
+    isNew: context.tasksState === "ok" && context.memories.length === 0 && !context.goal,
   } satisfies DayResponse;
   if (!aiConfigured()) {
     return NextResponse.json(day);

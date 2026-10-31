@@ -251,7 +251,7 @@ export async function talk(
   firstName: string | null,
   history: ChatMessage[],
   message: string,
-): Promise<{ reply: string; goal: Goal | null; actions: TalkAction[] }> {
+): Promise<{ reply: string; goal: Goal | null; actions: TalkAction[]; options: string[] }> {
   const email = context.email;
   const refs: Refs = new Map();
   let goal = context.goal;
@@ -330,5 +330,6 @@ export async function talk(
         : "Sorry, I got tangled up there. Could you say that again?"),
     goal,
     actions,
+    options: [],
   };
 }

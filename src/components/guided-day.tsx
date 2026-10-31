@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { signIn, signOut } from "next-auth/react";
 import type { DayResponse, Goal, Memory, MemoryResponse, Step, StepResponse, StepStatus, TalkResponse, Turn } from "@/lib/day";
+import { listenAuto } from "@/lib/listen";
 import { useVoice } from "@/lib/use-voice";
 import { greeting, nextScreen, openSteps, type Screen } from "@/components/day-flow";
 import DayView, { type Sheet } from "@/components/day-view";
@@ -61,7 +62,7 @@ export default function GuidedDay() {
   // Auth.js sends failed sign-ins back to "/?error=...".
   const signInFailed = useSyncExternalStore(noStore, () => new URLSearchParams(window.location.search).has("error"), () => false);
 
-  const voice = useVoice({ onUserTurn });
+  const voice = useVoice({ onUserTurn }, { listen: listenAuto });
 
   useEffect(() => {
     let live = true;

@@ -16,9 +16,11 @@ export const STAGE_OF: Record<Screen, number> = {
   checkin: 3,
 };
 
+// Before 5 AM it is still the night before for most people, not morning.
 export function greeting(hour: number, firstName: string | null) {
-  const part = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
-  return `Good ${part}${firstName ? `, ${firstName}` : ""}.`;
+  const who = firstName ? `, ${firstName}` : "";
+  if (hour < 5) return `Still up${who}?`;
+  return `Good ${hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening"}${who}.`;
 }
 
 // The step being done comes first, then the rest still to do, in roadmap order.

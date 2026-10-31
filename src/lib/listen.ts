@@ -117,3 +117,30 @@ export async function listenWeb(
   // Web Speech keeps nothing open between turns, so pause releases the mic just like stop.
   return { stop: end, pause: end, resume: begin };
 }
+
+let metaDown = false; // once the Meta relay fails on this page, later turns go straight to Web Speech
+
+// Meta realtime transcription first (needs the Vercel WebSocket relay), Web Speech when the relay can't connect.
+export async function listenAuto(
+  handlers: ListenHandlers,
+  opts?: { keywords?: string[]; levelRef?: { current: number } },
+): Promise<{ stop: () => void; pause: () => void; resume: () => void }> {
+  if (metaDown) return listenWeb(handlers, opts);
+  const { listenMeta } = await import("./listen-meta");
+  let connected = false;
+  let fellBack = false;
+  const meta = await listenMeta(
+    {
+      ...handlers,
+      onError(reason) {
+        if (reason === "network" || reason === "unsupported") metaDown = true;
+        // Before the session is up, fall back silently in the same tap; after that, end this turn.
+        if (!connected && metaDown) fellBack = true;
+        else handlers.onError?.(reason);
+      },
+    },
+    { keywords: ["Zeno", ...(opts?.keywords ?? [])], levelRef: opts?.levelRef },
+  );
+  connected = true;
+  return fellBack ? listenWeb(handlers, opts) : meta;
+}

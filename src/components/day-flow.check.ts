@@ -17,6 +17,8 @@ const acts = (...types: TalkAction["type"][]) => types.map((type) => ({ type, la
 assert.equal(greeting(9, "Vi"), "Good morning, Vi.");
 assert.equal(greeting(15, "Vi"), "Good afternoon, Vi.");
 assert.equal(greeting(17, null), "Good evening.");
+assert.equal(greeting(1, "Vi"), "Still up, Vi?");
+assert.equal(greeting(5, null), "Good morning.");
 
 // A step already started comes before earlier ones still to do; done and skipped drop out.
 const mixed = goal(step("1", "done"), step("2", "todo"), step("3", "doing"), step("4", "skipped"), step("5", "todo"));
