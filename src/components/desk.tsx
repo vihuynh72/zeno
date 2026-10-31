@@ -235,7 +235,7 @@ function Inbox({ today }: { today: Today }) {
         ) : (
           today.emails.slice(0, 8).map((mail, i) => (
             <li key={`${i}:${mail.from}:${mail.subject}`}>
-              <p className={`truncate ${mail.unread ? "font-bold" : ""}`}>
+              <p className={`truncate max-sm:line-clamp-2 max-sm:whitespace-normal ${mail.unread ? "font-bold" : ""}`}>
                 {mail.unread && <span className="sr-only">Unread: </span>}
                 {senderName(mail.from)}
                 <span className="px-2 font-normal text-ink-2" aria-hidden="true">

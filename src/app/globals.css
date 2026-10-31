@@ -71,6 +71,8 @@
 
 html {
   scrollbar-color: var(--track) var(--desk);
+  /* The dock is sticky at the bottom (176px at most), so keyboard focus scrolls clear of it. */
+  scroll-padding-bottom: 176px;
 }
 
 body {
@@ -288,8 +290,8 @@ body {
   align-items: baseline;
   gap: 16px;
   margin: -24px calc(var(--n) * 16px) 0;
-  padding: 32px 32px 0;
-  height: 72px;
+  padding: 32px 32px 8px;
+  min-height: 72px;
   border-radius: 0 0 4px 4px;
   background: var(--card);
   box-shadow: var(--edge);
@@ -454,7 +456,6 @@ button:active .tap {
 .pill-quiet {
   border-color: var(--track);
   background: transparent;
-  color: var(--ink-2);
 }
 .pill-small {
   min-height: 52px;
@@ -493,13 +494,9 @@ button:active .tap {
 .lines .send {
   margin-top: calc((var(--lh) - 52px) / 2);
 }
-/* What setup will remember: each fact starts at a dot and keeps to one rule (two on phones), so Start stays on screen. */
+/* What setup will remember: each fact starts at a dot and wraps in full. */
 .facts li {
   font-weight: 400;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
-  overflow: hidden;
   padding-left: 0.7em;
   text-indent: -0.7em;
 }
@@ -509,11 +506,6 @@ button:active .tap {
   width: 0.7em;
   text-indent: 0;
   color: var(--ink-2);
-}
-@media (max-width: 639px) {
-  .facts li {
-    -webkit-line-clamp: 2;
-  }
 }
 /* Pasted notes scroll inside the card instead of stretching it. */
 .paste {

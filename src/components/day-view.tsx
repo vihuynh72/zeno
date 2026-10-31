@@ -178,7 +178,7 @@ export default function DayView(props: DayViewProps) {
       </header>
 
       <main className="flex flex-1 flex-col items-center px-4 pb-2 sm:pb-4 short:pb-2">
-        {props.dots ? <Dots {...props.dots} /> : <Progress at={screen ? STAGE_OF[screen] : -1} />}
+        {props.dots ? <Dots {...props.dots} /> : <Progress at={screen ? STAGE_OF[screen] : -1} hidden={screen === "signed-out"} />}
 
         <p className="sr-only" aria-live="polite">
           {props.line}
@@ -216,16 +216,20 @@ export default function DayView(props: DayViewProps) {
                   {cardText && <p>{finished ? cardText : <Said key={cardText} text={cardText} mode={mode} />}</p>}
                   {props.list && (
                     <ul className="facts">
-                      {props.list.slice(0, 5).map((item) => (
-                        <li key={item}>
+                      {/* Facts wrap in full, so laptops show four and phones three, and Start stays on screen. */}
+                      {props.list.slice(0, 4).map((item, i) => (
+                        <li key={item} className={i === 3 ? "max-sm:hidden" : undefined}>
                           <span className="hand">{item}</span>
                         </li>
                       ))}
                     </ul>
                   )}
-                  {props.list && props.list.length > 5 && (
-                    <p className="text-ink-2">
-                      <span className="hand">+{props.list.length - 5} more in Memory</span>
+                  {props.list && props.list.length > 3 && (
+                    <p className={`text-ink-2 ${props.list.length > 4 ? "" : "sm:hidden"}`}>
+                      <span className="hand">
+                        +<span className="sm:hidden">{props.list.length - 3}</span>
+                        <span className="max-sm:hidden">{props.list.length - 4}</span> more in Memory
+                      </span>
                     </p>
                   )}
                   {props.pasting && (
@@ -255,7 +259,7 @@ export default function DayView(props: DayViewProps) {
                   <span className="text-ink-2">{steps.length - 3} more steps</span>
                 ) : (
                   <>
-                    <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                    <span className="min-w-0 flex-1 truncate max-sm:line-clamp-2 max-sm:whitespace-normal">{s.title}</span>
                     {s.minutes ? <span className="shrink-0 font-mono text-ink-2">{s.minutes} min</span> : null}
                   </>
                 )}
@@ -371,7 +375,8 @@ export default function DayView(props: DayViewProps) {
 
       {/* Setup is one tap per card, so the dock waits until it's done. */}
       {screen && screen !== "signed-out" && screen !== "setup" && (
-        <nav aria-label="Zeno" className="flex justify-center gap-2 pb-4 sm:gap-4 sm:pt-2 short:pt-0">
+        // Sticky on the desk ground, so a tall plan or prep pack scrolls under the dock instead of pushing it off screen.
+        <nav aria-label="Zeno" className="sticky bottom-0 z-20 flex justify-center gap-2 bg-desk pb-4 sm:gap-4 sm:pt-2 short:pt-0 short:pb-2">
           {/* A blocked mic hands the fill to Type, the way that still works. */}
           <VoiceRing phase={voice.phase} levelRef={voice.levelRef} blocked={blocked} onClick={on.talk} />
           <DockButton ref={typeRef} label="Type" icon="type" filled={blocked} onClick={on.type} />
@@ -394,11 +399,12 @@ export default function DayView(props: DayViewProps) {
   );
 }
 
-function Progress({ at }: { at: number }) {
+// Signed out, the row keeps its room (invisible) so the card doesn't jump when the loading shell resolves.
+function Progress({ at, hidden }: { at: number; hidden: boolean }) {
   return (
     <ol
       aria-label={at >= 0 ? `Step ${at + 1} of ${STAGES.length}: ${STAGES[at]}` : "Your day, in four steps"}
-      className="mt-4 grid w-full max-w-[760px] grid-cols-4 gap-2 sm:mt-6 sm:gap-6 short:mt-3"
+      className={`mt-4 grid w-full max-w-[760px] grid-cols-4 gap-2 sm:mt-6 sm:gap-6 short:mt-3 ${hidden ? "invisible" : ""}`}
     >
       {STAGES.map((name, i) => (
         <li

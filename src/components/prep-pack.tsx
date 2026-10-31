@@ -33,18 +33,20 @@ export default function PrepPack({ step }: { step: Step }) {
       {sources.length > 0 ? (
         <ul className="flex w-full flex-col gap-3">
           {sources.map((source, i) => (
-            <li key={i} className="rounded-[4px] bg-card px-6 py-4" style={{ boxShadow: "var(--edge)" }}>
-              <a
-                ref={i === 0 && status === "found" ? focusOnMount : undefined}
-                href={source.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-bold underline underline-offset-4"
-              >
-                {source.title}
-                <span className="sr-only"> (opens in a new tab)</span>
-              </a>
-              <p className="text-ink-2">{source.why}</p>
+            <li key={i} className="mini">
+              <div className="lines">
+                <a
+                  ref={i === 0 && status === "found" ? focusOnMount : undefined}
+                  href={source.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-bold underline underline-offset-4"
+                >
+                  {source.title}
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
+                <p className="text-ink-2">{source.why}</p>
+              </div>
             </li>
           ))}
         </ul>

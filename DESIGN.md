@@ -83,7 +83,7 @@ components:
     backgroundColor: "{colors.desk}"
   button-quiet:
     backgroundColor: "transparent"
-    textColor: "{colors.ink-2}"
+    textColor: "{colors.ink}"
     rounded: "{rounded.pill}"
     padding: "0 32px"
     height: "56px"
@@ -163,7 +163,7 @@ A paper-and-ink palette: two warm neutrals, near-black ink, one blue for ruling 
 ### Neutral
 - **Card Stock** (`card-stock`; `dark-card-stock`): every card, strip, mini card and the edges of waiting cards.
 - **Desk** (`desk`; `dark-desk`): the page ground, sheets and the desk view; also the hover fill of outlined pills.
-- **Pencil Grey** (`ink-2`; `dark-ink-2`): secondary text, placeholders, minutes, inactive step names, quiet pills.
+- **Pencil Grey** (`ink-2`; `dark-ink-2`): secondary text, placeholders, minutes, inactive step names.
 - **Track** (`track`; `dark-track`): unlit dots, upcoming step bars, quiet pill outlines, sheet edges, and in dark the 1px rim that lifts the desk view.
 
 ### Named Rules
@@ -224,7 +224,7 @@ Cards are nearly square-cornered (4px), like cut card stock. Interactive control
 - **Shape:** full pill (999px), 2px border, 56px tall (52px small and on phones).
 - **Primary:** Ink fill, Card Stock text, 20px bold label. Hover mixes 18% card into the ink.
 - **Secondary:** Card Stock fill, 2px Ink outline, Ink text. Hover fills with Desk.
-- **Quiet:** transparent, Track outline, Pencil Grey text; for "Something else", "Not now" style exits.
+- **Quiet:** transparent, Track outline, Ink text (only the border is quieter); for "Something else", "Not now" style exits.
 - **Press:** scales to 0.96 instantly, springs back over 0.12s (cubic-bezier(0.16, 1, 0.3, 1)). Hover only on real pointers.
 - **Disabled:** 50% opacity, no press.
 - **Focus:** 3px Ink outline at 4px offset, system-wide.
@@ -244,7 +244,7 @@ Cards are nearly square-cornered (4px), like cut card stock. Interactive control
 Steps after the current one fan out under the card as Card Stock strips with Edge shadow, each inset 16px further per depth, title at 20/32 and minutes in Mono.
 
 ### Dock (Navigation)
-- **Style:** a row of labeled circular controls at the foot of the column: Talk centered in the dot ring, then Type, Today, Memory as 56px outlined knobs with a 24px stroke icon. Labels always visible under each.
+- **Style:** a row of labeled circular controls at the foot of the column, sticky to the bottom of the viewport on the Desk ground so long content scrolls under it: Talk centered in the dot ring, then Type, Today, Memory as 56px outlined knobs with a 24px stroke icon. Labels always visible under each.
 - **States:** hover fills a knob with Desk; press scales to 0.96.
 
 ### Voice Ring (signature)
