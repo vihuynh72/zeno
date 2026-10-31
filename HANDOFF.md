@@ -27,7 +27,7 @@ Almost instant first moment; Zeno talks by default; "good morning" at 1 AM was w
 - A talk turn without a tool call: 2.3 s (model 1.5 s at minimal, prompt about 2,200 tokens); with a tool call about 4-7 s (two model rounds).
 
 
-### Results (all live on main = production, commit 3ddaf78)
+### Results (all live on main = production, commit 87caf2d)
 - **Voice works again.** The PR #3 merge had kept the text-only `use-voice` stub, so Zeno never spoke or listened. Restored the real hook (d8b95a2) and added `listenAuto` (`src/lib/listen.ts`): Muse Voice Transcribe through `/api/listen` first, Web Speech after the relay fails once.
 - **"Still up?" before 5 AM** on both client (`day-flow.ts`) and server (`brief.ts`); the model opening is time-aware (late night offers winding down or setting up tomorrow).
 - **Instant first card.** `GET /api/day` never calls the model (82-140 ms warm locally, 1.2 s cold on production with Google); the model opening and its options come from the new `GET /api/day/opening` (reasoning_effort minimal, 2-4 s) and swap in. The browser caches the last day, so a returning visit paints in 0.04-0.2 s (measured 84 ms locally, 220 ms first paint on production).
@@ -40,6 +40,7 @@ Almost instant first moment; Zeno talks by default; "good morning" at 1 AM was w
 - **Design finish review:** the shipped Impeccable finish reviewer returned **fix** (not ship); all 8 material fixes plus 2 live-test bugs were applied. The verdict pass that scores those fixes did NOT run (time). DESIGN.md was written from the shipped code and is committed. Its sidecar `.impeccable/design.json` and the review screenshots were lost when the worktree was removed; regenerate with the `impeccable-documenter` agent.
 - **Prep pack (VI-316):** on the plan card, "Find sources" asks Muse Spark through the Responses API with the built-in `web_search` tool for 2-3 sources for the current step (`POST /api/prep`, `src/lib/prep.ts`, `src/components/prep-pack.tsx`). Only the goal and step titles are sent; URLs are validated (https, real host, length) and stored on the step (`steps.prep` jsonb, added by `ensureSchema`, already present in the production database). Live: 4-7 s, 2 searches, real sources (NHS Couch to 5K, OpenStax limit laws); about $0.005 per prep.
 - **Hardening:** the instant cache is keyed by an opaque account key (HMAC of the email, never the email); another tab or account can no longer write its day back; a double-tap cannot answer two setup cards; failed setup saves are said plainly; a stale model opening is never kept or spoken; the desk no longer closes when text selection is dragged past its edge.
+- **Final design review (fresh reviewer, 3:45 AM):** disposition "fix" with 7 material items, all applied in 87caf2d: memory facts wrap in full (4 shown on laptops, 3 on phones, "+N more in Memory"), the dock is sticky so it never falls below the fold, quiet pills keep ink text, phone step titles and inbox subjects wrap to two lines, prep sources use the ruled mini card, the empty progress row is hidden when signed out. The reviewer viewed 19 of 53 captures and judged motion from stills only; its note that the desk "sits in a sheet" is wrong (verified live: it opens in the middle of the page). `.impeccable/design.json` was regenerated locally; DESIGN.md still does not describe the prep pack or the streak.
 - **Docs:** `docs/SUBMISSION.md` (description, both Meta fields, 3-minute shot list, demo-account prep, checklist), README updated, Linear VI-306 to VI-318.
 
 ### How it was verified
@@ -54,6 +55,7 @@ Almost instant first moment; Zeno talks by default; "good morning" at 1 AM was w
 - Low items from reviews: when every setup save fails the summary still opens with "All set"; a save that fails after "Start my day" is silent; no fold-back animation when the desk closes.
 - After a chip tap Zeno speaks but does not open the mic; the mic opens only on Talk or "Something else". Deliberate (no surprise hot mic); confirm with Vi.
 - Copy to confirm with Vi: failed setup saves read "I couldn't save N of your answers. Tell me again anytime."
+- Short laptop screens: a step title of three or more lines can push the primary pills partly under the sticky dock until the person scrolls.
 
 ### Next steps (in order)
 1. Vi: do the first-run setup on production, then press Talk in Chrome and speak (real mic, Meta voice input).
@@ -99,6 +101,7 @@ Zeno is a voice-first daily helper: it gives a short spoken brief from your cale
 | bc97e56, 4962493, a7dcc91 | Instant day + opening endpoint + options + memory save/import; tap-first UI + setup + press feel; desk |
 | ac25ca2, f83989b | Finish-review fixes + DESIGN.md; daily streak |
 | 412490b, 76ac1fd, 3ddaf78 | Hardening (account-keyed cache, double-tap guard, honest save failures, no stale openings); prep pack with Muse web search |
+| 87caf2d | Final design review fixes (memory facts, sticky dock, quiet pills, wrapping, card-world sources) |
 
 ## 5. In flight
 
