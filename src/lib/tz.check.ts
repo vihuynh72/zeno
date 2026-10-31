@@ -1,6 +1,6 @@
 // Self-check for tz.ts. Run like Vercel does, in UTC: TZ=UTC node src/lib/tz.check.ts
 import assert from "node:assert/strict";
-import { dayBounds, formatDate, formatTime, localHour, timeZoneFrom } from "./tz.ts";
+import { dayBounds, formatDate, formatTime, localDate, localHour, timeZoneFrom } from "./tz.ts";
 
 const LA = "America/Los_Angeles";
 const bounds = (zone: string, at: string) => {
@@ -19,6 +19,11 @@ assert.equal(formatDate(new Date("2026-10-30T01:30:00Z"), LA), "Thursday, Octobe
 
 // DST ends on Nov 1, a 25-hour day in Los Angeles.
 assert.deepEqual(bounds(LA, "2026-11-01T18:00:00Z"), ["2026-11-01T07:00:00.000Z", "2026-11-02T08:00:00.000Z"]);
+
+// The person's calendar date: 6:30 PM PDT is already Oct 30 in UTC, 11:30 PM PST on Nov 1 is 7:30 the next UTC day.
+assert.equal(localDate(LA, new Date("2026-10-30T01:30:00Z")), "2026-10-29");
+assert.equal(localDate(LA, new Date("2026-11-02T07:30:00Z")), "2026-11-01");
+assert.equal(localDate(LA, new Date("2026-11-02T08:30:00Z")), "2026-11-02");
 
 // Chile's DST skips midnight on Sep 6, so 11:09 PM on Sep 5 belongs to a day ending at the jump.
 assert.deepEqual(bounds("America/Santiago", "2026-09-06T03:09:00Z"), ["2026-09-05T04:00:00.000Z", "2026-09-06T04:00:00.000Z"]);

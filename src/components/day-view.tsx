@@ -38,6 +38,7 @@ export type DayViewProps = {
   list: string[] | null; // lines written under Zeno's line (what setup will remember)
   pasting: boolean; // the setup card takes pasted notes
   hear: boolean; // the browser held Zeno's voice back until a tap
+  streak: number; // days in a row with a finished step
   voice: { phase: VoicePhase; levelRef: { current: number }; muted: boolean; supported: boolean; error: VoiceError };
   on: {
     primary(): void;
@@ -153,6 +154,12 @@ export default function DayView(props: DayViewProps) {
           {pile && (
             <p className="text-ink-2 sm:hidden">
               <span className="font-mono">{doneCount}</span> done
+            </p>
+          )}
+          {/* Below lg it would crowd the date and Sound off the bar. */}
+          {screen !== "signed-out" && props.streak > 1 && (
+            <p className="text-ink-2 max-lg:hidden">
+              <span className="font-mono">{props.streak}</span> days in a row
             </p>
           )}
           <Clock />

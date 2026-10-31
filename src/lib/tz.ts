@@ -57,6 +57,12 @@ export function localHour(timeZone: string, now = new Date()) {
   return wallClock(timeZone, now).hour;
 }
 
+// The zone's calendar date as YYYY-MM-DD.
+export function localDate(timeZone: string, now = new Date()) {
+  const { year, month, day } = wallClock(timeZone, now);
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 export function formatTime(value: string | Date, timeZone: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
