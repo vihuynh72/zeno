@@ -6,6 +6,7 @@ import { loadUserContext } from "@/lib/context";
 import type { DayResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
 import { finishedDays, hasAnyGoal, streakFrom } from "@/lib/goals";
+import { accountKey } from "@/lib/session-json";
 import { localDate, timeZoneFrom } from "@/lib/tz";
 
 export const maxDuration = 30;
@@ -30,6 +31,8 @@ export async function GET() {
 
   return NextResponse.json({
     state: "ok",
+    // auth() above only returns a session when AUTH_SECRET is set.
+    account: accountKey(email, process.env.AUTH_SECRET ?? ""),
     firstName,
     opening: ruleOpening(context, firstName),
     openingSource: "rule",

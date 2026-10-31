@@ -32,17 +32,18 @@ const VOICE_NOTE = {
 
 type Day = Extract<DayResponse, { state: "ok" }>;
 type Opening = { text: string; options: string[] };
-// What the last visit left in this browser, keyed by whose day it was; the model's opening is for `part` only.
-// shortcut: keyed by first name, so two same-named accounts that switch outside Sign in again / Sign out share the saved
-// opening and setup state; key it by a hash of the account id (a new /api/day field) if shared browsers matter.
-type Saved = { v: 1; who: string | null; part: string; day: Day; opening: Opening | null; setupDone: boolean };
+// What the last visit left in this browser; the model's opening is for `part` only. It paints before /api/day says whose
+// browser this is, and its opening and setup state carry over only when day.account matches.
+// shortcut: first paint trusts it, so a day written as the account switched (an /api/day already in flight, or a switch
+// outside this page's Sign in / Sign out) shows until /api/day answers; check a readable cookie set at sign-in to close that.
+type Saved = { v: 2; part: string; day: Day; opening: Opening | null; setupDone: boolean };
 
 const SAVED_KEY = "zeno:day";
 
 function readSaved(): Saved | null {
   try {
     const saved = JSON.parse(localStorage.getItem(SAVED_KEY) ?? "null") as Saved | null;
-    return saved?.v === 1 && saved.day?.state === "ok" && typeof saved.day.opening === "string" ? saved : null;
+    return saved?.v === 2 && saved.day?.state === "ok" && typeof saved.day.opening === "string" ? saved : null;
   } catch {
     return null;
   }
@@ -105,7 +106,9 @@ const noStore = () => () => {};
 export default function GuidedDay() {
   // null on the server and while hydrating; then this browser's saved day, if any.
   const booted = useSyncExternalStore(noStore, readBoot, () => null);
-  const saved = booted?.saved ?? null;
+  // Set when /api/day fails: the account was never checked, so the saved day (maybe another account's) stops showing.
+  const [savedDropped, setSavedDropped] = useState(false);
+  const saved = savedDropped ? null : booted?.saved ?? null;
   const same = saved && saved.part === booted?.part ? saved : null;
 
   // Each piece below starts from the saved day until something newer sets it.
@@ -134,6 +137,7 @@ export default function GuidedDay() {
   const [setupAt, setSetupAt] = useState(0);
   const [pasting, setPasting] = useState(false);
   const [learned, setLearned] = useState<Memory[]>([]);
+  const [unsaved, setUnsaved] = useState(0); // setup answers and pasted notes that failed to save
   const [reading, setReading] = useState(0);
   const history = useRef<Turn[]>([]);
   const cache = useRef<Saved | null>(null);
@@ -143,6 +147,10 @@ export default function GuidedDay() {
   const talking = useRef(false); // the person chose to talk, so Zeno listens after it speaks
   const nextOpening = useRef<Promise<OpeningResponse | { state: "error" }> | null>(null);
   const saves = useRef<Promise<unknown>[]>([]); // setup answers and pasted notes still being saved
+  const cardAt = useRef(0); // when the card last changed, so the second tap of a double tap can't answer the next one
+  useEffect(() => {
+    cardAt.current = performance.now();
+  }, [screen, setupAt, pasting]);
   // The voice hook calls onUserTurn later, so it reads the screen, goal and phase from here, not a stale render.
   const latest = useRef({ screen, goal, line, thinking: false });
   useEffect(() => {
@@ -157,6 +165,16 @@ export default function GuidedDay() {
     { listen: (handlers, opts) => (talking.current ? listenAuto(handlers, opts) : micClosed(handlers)) },
   );
 
+  // Another tab signed out or loaded another account: this tab must not write its day back over that.
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== SAVED_KEY && event.key !== null) return;
+      if (readSaved()?.day.account !== cache.current?.day.account) cache.current = null;
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
   function store(patch: Partial<Saved>) {
     if (!cache.current) return;
     cache.current = { ...cache.current, ...patch };
@@ -170,14 +188,16 @@ export default function GuidedDay() {
       return false;
     }
     if (data.state !== "ok") {
-      // Whatever already shows (the saved day or the greeting) stays; there's still a way to start.
-      if (!screen) setScreen("ready");
+      // Whatever the person already did stays, but the saved day gives way to the plain greeting; there's still a way to start.
+      setSavedDropped(true);
+      setScreen((set) => set ?? "ready");
       return false;
     }
-    const prior = saved?.who === data.firstName ? saved : null;
+    // Another account's saved day is dropped here: overwritten, its opening and setup state not carried over.
+    const prior = saved?.day.account === data.account ? saved : null;
     const kept = prior && prior.part === booted?.part ? prior.opening : null;
     // Email snippets stay out of storage; nothing on screen shows them.
-    cache.current = { v: 1, who: data.firstName, part: booted?.part ?? "", day: { ...data, emails: [] }, opening: kept, setupDone: prior?.setupDone ?? false };
+    cache.current = { v: 2, part: booted?.part ?? "", day: { ...data, emails: [] }, opening: kept, setupDone: prior?.setupDone ?? false };
     writeSaved(cache.current);
     setDay(data);
     if (moved.current) return false;
@@ -197,15 +217,16 @@ export default function GuidedDay() {
 
   // Swaps the model's line in (unless the person moved on or Zeno is mid-sentence) and says it once.
   const onOpening = useEffectEvent((res: OpeningResponse | { state: "error" }, allowed: boolean) => {
-    if (moved.current || screen !== "ready" || voice.phase !== "idle" || typing) return;
     const ok = res.state === "ok" && typeof res.opening === "string" && res.opening.trim() !== "";
-    const text = ok ? res.opening.trim() : line;
-    if (ok) {
-      const next = quickReplies(res.options);
-      store({ opening: { text, options: next } });
-      setLine(text);
-      setOptions(next);
-    }
+    // Without a new model line, a saved one (maybe hours old) is dropped, never said: today's rule line stands in.
+    if (!ok) store({ opening: null });
+    if (moved.current || screen !== "ready" || voice.phase !== "idle" || typing) return;
+    // cache.current.day is this load's /api/day, even before the render that sets `day`.
+    const text = ok ? res.opening.trim() : (cache.current?.day.opening ?? line);
+    const next = quickReplies(ok ? res.options : cache.current?.day.options);
+    if (ok) store({ opening: { text, options: next } });
+    setLine(text);
+    setOptions(next);
     if (spoke.current || voice.muted) return;
     spoke.current = true;
     if (allowed) void voice.speak(text);
@@ -411,7 +432,7 @@ export default function GuidedDay() {
   // ---------- First-run setup ----------
   function learn(res: SaveMemoryResponse | { state: "error" }) {
     if (res.state === "signed-out") return showSignedOut();
-    if (res.state !== "ok" || !Array.isArray(res.memories)) return;
+    if (res.state !== "ok" || !Array.isArray(res.memories)) return setUnsaved((n) => n + 1);
     setLearned((list) => [...list.filter((m) => !res.memories.some((n) => n.id === m.id)), ...res.memories]);
   }
 
@@ -465,6 +486,10 @@ export default function GuidedDay() {
         : learned.length || reading
           ? "Here's what I'll remember."
           : "All set. Tell me more anytime.";
+  // Memory has no add button (memories come from talking), so the way back is telling Zeno again.
+  const setupNote = unsaved
+    ? `I couldn't save ${unsaved} of your answers. Tell me again anytime.`
+    : "You can change this anytime in Memory.";
   const chips: Chip[] =
     screen === "setup"
       ? !setupCard
@@ -484,6 +509,7 @@ export default function GuidedDay() {
           : [];
 
   function chip(i: number) {
+    if (performance.now() - cardAt.current < 400) return;
     if (screen === "setup") return answerSetup(pasting ? 1 : i);
     if (options[i]) return tap(options[i]);
     if (screen === "ready" && !options.length) return tap("Let's start.");
@@ -523,7 +549,7 @@ export default function GuidedDay() {
       typing={typing && screen !== "setup"}
       stamping={stamping}
       leaving={leaving}
-      note={voice.error ? VOICE_NOTE[voice.error] : screen === "setup" && !setupCard ? "You can change this anytime in Memory." : note}
+      note={voice.error ? VOICE_NOTE[voice.error] : screen === "setup" && !setupCard ? setupNote : note}
       signInFailed={signInFailed}
       busy={busy || voice.phase === "thinking"}
       chips={chips}

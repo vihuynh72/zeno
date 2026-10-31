@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { type MouseEvent, useEffect, useRef, useSyncExternalStore } from "react";
 import type { DayEvent, Goal, SourceState, Step } from "@/lib/day";
 import type { Today } from "@/components/day-view";
 import { markEvents, senderName, unescapeHtml } from "@/components/desk-rows";
@@ -31,9 +31,17 @@ const time = (event: DayEvent) =>
 
 type DeskProps = { open: boolean; today: Today | null; goal: Goal | null; onClose(): void; onSignIn(): void };
 
+// Only the backdrop: a click on the dialog's own scrollbar lands inside its box.
+function onBackdrop(event: MouseEvent<HTMLDialogElement>) {
+  const box = event.currentTarget.getBoundingClientRect();
+  const outside = event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom;
+  return event.target === event.currentTarget && outside;
+}
+
 // Today's calendar and inbox in one wide view, unfolded from the card: the seed of the workstation.
 export default function Desk({ open, onClose, ...rest }: DeskProps) {
   const ref = useRef<HTMLDialogElement>(null);
+  const downOnBackdrop = useRef(false);
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
@@ -56,11 +64,12 @@ export default function Desk({ open, onClose, ...rest }: DeskProps) {
       className="desk"
       // Every way out (Esc, Close, the backdrop) closes the dialog itself, which tells the page here.
       onClose={onClose}
+      onPointerDown={(event) => {
+        downOnBackdrop.current = onBackdrop(event);
+      }}
       onClick={(event) => {
-        // Only the backdrop: a click on the dialog's own scrollbar lands inside its box.
-        const box = event.currentTarget.getBoundingClientRect();
-        const outside = event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom;
-        if (event.target === event.currentTarget && outside) event.currentTarget.close();
+        // Down and up both: a text selection dragged out past the edge also ends in a click on the dialog.
+        if (downOnBackdrop.current && onBackdrop(event)) event.currentTarget.close();
       }}
     >
       {open && <DeskBody {...rest} />}

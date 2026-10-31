@@ -29,6 +29,8 @@ export type DayEmail = { from: string; subject: string; snippet: string; unread:
 export type DayResponse =
   | {
       state: "ok";
+      // Opaque and stable per account (never the email), so the page can tell whether this browser's saved day is the owner's.
+      account: string;
       firstName: string | null;
       opening: string;
       openingSource: "ai" | "rule";
