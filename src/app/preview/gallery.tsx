@@ -3,7 +3,8 @@
 import { useRef } from "react";
 import type { Goal, Step } from "@/lib/day";
 import type { VoicePhase } from "@/lib/use-voice";
-import DayView, { type DayViewProps, type Today } from "@/components/day-view";
+import { SETUP } from "@/components/day-flow";
+import DayView, { type Chip, type DayViewProps, type Today } from "@/components/day-view";
 
 // Sample data only: no network calls, nothing real.
 const step = (id: string, title: string, minutes: number, status: Step["status"]): Step => ({
@@ -43,19 +44,60 @@ const MEMORIES = [
 
 const ASK = "What's the one thing you keep putting off?";
 
+const chips = (...labels: string[]): Chip[] => [...labels.map((label) => ({ label })), { label: "Something else", tone: "quiet" }];
+const answers = (at: number): Chip[] =>
+  SETUP[at].answers.map(([label], i) => ({ label, tone: SETUP[at].answers.length === 2 ? (i === 0 ? "ink" : "quiet") : undefined }));
+const setup = (at: number): Fixture => ({
+  screen: "setup",
+  line: at === 0 ? `Hi Sam. ${SETUP[0].ask}` : SETUP[at].ask,
+  dots: { at, of: SETUP.length },
+  chips: answers(at),
+});
+
 type Fixture = Partial<Omit<DayViewProps, "voice" | "on">> & { phase?: VoicePhase; level?: number };
 
 const STATES: Record<string, Fixture> = {
   "signed-out": { screen: "signed-out", line: "Zeno helps you start the thing you keep putting off." },
-  ready: { line: "Good afternoon, Sam." },
-  brief: {
-    screen: "brief",
-    line: "Afternoon, Sam. You're clear until your 4:30 study group. Want to use that hour on your essay?",
+  // The very first paint: the card and the browser's greeting, before the day loads.
+  shell: { screen: null, line: "Good afternoon." },
+  ready: {
+    line: "Good afternoon, Sam. You're clear until your 4:30 study group.",
+    chips: chips("Work on my essay", "Plan my afternoon", "Help me pick one thing"),
+  },
+  "ready-model": {
+    line: "Afternoon, Sam. You've got a clear hour before study group. Want to knock out the essay outline?",
+    chips: chips("Start the outline", "Something smaller first"),
     phase: "speaking",
     level: 0.5,
   },
+  hear: {
+    line: "Afternoon, Sam. You've got a clear hour before study group. Want to knock out the essay outline?",
+    chips: chips("Start the outline", "Something smaller first"),
+    hear: true,
+  },
+  "ready-empty": { line: "Good afternoon, Sam.", chips: [{ label: "Let's start", tone: "ink" }] },
+  "quick-replies": {
+    screen: "talk",
+    line: "History essay, due Friday. Want the tiniest first step, or a plan for the week?",
+    chips: chips("Tiniest first step", "Plan the week"),
+  },
+  "setup-1": setup(0),
+  "setup-2": setup(1),
+  "setup-3": setup(2),
+  "setup-4": setup(3),
+  "setup-5": setup(4),
+  paste: { ...setup(4), pasting: true, chips: [{ label: "Skip", tone: "quiet" }] },
+  remember: {
+    screen: "setup",
+    line: "Here's what I'll remember.",
+    dots: { at: SETUP.length, of: SETUP.length },
+    list: ["Spends most days in classes.", "Focuses best in the morning.", "Starting is hard when a task feels too big.", "Reading your notes…"],
+    note: "You can change this anytime in Memory.",
+    chips: [{ label: "Start my day", tone: "ink" }],
+  },
   talk: { screen: "talk", line: ASK, you: "my history essay, it's due Friday", phase: "listening", level: 0.7 },
   typing: { screen: "talk", line: ASK, typing: true },
+  "typing-sent": { screen: "talk", line: "", you: "My history essay. It's due Friday.", typing: true, phase: "thinking" },
   thinking: { screen: "talk", line: "", you: "My history essay. It's due Friday.", phase: "thinking" },
   plan: {
     screen: "plan",
@@ -126,11 +168,19 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
         note={null}
         signInFailed={false}
         busy={false}
+        chips={[]}
+        dots={null}
+        list={null}
+        pasting={false}
+        hear={false}
         {...view}
         voice={{ phase, levelRef, muted: false, supported: true }}
         on={{
           primary: noop,
           secondary: noop,
+          chip: noop,
+          hear: noop,
+          paste: noop,
           talk: noop,
           type: noop,
           closeTyping: noop,
