@@ -2,7 +2,7 @@
 
 import { useRef } from "react";
 import type { Goal, Step } from "@/lib/day";
-import type { VoicePhase } from "@/lib/use-voice";
+import type { VoiceError, VoicePhase } from "@/lib/use-voice";
 import { SETUP } from "@/components/day-flow";
 import DayView, { type Chip, type DayViewProps, type Today } from "@/components/day-view";
 
@@ -81,7 +81,7 @@ const setup = (at: number): Fixture => ({
   chips: answers(at),
 });
 
-type Fixture = Partial<Omit<DayViewProps, "voice" | "on">> & { phase?: VoicePhase; level?: number };
+type Fixture = Partial<Omit<DayViewProps, "voice" | "on">> & { phase?: VoicePhase; level?: number; error?: VoiceError };
 
 const STATES: Record<string, Fixture> = {
   "signed-out": { screen: "signed-out", line: "Zeno helps you start the thing you keep putting off." },
@@ -114,11 +114,29 @@ const STATES: Record<string, Fixture> = {
   "setup-4": setup(3),
   "setup-5": setup(4),
   paste: { ...setup(4), pasting: true, chips: [{ label: "Skip", tone: "quiet" }] },
+  "remember-reading": {
+    screen: "setup",
+    line: "Here's what I'll remember.",
+    dots: { at: SETUP.length, of: SETUP.length },
+    list: ["Spends most days in classes.", "Focuses best in the morning.", "Starting is hard when it's unclear where to begin.", "Reading your notes…"],
+    note: "You can change this anytime in Memory.",
+    chips: [{ label: "Start my day", tone: "ink" }],
+  },
+  // After pasted notes: the newest facts first, more than the card holds.
   remember: {
     screen: "setup",
     line: "Here's what I'll remember.",
     dots: { at: SETUP.length, of: SETUP.length },
-    list: ["Spends most days in classes.", "Focuses best in the morning.", "Starting is hard when a task feels too big.", "Reading your notes…"],
+    list: [
+      "Has a history essay draft due Friday at 11:59 PM.",
+      "Takes Biology 120 on Mondays, Wednesdays and Fridays at 10 AM.",
+      "Meets a study group for the history essay on Thursday evenings.",
+      "Works shifts at the campus library on Tuesday and Saturday mornings.",
+      "Wants to finish lab reports the day they are assigned.",
+      "Starting is hard when it's unclear where to begin.",
+      "Focuses best in the morning.",
+      "Spends most days in classes.",
+    ],
     note: "You can change this anytime in Memory.",
     chips: [{ label: "Start my day", tone: "ink" }],
   },
@@ -157,6 +175,7 @@ const STATES: Record<string, Fixture> = {
   blocked: {
     screen: "talk",
     line: ASK,
+    error: "blocked",
     note: "Your microphone is blocked, so typing works for now. To talk, allow the microphone from the icon in your browser's address bar.",
   },
 };
@@ -164,7 +183,7 @@ const STATES: Record<string, Fixture> = {
 const noop = () => {};
 
 export default function Gallery({ state, theme }: { state: string; theme?: "light" | "dark" }) {
-  const { phase = "idle", level = 0, ...view } = STATES[state] ?? {};
+  const { phase = "idle", level = 0, error = null, ...view } = STATES[state] ?? {};
   const levelRef = useRef(level);
 
   if (!STATES[state]) {
@@ -206,7 +225,7 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
         pasting={false}
         hear={false}
         {...view}
-        voice={{ phase, levelRef, muted: false, supported: true }}
+        voice={{ phase, levelRef, muted: false, supported: true, error }}
         on={{
           primary: noop,
           secondary: noop,

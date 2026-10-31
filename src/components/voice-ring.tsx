@@ -38,10 +38,12 @@ const HINT: Record<VoicePhase, string> = {
 export default function VoiceRing({
   phase,
   levelRef,
+  blocked,
   onClick,
 }: {
   phase: VoicePhase;
   levelRef: { current: number };
+  blocked: boolean; // the browser refused the mic, so Talk steps back to an outline with a slash
   onClick: () => void;
 }) {
   const dotsRef = useRef<SVGGElement>(null);
@@ -93,7 +95,7 @@ export default function VoiceRing({
       onClick={onClick}
       className="flex w-[120px] flex-col items-center gap-2 rounded-2xl font-bold"
     >
-      <span className="relative grid h-[120px] w-[120px] place-items-center short:size-24">
+      <span className="relative grid h-[120px] w-[120px] place-items-center max-sm:size-24 short:size-24">
         <svg viewBox="0 0 120 120" className="dots absolute inset-0" aria-hidden="true">
           <g ref={dotsRef}>
             {DOTS.map((dot, i) => (
@@ -101,16 +103,19 @@ export default function VoiceRing({
             ))}
           </g>
         </svg>
-        <span className="tap grid h-16 w-16 place-items-center rounded-full bg-ink text-card">
+        <span
+          className={`tap grid h-16 w-16 place-items-center rounded-full ${blocked ? "border-2 border-ink bg-card text-ink" : "bg-ink text-card"}`}
+        >
           <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="9" y="3" width="6" height="11" rx="3" />
             <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" />
+            {blocked && <path d="M4 3l16 18" />}
           </svg>
         </span>
       </span>
       <span>
         {LABEL[phase]}
-        <span className="sr-only">{HINT[phase]}</span>
+        <span className="sr-only">{blocked ? ", microphone blocked" : HINT[phase]}</span>
       </span>
     </button>
   );

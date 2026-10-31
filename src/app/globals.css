@@ -15,6 +15,8 @@
   --paper: 0 0 0 1px rgb(26 26 26 / 0.06), 0 1px 2px rgb(26 26 26 / 0.08),
     0 12px 24px -12px rgb(26 26 26 / 0.18), 0 32px 56px -28px rgb(26 26 26 / 0.22);
   --edge: 0 0 0 1px rgb(26 26 26 / 0.07), 0 4px 8px -4px rgb(26 26 26 / 0.16);
+  --scrim: rgb(20 20 18 / 0.32);
+  --rim: transparent;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -30,6 +32,9 @@
     --paper: 0 0 0 1px rgb(255 255 255 / 0.06), 0 1px 2px rgb(0 0 0 / 0.4),
       0 12px 24px -12px rgb(0 0 0 / 0.6), 0 32px 56px -28px rgb(0 0 0 / 0.7);
     --edge: 0 0 0 1px rgb(255 255 255 / 0.06), 0 4px 8px -4px rgb(0 0 0 / 0.5);
+    /* The dark desk needs a deeper scrim and a rim to lift a dialog off it. */
+    --scrim: rgb(0 0 0 / 0.6);
+    --rim: var(--track);
   }
 }
 
@@ -45,6 +50,8 @@
   --paper: 0 0 0 1px rgb(255 255 255 / 0.06), 0 1px 2px rgb(0 0 0 / 0.4),
     0 12px 24px -12px rgb(0 0 0 / 0.6), 0 32px 56px -28px rgb(0 0 0 / 0.7);
   --edge: 0 0 0 1px rgb(255 255 255 / 0.06), 0 4px 8px -4px rgb(0 0 0 / 0.5);
+  --scrim: rgb(0 0 0 / 0.6);
+  --rim: var(--track);
 }
 
 @theme inline {
@@ -81,6 +88,10 @@ body {
 :focus-visible {
   outline: 3px solid var(--ink);
   outline-offset: 4px;
+}
+/* A dialog's heading takes focus on open; it is not a control, so it shows no ring. */
+[tabindex="-1"]:focus {
+  outline: none;
 }
 
 /* ---------- The index card ----------
@@ -371,6 +382,12 @@ body {
     --to: translate(110vw, -10%) rotate(12deg) scale(0.6);
   }
 }
+/* Phones keep the done count in the top bar, so the card goes up to it. */
+@media (max-width: 639px) {
+  .leaving {
+    --to: translate(0, -90%) rotate(-4deg) scale(0.15);
+  }
+}
 
 /* ---------- Controls ---------- */
 /* A press is a tap: no text selection, callout or grey flash on a long press, and no double-tap zoom wait. */
@@ -415,6 +432,9 @@ button {
   button:hover .knob {
     background: var(--desk);
   }
+  button:hover .knob-ink {
+    background: color-mix(in srgb, var(--ink) 82%, var(--card));
+  }
 }
 /* Down at once, back up quickly on release. */
 .pill:active,
@@ -441,9 +461,10 @@ button:active .tap {
   padding: 0 24px;
   font-size: 18px;
 }
-/* Two chips a row on phones: less side padding, so a label wraps to two lines at most. */
+/* Phones stack the answers, so pills sit a little lower to keep four of them and the dock on one screen. */
 @media (max-width: 639px) {
   .pill {
+    min-height: 52px;
     padding-inline: 16px;
     font-size: 18px;
   }
@@ -458,6 +479,10 @@ button:active .tap {
   border-radius: 999px;
   background: var(--card);
 }
+.knob-ink {
+  background: var(--ink);
+  color: var(--card);
+}
 .tap {
   transition:
     background-color 0.12s,
@@ -467,6 +492,28 @@ button:active .tap {
 /* Send sits on the same rule as the words being typed. */
 .lines .send {
   margin-top: calc((var(--lh) - 52px) / 2);
+}
+/* What setup will remember: each fact starts at a dot and keeps to one rule (two on phones), so Start stays on screen. */
+.facts li {
+  font-weight: 400;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  padding-left: 0.7em;
+  text-indent: -0.7em;
+}
+.facts li::before {
+  content: "•";
+  display: inline-block;
+  width: 0.7em;
+  text-indent: 0;
+  color: var(--ink-2);
+}
+@media (max-width: 639px) {
+  .facts li {
+    -webkit-line-clamp: 2;
+  }
 }
 /* Pasted notes scroll inside the card instead of stretching it. */
 .paste {
@@ -498,7 +545,7 @@ button:active .tap {
   animation: sheet-in 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .sheet::backdrop {
-  background: rgb(20 20 18 / 0.32);
+  background: var(--scrim);
 }
 @media (max-width: 639px) {
   .sheet {
@@ -631,13 +678,14 @@ button:active .tap {
 
 /* Desk */
 /* Today's calendar and inbox in one wide view over the dimmed desk; full screen on phones. */
+/* --top (set on open) is the card's top edge, so the dialog starts under the four steps instead of cutting through them. */
 .desk {
   width: min(1120px, calc(100% - 64px));
   max-width: none;
-  max-height: calc(100dvh - 64px);
-  margin: auto;
+  max-height: calc(100dvh - var(--top, 32px) - 32px);
+  margin: var(--top, auto) auto auto;
   padding: 0;
-  border: 0;
+  border: 1px solid var(--rim);
   border-radius: 8px;
   background: var(--desk);
   color: var(--ink);
@@ -645,7 +693,7 @@ button:active .tap {
   overscroll-behavior: contain;
 }
 .desk::backdrop {
-  background: rgb(20 20 18 / 0.32);
+  background: var(--scrim);
 }
 .desk[open]::backdrop {
   animation: desk-fade 0.28s ease-out;
@@ -655,6 +703,8 @@ button:active .tap {
     width: 100%;
     height: 100dvh;
     max-height: none;
+    margin: 0;
+    border: 0;
     border-radius: 0;
   }
 }

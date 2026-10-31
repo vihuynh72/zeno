@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode, type Ref } from "react";
 import type { DayEmail, DayEvent, Goal, Memory, SourceState, Step } from "@/lib/day";
-import type { VoicePhase } from "@/lib/use-voice";
+import type { VoiceError, VoicePhase } from "@/lib/use-voice";
 import { cardSize, clock, openSteps, sayMode, STAGE_OF, STAGES, type SayMode, type Screen } from "@/components/day-flow";
 import Desk from "@/components/desk";
 import VoiceRing from "@/components/voice-ring";
@@ -38,7 +38,7 @@ export type DayViewProps = {
   list: string[] | null; // lines written under Zeno's line (what setup will remember)
   pasting: boolean; // the setup card takes pasted notes
   hear: boolean; // the browser held Zeno's voice back until a tap
-  voice: { phase: VoicePhase; levelRef: { current: number }; muted: boolean; supported: boolean };
+  voice: { phase: VoicePhase; levelRef: { current: number }; muted: boolean; supported: boolean; error: VoiceError };
   on: {
     primary(): void;
     secondary(): void;
@@ -84,6 +84,8 @@ export default function DayView(props: DayViewProps) {
   const lineOnCard = !step && !finished;
   const cardText = finished ? `You finished ${goal.title}.` : lineOnCard ? props.line : step?.title ?? "";
   const doneCount = (goal?.steps.filter((s) => s.status === "done").length ?? 0) - (props.leaving ? 1 : 0);
+  const pile = (screen === "plan" || screen === "focus" || screen === "checkin") && doneCount > 0;
+  const blocked = voice.error === "blocked";
   const tapFirst = screen === "ready" || screen === "talk" || screen === "setup";
   const labels = finished ? ["Pick another thing", "Stop for now"] : screen ? PILLS[screen] ?? [] : [];
   // The line on screen and how it came in, so Zeno starting or stopping to talk never animates it again.
@@ -118,14 +120,17 @@ export default function DayView(props: DayViewProps) {
           <span className="hand text-ink-2">{props.you}</span>
         </p>
       )}
-      <Write
-        busy={props.busy}
-        onSend={on.send}
-        onClose={() => {
-          typeRef.current?.focus();
-          on.closeTyping();
-        }}
-      />
+      {/* The box comes back with Zeno's reply, so nothing invites a second send while Zeno thinks. */}
+      {voice.phase !== "thinking" && (
+        <Write
+          busy={props.busy}
+          onSend={on.send}
+          onClose={() => {
+            typeRef.current?.focus();
+            on.closeTyping();
+          }}
+        />
+      )}
     </>
   ) : props.you || youHint || listening ? (
     <p>
@@ -144,6 +149,12 @@ export default function DayView(props: DayViewProps) {
           Zeno
         </div>
         <div className="flex min-h-14 items-center gap-2 sm:gap-4">
+          {/* Phones have no room for the pile beside the card, so the count waits up here. */}
+          {pile && (
+            <p className="text-ink-2 sm:hidden">
+              <span className="font-mono">{doneCount}</span> done
+            </p>
+          )}
           <Clock />
           {screen && screen !== "signed-out" && (
             <button
@@ -175,7 +186,7 @@ export default function DayView(props: DayViewProps) {
             // The shell and the ready card are one card, so the first paint never jumps; each setup card is a new one.
             key={step ? `${screen}:${step.id}:${step.title}` : finished ? "finished" : screen === "setup" ? `setup:${props.dots?.at}` : screen ?? "ready"}
             className="card rise z-10"
-            data-size={cardSize(cardText)}
+            data-size={cardSize(props.list ? [cardText, ...props.list].join(" ") : cardText)}
             // A step card only needs room for its title (and the timer, or a blank row for the stamp), so the roadmap fits under it.
             style={step ? ({ "--rows": screen === "plan" ? 2 : step.minutes ? 3 : 4 } as CSSProperties) : undefined}
           >
@@ -196,13 +207,18 @@ export default function DayView(props: DayViewProps) {
                 <>
                   {cardText && <p>{finished ? cardText : <Said key={cardText} text={cardText} mode={mode} />}</p>}
                   {props.list && (
-                    <ul>
-                      {props.list.map((item) => (
+                    <ul className="facts">
+                      {props.list.slice(0, 5).map((item) => (
                         <li key={item}>
                           <span className="hand">{item}</span>
                         </li>
                       ))}
                     </ul>
+                  )}
+                  {props.list && props.list.length > 5 && (
+                    <p className="text-ink-2">
+                      <span className="hand">+{props.list.length - 5} more in Memory</span>
+                    </p>
                   )}
                   {props.pasting && (
                     <Paste
@@ -249,7 +265,7 @@ export default function DayView(props: DayViewProps) {
             </article>
           )}
 
-          {(screen === "plan" || screen === "focus" || screen === "checkin") && doneCount > 0 && (
+          {pile && (
             <div className="pile">
               {Array.from({ length: Math.min(doneCount, 3) }, (_, i) => (
                 <i key={i} />
@@ -293,9 +309,9 @@ export default function DayView(props: DayViewProps) {
 
         <div
           ref={pillsRef}
-          // Phones get two chips a row, so four answers and the dock still fit one screen.
+          // Phones stack the answers one per row, so every label stays on one line.
           className={`mt-4 w-full max-w-[760px] empty:mt-0 sm:mt-6 short:mt-4 ${
-            tapFirst ? "grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:justify-center sm:gap-4" : "flex flex-wrap justify-center gap-4 sm:gap-6"
+            tapFirst ? "flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-center sm:gap-4" : "flex flex-wrap justify-center gap-4 sm:gap-6"
           }`}
         >
           {tapFirst
@@ -309,7 +325,7 @@ export default function DayView(props: DayViewProps) {
                     pressed.current = true;
                     on.chip(i);
                   }}
-                  className={`pill max-sm:odd:last:col-span-2 ${
+                  className={`pill ${
                     chip.tone === "ink" ? "pill-ink" : chip.tone === "quiet" ? "pill-quiet" : ""
                   }`}
                 >
@@ -345,8 +361,9 @@ export default function DayView(props: DayViewProps) {
       {/* Setup is one tap per card, so the dock waits until it's done. */}
       {screen && screen !== "signed-out" && screen !== "setup" && (
         <nav aria-label="Zeno" className="flex justify-center gap-2 pb-4 sm:gap-4 sm:pt-2 short:pt-0">
-          <VoiceRing phase={voice.phase} levelRef={voice.levelRef} onClick={on.talk} />
-          <DockButton ref={typeRef} label="Type" icon="type" onClick={on.type} />
+          {/* A blocked mic hands the fill to Type, the way that still works. */}
+          <VoiceRing phase={voice.phase} levelRef={voice.levelRef} blocked={blocked} onClick={on.talk} />
+          <DockButton ref={typeRef} label="Type" icon="type" filled={blocked} onClick={on.type} />
           <DockButton label="Today" icon="today" onClick={() => on.sheet("today")} />
           <DockButton label="Memory" icon="memory" onClick={() => on.sheet("memory")} />
         </nav>
@@ -503,11 +520,23 @@ function Dots({ at, of }: { at: number; of: number }) {
   );
 }
 
-function DockButton({ label, icon, onClick, ref }: { label: string; icon: IconName; onClick: () => void; ref?: Ref<HTMLButtonElement> }) {
+function DockButton({
+  label,
+  icon,
+  filled,
+  onClick,
+  ref,
+}: {
+  label: string;
+  icon: IconName;
+  filled?: boolean;
+  onClick: () => void;
+  ref?: Ref<HTMLButtonElement>;
+}) {
   return (
     <button ref={ref} type="button" onClick={onClick} className="flex w-16 flex-col items-center gap-2 rounded-2xl font-medium sm:w-[88px]">
-      <span className="grid h-[120px] place-items-center short:h-24">
-        <span className="knob tap">
+      <span className="grid h-[120px] place-items-center max-sm:h-24 short:h-24">
+        <span className={`knob tap ${filled ? "knob-ink" : ""}`}>
           <Icon name={icon} />
         </span>
       </span>
@@ -521,7 +550,11 @@ function SheetPanel({ open, title, onClose, children }: { open: boolean; title: 
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
+    if (open && !dialog.open) {
+      dialog.showModal();
+      // The heading takes focus, so Close only shows its ring once someone tabs to it.
+      dialog.querySelector("h2")?.focus();
+    }
     if (!open && dialog.open) dialog.close();
   }, [open]);
 
@@ -535,7 +568,9 @@ function SheetPanel({ open, title, onClose, children }: { open: boolean; title: 
     >
       <div className="flex min-h-full flex-col gap-4 p-6">
         <div className="flex items-center justify-between gap-4">
-          <h2 className="text-[28px] leading-10 font-bold">{title}</h2>
+          <h2 tabIndex={-1} className="text-[28px] leading-10 font-bold">
+            {title}
+          </h2>
           <button type="button" onClick={onClose} className="pill pill-small">
             <Icon name="close" />
             Close

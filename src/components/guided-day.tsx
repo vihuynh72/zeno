@@ -142,6 +142,7 @@ export default function GuidedDay() {
   const spoke = useRef(false); // the opening has been said (or offered with Hear Zeno)
   const talking = useRef(false); // the person chose to talk, so Zeno listens after it speaks
   const nextOpening = useRef<Promise<OpeningResponse | { state: "error" }> | null>(null);
+  const saves = useRef<Promise<unknown>[]>([]); // setup answers and pasted notes still being saved
   // The voice hook calls onUserTurn later, so it reads the screen, goal and phase from here, not a stale render.
   const latest = useRef({ screen, goal, line, thinking: false });
   useEffect(() => {
@@ -227,7 +228,7 @@ export default function GuidedDay() {
     };
   }, []);
 
-  // After setup, the opening written with what was just learned (asked for when the summary showed).
+  // After setup, the opening written with what was just learned (asked for once the setup saves settled).
   const [wantOpening, setWantOpening] = useState(0);
   useEffect(() => {
     if (!wantOpening) return;
@@ -417,8 +418,10 @@ export default function GuidedDay() {
   function nextSetupCard() {
     setPasting(false);
     setSetupAt(setupAt + 1);
-    // The summary card reads for a few seconds, long enough to write the opening with what was just learned.
-    if (setupAt + 1 === SETUP.length) nextOpening.current = getJson<OpeningResponse>("/api/day/opening");
+    // The opening waits for every answer and pasted note to be saved, so it can use what was just shared.
+    if (setupAt + 1 === SETUP.length) {
+      nextOpening.current = Promise.allSettled(saves.current).then(() => getJson<OpeningResponse>("/api/day/opening"));
+    }
   }
 
   function answerSetup(i: number) {
@@ -426,16 +429,18 @@ export default function GuidedDay() {
     if (setupAt === 0 && i === 1) return finishSetup();
     if (setupAt === SETUP.length - 1 && i === 0 && !pasting) return setPasting(true);
     const memory = pasting ? null : SETUP[setupAt].answers[i]?.[1];
-    if (memory) void post<SaveMemoryResponse>("/api/memory", { text: memory }).then(learn);
+    if (memory) saves.current.push(post<SaveMemoryResponse>("/api/memory", { text: memory }).then(learn));
     nextSetupCard();
   }
 
   function savePaste(text: string) {
     setReading((n) => n + 1);
-    void post<SaveMemoryResponse>("/api/import", { text }).then((res) => {
-      setReading((n) => n - 1);
-      learn(res);
-    });
+    saves.current.push(
+      post<SaveMemoryResponse>("/api/import", { text }).then((res) => {
+        setReading((n) => n - 1);
+        learn(res);
+      }),
+    );
     nextSetupCard();
   }
 

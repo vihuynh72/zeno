@@ -40,7 +40,10 @@ export default function Desk({ open, onClose, ...rest }: DeskProps) {
     if (open && !dialog.open) {
       // The guided card's box, read before the dialog covers it.
       const from = document.querySelector("main .card:not(.leaving)")?.getBoundingClientRect();
+      // Opens from the card's top edge, so the top bar and the four steps above stay whole.
+      dialog.style.setProperty("--top", from ? `${Math.max(32, from.top)}px` : "");
       dialog.showModal();
+      dialog.querySelector("h2")?.focus();
       unfold(dialog, from);
     }
     if (!open && dialog.open) dialog.close();
@@ -96,7 +99,9 @@ function DeskBody({ today, goal, onSignIn }: Omit<DeskProps, "open" | "onClose">
     // Fills the dialog, so a click inside never reads as a backdrop click.
     <div className="min-h-full wrap-break-word">
       <div className="sticky top-0 z-10 flex items-center justify-between gap-4 bg-desk px-4 pt-6 pb-4 sm:px-8">
-        <h2 className="text-[28px] leading-10 font-bold">Today</h2>
+        <h2 tabIndex={-1} className="text-[28px] leading-10 font-bold">
+          Today
+        </h2>
         <button type="button" onClick={(event) => event.currentTarget.closest("dialog")?.close()} className="pill pill-small">
           <svg
             viewBox="0 0 24 24"
