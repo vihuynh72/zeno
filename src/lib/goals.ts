@@ -50,6 +50,12 @@ export async function currentGoal(email: string): Promise<Goal | null> {
   return goal ? goalFrom(await goalQuery(email, String(goal.id))) : null;
 }
 
+// Any goal at all, paused and done ones included.
+export async function hasAnyGoal(email: string): Promise<boolean> {
+  await ensureSchema();
+  return (await getSql()`SELECT 1 FROM goals WHERE user_email = ${email} LIMIT 1`).length > 0;
+}
+
 export async function setGoal(email: string, title: string, steps: NewStep[]): Promise<Goal> {
   await ensureSchema();
   const sql = getSql();
