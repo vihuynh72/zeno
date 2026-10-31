@@ -569,3 +569,56 @@ button:hover > .knob {
     }
   }
 }
+
+/* Desk */
+/* Today's calendar and inbox in one wide view over the dimmed desk; full screen on phones. */
+.desk {
+  width: min(1120px, calc(100% - 64px));
+  max-width: none;
+  max-height: calc(100dvh - 64px);
+  margin: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: var(--desk);
+  color: var(--ink);
+  box-shadow: var(--paper);
+  overscroll-behavior: contain;
+}
+.desk::backdrop {
+  background: rgb(20 20 18 / 0.32);
+}
+.desk[open]::backdrop {
+  animation: desk-fade 0.28s ease-out;
+}
+@media (max-width: 639px) {
+  .desk {
+    width: 100%;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+  }
+}
+
+/* Now or next is a dot on the card's red margin line, which doubles as the day's timeline. */
+.desk [data-mark="now"]::before,
+.desk [data-mark="next"]::before {
+  content: "";
+  position: absolute;
+  top: 11px;
+  left: -21px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--red);
+  border-radius: 50%;
+  background: var(--red);
+}
+.desk [data-mark="next"]::before {
+  background: var(--card);
+}
+
+@keyframes desk-fade {
+  from {
+    opacity: 0;
+  }
+}

@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useSyncExternalStore, type CSSProperties, type ReactNode, type Ref } from "react";
-import type { DayEvent, Goal, Memory, SourceState, Step } from "@/lib/day";
+import type { DayEmail, DayEvent, Goal, Memory, SourceState, Step } from "@/lib/day";
 import type { VoicePhase } from "@/lib/use-voice";
 import { cardSize, clock, openSteps, STAGE_OF, STAGES, type Screen } from "@/components/day-flow";
+import Desk from "@/components/desk";
 import VoiceRing from "@/components/voice-ring";
 
 export type Sheet = "today" | "memory" | null;
 
 export type Today = {
   events: DayEvent[];
+  emails: DayEmail[];
   unreadEmail: number;
   sources: { calendar: SourceState; email: SourceState; goals: SourceState };
 };
@@ -53,14 +55,6 @@ const PILLS: Record<Screen, string[]> = {
   plan: ["Start this step", "Change the plan"],
   focus: ["Done", "I'm stuck"],
   checkin: ["Keep going", "Stop for now"],
-};
-
-const STATUS: Record<Step["status"], string> = { done: "Done", doing: "Doing", todo: "To do", skipped: "Skipped" };
-
-const SOURCE_NOTE: Record<Exclude<SourceState, "ok">, (name: string) => string> = {
-  "no-access": (name) => `Zeno can't see your ${name} right now. Sign in again to allow it.`,
-  error: (name) => `Zeno couldn't read your ${name} just now.`,
-  "not-configured": (name) => `Your ${name} isn't connected yet.`,
 };
 
 const everySecond = (onChange: () => void) => {
@@ -279,8 +273,8 @@ export default function DayView(props: DayViewProps) {
         </nav>
       )}
 
-      <SheetPanel open={props.sheet !== null} title={props.sheet === "memory" ? "Memory" : "Today"} onClose={() => on.sheet(null)}>
-        {props.sheet === "today" && <TodaySheet today={props.today} goal={goal} onSignIn={on.signIn} />}
+      <Desk open={props.sheet === "today"} today={props.today} goal={goal} onClose={() => on.sheet(null)} onSignIn={on.signIn} />
+      <SheetPanel open={props.sheet === "memory"} title="Memory" onClose={() => on.sheet(null)}>
         {props.sheet === "memory" && (
           <>
             <MemorySheet memories={props.memories} onForget={on.forget} onRetry={on.retryMemory} onSignOut={on.signOut} />
@@ -423,71 +417,6 @@ function SheetPanel({ open, title, onClose, children }: { open: boolean; title: 
         {children}
       </div>
     </dialog>
-  );
-}
-
-function TodaySheet({ today, goal, onSignIn }: { today: Today | null; goal: Goal | null; onSignIn: () => void }) {
-  if (!today) {
-    return <p className="text-ink-2">I couldn&apos;t load today just now. Reload the page to try again.</p>;
-  }
-  const { calendar, email } = today.sources;
-  const time = (event: DayEvent) =>
-    event.allDay ? "All day" : new Date(event.start).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-
-  return (
-    <>
-      <section className="mini">
-        <h3 className="text-[20px] leading-8 font-bold">Calendar</h3>
-        <ul className="lines">
-          {calendar !== "ok" ? (
-            <li className="text-ink-2">{SOURCE_NOTE[calendar]("calendar")}</li>
-          ) : today.events.length === 0 ? (
-            <li className="text-ink-2">Nothing on your calendar today.</li>
-          ) : (
-            today.events.map((event) => (
-              <li key={`${event.start}:${event.title}`} className="flex items-baseline gap-4">
-                <span className="w-[112px] shrink-0 font-mono leading-none whitespace-nowrap text-ink-2">{time(event)}</span>
-                <span>{event.title}</span>
-              </li>
-            ))
-          )}
-        </ul>
-      </section>
-
-      {email !== "ok" ? (
-        <section className="mini">
-          <p className="lines text-ink-2">{SOURCE_NOTE[email]("email")}</p>
-        </section>
-      ) : today.unreadEmail > 0 ? (
-        <section className="mini">
-          <p className="lines">
-            <span className="font-mono">{today.unreadEmail}</span> unread email{today.unreadEmail === 1 ? "" : "s"}
-          </p>
-        </section>
-      ) : null}
-
-      {goal && goal.steps.length > 0 && (
-        <section className="mini">
-          <h3 className="text-[20px] leading-8 font-bold">{goal.title}</h3>
-          <ul className="lines">
-            {goal.steps.map((s) => (
-              <li key={s.id} className="flex items-baseline gap-4">
-                <span className={`w-[72px] shrink-0 leading-none ${s.status === "doing" ? "font-bold" : "text-ink-2"}`}>
-                  {STATUS[s.status]}
-                </span>
-                <span className={s.status === "done" || s.status === "skipped" ? "text-ink-2 line-through" : ""}>{s.title}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {(calendar === "no-access" || email === "no-access") && (
-        <button type="button" onClick={onSignIn} className="pill pill-small self-start">
-          Sign in again
-        </button>
-      )}
-    </>
   );
 }
 

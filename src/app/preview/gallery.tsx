@@ -26,11 +26,38 @@ const roadmap = (...statuses: Step["status"][]): Goal => ({
   ],
 });
 
+// Around the real clock (to the half hour), so the desk shows a past, a current and a later event.
+const at = (minutes: number) => new Date(Math.floor(Date.now() / 1_800_000) * 1_800_000 + minutes * 60_000).toISOString();
+
 const TODAY: Today = {
-  // No offset, so the sample reads 10:00 AM and 4:30 PM in any time zone.
   events: [
-    { title: "Biology lecture", start: "2026-10-29T10:00:00", end: "2026-10-29T11:15:00", allDay: false },
-    { title: "Study group", start: "2026-10-29T16:30:00", end: "2026-10-29T17:30:00", allDay: false },
+    { title: "Grandma's birthday", start: "2026-10-29", end: "2026-10-30", allDay: true },
+    { title: "Lab check-in", start: at(-150), end: at(-135), allDay: false },
+    { title: "Biology lecture", start: at(-30), end: at(45), allDay: false },
+    { title: "Lunch with Maya", start: at(90), end: at(150), allDay: false },
+    { title: "Study group for the history essay", start: at(240), end: at(300), allDay: false },
+  ],
+  emails: [
+    {
+      from: "Dana Lee <dana.lee@school.edu>",
+      subject: "Lab report feedback",
+      snippet: "Looks good overall. Two small fixes on page 3 before you submit, and I&#39;d cite the second source.",
+      unread: true,
+    },
+    {
+      from: '"Registrar" <registrar@school.edu>',
+      subject: "Spring registration opens Monday",
+      snippet: "Your time slot is 9:00 AM. Check for holds on your account before then.",
+      unread: true,
+    },
+    { from: "Maya <maya@example.com>", subject: "Lunch?", snippet: "Still on for today? The place by the library works for me.", unread: false },
+    {
+      from: "Canvas <notifications@instructure.com>",
+      subject: "History essay draft due Friday",
+      snippet: "Reminder: your draft is due Friday at 11:59 PM.",
+      unread: false,
+    },
+    { from: "orders@bookstore.example", subject: "Your order shipped", snippet: "Two items are on the way &amp; should arrive Tuesday.", unread: false },
   ],
   unreadEmail: 2,
   sources: { calendar: "ok", email: "ok", goals: "ok" },
@@ -76,7 +103,12 @@ const STATES: Record<string, Fixture> = {
     goal: roadmap("done", "done", "done", "done"),
     line: "That was the whole plan. Want to pick something else, or stop here?",
   },
-  today: { line: "Good afternoon, Sam.", goal: roadmap("done", "doing", "todo", "todo"), sheet: "today" },
+  desk: { line: "Good afternoon, Sam.", goal: roadmap("done", "doing", "todo", "todo"), sheet: "today" },
+  "desk-quiet": {
+    line: "Good afternoon, Sam.",
+    sheet: "today",
+    today: { events: [], emails: [], unreadEmail: 0, sources: { calendar: "ok", email: "error", goals: "ok" } },
+  },
   memory: { line: "Good afternoon, Sam.", sheet: "memory" },
   "memory-empty": { line: "Good afternoon, Sam.", sheet: "memory", memories: [] },
   error: { screen: "talk", line: "I couldn't think that through just now. Try again?" },

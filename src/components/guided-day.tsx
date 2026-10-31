@@ -282,7 +282,7 @@ export default function GuidedDay() {
       line={line}
       you={voice.phase === "listening" ? voice.partial : heard}
       goal={goal}
-      today={day && { events: day.events, unreadEmail: day.unreadEmail, sources: day.sources }}
+      today={day && { events: day.events, emails: day.emails, unreadEmail: day.unreadEmail, sources: day.sources }}
       memories={memories}
       sheet={sheet}
       typing={typing}
