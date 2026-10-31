@@ -61,6 +61,7 @@ export async function ensureSchema() {
             created_at TIMESTAMPTZ NOT NULL DEFAULT now()
           )
         `,
+        sql`ALTER TABLE steps ADD COLUMN IF NOT EXISTS prep jsonb`,
         sql`CREATE INDEX IF NOT EXISTS steps_goal_position_idx ON steps (goal_id, position)`,
         sql`CREATE INDEX IF NOT EXISTS steps_user_done_idx ON steps (user_email, done_at)`,
         sql`

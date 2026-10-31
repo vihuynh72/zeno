@@ -5,6 +5,7 @@ import type { DayEmail, DayEvent, Goal, Memory, SourceState, Step } from "@/lib/
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
 import { cardSize, clock, openSteps, sayMode, STAGE_OF, STAGES, type SayMode, type Screen } from "@/components/day-flow";
 import Desk from "@/components/desk";
+import PrepPack from "@/components/prep-pack";
 import VoiceRing from "@/components/voice-ring";
 
 export type Sheet = "today" | "memory" | null;
@@ -357,6 +358,9 @@ export default function DayView(props: DayViewProps) {
                 </button>
               ))}
         </div>
+
+        {/* Title in the key: a renamed step drops its sources on the server, so the pack starts fresh too. */}
+        {screen === "plan" && step && <PrepPack key={`${step.id}:${step.title}`} step={step} />}
 
         {screen === "signed-out" && (
           <p className="mt-6 max-w-[560px] text-center text-ink-2">
