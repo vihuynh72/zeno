@@ -526,6 +526,8 @@ export default function GuidedDay() {
       list={screen === "setup" && !setupCard ? [...learned.map((m) => m.text), ...(reading ? ["Reading your notes…"] : [])] : null}
       pasting={screen === "setup" && pasting}
       hear={hear && screen === "ready"}
+      // shortcut: counted when the day loaded, so today's first finished step shows on the next load; return it from PATCH /api/steps to tick up at once
+      streak={day?.streak ?? 0}
       voice={voice}
       on={{
         primary,

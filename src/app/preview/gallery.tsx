@@ -90,6 +90,7 @@ const STATES: Record<string, Fixture> = {
   ready: {
     line: "Good afternoon, Sam. You're clear until your 4:30 study group.",
     chips: chips("Work on my essay", "Plan my afternoon", "Help me pick one thing"),
+    streak: 3,
   },
   "ready-model": {
     line: "Afternoon, Sam. You've got a clear hour before study group. Want to knock out the essay outline?",
@@ -205,6 +206,7 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
         list={null}
         pasting={false}
         hear={false}
+        streak={0}
         {...view}
         voice={{ phase, levelRef, muted: false, supported: true }}
         on={{

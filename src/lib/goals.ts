@@ -203,3 +203,25 @@ export async function stepsFinishedBetween(email: string, start: Date, end: Date
   `;
   return rows.map((row) => String(row.title));
 }
+
+// Local calendar dates (YYYY-MM-DD in timeZone) with a finished step.
+// shortcut: only the last 60 days are read, so a longer run shows as about 60; widen it when someone gets there.
+export async function finishedDays(email: string, timeZone: string): Promise<string[]> {
+  await ensureSchema();
+  const rows = await getSql()`
+    SELECT DISTINCT to_char(done_at AT TIME ZONE ${timeZone}, 'YYYY-MM-DD') AS day FROM steps
+    WHERE user_email = ${email} AND status = 'done' AND done_at > now() - interval '60 days'
+  `;
+  return rows.map((row) => String(row.day));
+}
+
+// Days in a row in `dates`, counted back from today, or from yesterday while today has none yet.
+// Both are local calendar dates; stepping them in UTC means a DST change never skips or repeats a day.
+export function streakFrom(dates: string[], today: string): number {
+  const done = new Set(dates);
+  const day = new Date(`${today}T00:00:00Z`);
+  if (!done.has(today)) day.setUTCDate(day.getUTCDate() - 1);
+  let streak = 0;
+  for (; done.has(day.toISOString().slice(0, 10)); day.setUTCDate(day.getUTCDate() - 1)) streak++;
+  return streak;
+}

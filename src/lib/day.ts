@@ -41,6 +41,9 @@ export type DayResponse =
       unreadEmail: number;
       // Nothing remembered and no goal yet: the screens run the first-time setup.
       isNew: boolean;
+      // Days in a row, in the person's time zone, with a finished step; the run may end yesterday until
+      // a step is done today. 0 when there is none or it couldn't be read.
+      streak: number;
     }
   | { state: "signed-out" | "error" };
 
