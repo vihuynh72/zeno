@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useSyncExternalStore, type CSSProperties, type ReactNode, type Ref } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode, type Ref } from "react";
 import type { DayEvent, Goal, Memory, SourceState, Step } from "@/lib/day";
 import type { VoicePhase } from "@/lib/use-voice";
-import { cardSize, clock, openSteps, STAGE_OF, STAGES, type Screen } from "@/components/day-flow";
+import { cardSize, clock, openSteps, sayMode, STAGE_OF, STAGES, type SayMode, type Screen } from "@/components/day-flow";
 import VoiceRing from "@/components/voice-ring";
 
 export type Sheet = "today" | "memory" | null;
@@ -14,8 +14,11 @@ export type Today = {
   sources: { calendar: SourceState; email: SourceState; goals: SourceState };
 };
 
+// A tap-first answer under the card; "ink" is the one to take, "quiet" the way out.
+export type Chip = { label: string; tone?: "ink" | "quiet" };
+
 export type DayViewProps = {
-  screen: Screen | null; // null while the day loads
+  screen: Screen | null; // null until the browser knows whose day it is
   line: string; // Zeno's latest line
   you: string; // the person's words: live while listening, then what they sent
   goal: Goal | null;
@@ -28,10 +31,18 @@ export type DayViewProps = {
   note: string | null; // one plain line under the pills
   signInFailed: boolean;
   busy: boolean; // a save is in flight, so the pills wait
+  chips: Chip[]; // the answers to tap on the ready, talk and setup cards
+  dots: { at: number; of: number } | null; // setup progress, shown instead of the four steps
+  list: string[] | null; // lines written under Zeno's line (what setup will remember)
+  pasting: boolean; // the setup card takes pasted notes
+  hear: boolean; // the browser held Zeno's voice back until a tap
   voice: { phase: VoicePhase; levelRef: { current: number }; muted: boolean; supported: boolean };
   on: {
     primary(): void;
     secondary(): void;
+    chip(index: number): void;
+    hear(): void;
+    paste(text: string): void;
     talk(): void;
     type(): void;
     closeTyping(): void;
@@ -45,11 +56,9 @@ export type DayViewProps = {
   };
 };
 
-const PILLS: Record<Screen, string[]> = {
+// The ready, talk and setup cards answer with chips instead.
+const PILLS: Partial<Record<Screen, string[]>> = {
   "signed-out": ["Sign in with Google"],
-  ready: ["Start my day"],
-  brief: ["Yes, let's start", "Not now"],
-  talk: [],
   plan: ["Start this step", "Change the plan"],
   focus: ["Done", "I'm stuck"],
   checkin: ["Keep going", "Stop for now"],
@@ -81,13 +90,16 @@ export default function DayView(props: DayViewProps) {
   const lineOnCard = !step && !finished;
   const cardText = finished ? `You finished ${goal.title}.` : lineOnCard ? props.line : step?.title ?? "";
   const doneCount = (goal?.steps.filter((s) => s.status === "done").length ?? 0) - (props.leaving ? 1 : 0);
-  const labels = finished ? ["Pick another thing", "Stop for now"] : screen ? PILLS[screen] : [];
-  // A line Zeno is about to say stays hidden until the voice starts, then appears word by word.
-  const mode = voice.muted ? "all" : voice.phase === "speaking" ? "pace" : voice.phase === "thinking" ? "wait" : "all";
+  const tapFirst = screen === "ready" || screen === "talk" || screen === "setup";
+  const labels = finished ? ["Pick another thing", "Stop for now"] : screen ? PILLS[screen] ?? [] : [];
+  // The line on screen and how it came in, so Zeno starting or stopping to talk never animates it again.
+  const [shown, setShown] = useState<{ line: string; mode: SayMode }>({ line: props.line, mode: "all" });
+  const mode = sayMode(shown, props.line, voice.phase === "speaking" && !voice.muted, voice.phase === "thinking" && !voice.muted);
+  if (shown.line !== props.line || shown.mode !== mode) setShown({ line: props.line, mode });
   const listening = voice.phase === "listening";
   // With a voice note showing (mic blocked, no speech input), point at typing only.
   const youHint =
-    screen === "talk" && !props.you && !listening
+    screen === "talk" && !props.you && !listening && props.chips.length === 0
       ? voice.supported && !props.note
         ? "Tap Talk or Type to answer."
         : "Tap Type to answer."
@@ -95,23 +107,32 @@ export default function DayView(props: DayViewProps) {
 
   const pillsRef = useRef<HTMLDivElement>(null);
   const typeRef = useRef<HTMLButtonElement>(null);
-  const shownScreen = useRef(screen);
+  const pressed = useRef(false);
+  const answersKey = `${screen}:${props.dots?.at}:${props.hear}:${(tapFirst ? props.chips.map((c) => c.label) : labels).join("|")}`;
   useEffect(() => {
-    // When the pill someone pressed goes away with its screen, keep keyboard focus nearby.
-    if (shownScreen.current !== screen && document.activeElement === document.body) {
-      pillsRef.current?.querySelector("button")?.focus();
-    }
-    shownScreen.current = screen;
-  }, [screen]);
+    // When the chip or pill someone pressed goes away, keep keyboard focus on the answers that replace it.
+    const first = pillsRef.current?.querySelector("button");
+    if (!pressed.current || !first) return;
+    pressed.current = false;
+    if (document.activeElement === document.body) first.focus();
+  }, [answersKey]);
 
   const youLine = props.typing ? (
-    <Write
-      onSend={on.send}
-      onClose={() => {
-        typeRef.current?.focus();
-        on.closeTyping();
-      }}
-    />
+    <>
+      {props.you && (
+        <p>
+          <span className="hand text-ink-2">{props.you}</span>
+        </p>
+      )}
+      <Write
+        busy={props.busy}
+        onSend={on.send}
+        onClose={() => {
+          typeRef.current?.focus();
+          on.closeTyping();
+        }}
+      />
+    </>
   ) : props.you || youHint || listening ? (
     <p>
       <span className={`hand text-ink-2 ${listening ? "pen" : ""}`}>{props.you || youHint}</span>
@@ -144,7 +165,7 @@ export default function DayView(props: DayViewProps) {
       </header>
 
       <main className="flex flex-1 flex-col items-center px-4 pb-2 sm:pb-4 short:pb-2">
-        <Progress at={screen ? STAGE_OF[screen] : -1} />
+        {props.dots ? <Dots {...props.dots} /> : <Progress at={screen ? STAGE_OF[screen] : -1} />}
 
         <p className="sr-only" aria-live="polite">
           {props.line}
@@ -157,7 +178,8 @@ export default function DayView(props: DayViewProps) {
             ))}
 
           <article
-            key={step ? `${screen}:${step.id}:${step.title}` : finished ? "finished" : screen ?? "loading"}
+            // The shell and the ready card are one card, so the first paint never jumps; each setup card is a new one.
+            key={step ? `${screen}:${step.id}:${step.title}` : finished ? "finished" : screen === "setup" ? `setup:${props.dots?.at}` : screen ?? "ready"}
             className="card rise z-10"
             data-size={cardSize(cardText)}
             // A step card only needs room for its title (and the timer, or a blank row for the stamp), so the roadmap fits under it.
@@ -178,10 +200,23 @@ export default function DayView(props: DayViewProps) {
                 </>
               ) : (
                 <>
-                  {cardText && (
-                    <p className={screen ? undefined : "text-ink-2"}>
-                      {finished ? cardText : <Said key={cardText} text={cardText} mode={mode} />}
-                    </p>
+                  {cardText && <p>{finished ? cardText : <Said key={cardText} text={cardText} mode={mode} />}</p>}
+                  {props.list && (
+                    <ul>
+                      {props.list.map((item) => (
+                        <li key={item}>
+                          <span className="hand">{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {props.pasting && (
+                    <Paste
+                      onSave={(text) => {
+                        pressed.current = true;
+                        on.paste(text);
+                      }}
+                    />
                   )}
                   {lineOnCard && screen !== "signed-out" && youLine}
                 </>
@@ -248,19 +283,62 @@ export default function DayView(props: DayViewProps) {
           {screen === "signed-out" && props.signInFailed ? "Google sign-in didn't finish. Try again." : props.note}
         </p>
 
-        <div ref={pillsRef} className="mt-4 flex w-full max-w-[760px] flex-wrap justify-center gap-4 empty:mt-0 sm:mt-6 sm:gap-6 short:mt-4">
-          {labels.map((label, i) => (
-            <button
-              key={label}
-              type="button"
-              // aria-disabled, not disabled, so a waiting pill keeps keyboard focus.
-              aria-disabled={props.busy}
-              onClick={props.busy ? undefined : i === 0 ? on.primary : on.secondary}
-              className={`pill max-sm:flex-auto max-sm:px-4 max-sm:text-[18px] sm:min-w-[240px] ${i === 0 ? "pill-ink" : ""}`}
-            >
-              {label}
-            </button>
-          ))}
+        {props.hear && !voice.muted && (
+          <button
+            type="button"
+            onClick={() => {
+              pressed.current = true;
+              on.hear();
+            }}
+            className="pill pill-small pill-quiet mt-4"
+          >
+            <Icon name="sound" />
+            Hear Zeno
+          </button>
+        )}
+
+        <div
+          ref={pillsRef}
+          // Phones get two chips a row, so four answers and the dock still fit one screen.
+          className={`mt-4 w-full max-w-[760px] empty:mt-0 sm:mt-6 short:mt-4 ${
+            tapFirst ? "grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:justify-center sm:gap-4" : "flex flex-wrap justify-center gap-4 sm:gap-6"
+          }`}
+        >
+          {tapFirst
+            ? props.chips.map((chip, i) => (
+                <button
+                  key={chip.label}
+                  type="button"
+                  aria-disabled={props.busy}
+                  onClick={() => {
+                    if (props.busy) return;
+                    pressed.current = true;
+                    on.chip(i);
+                  }}
+                  className={`pill max-sm:odd:last:col-span-2 ${
+                    chip.tone === "ink" ? "pill-ink" : chip.tone === "quiet" ? "pill-quiet" : ""
+                  }`}
+                >
+                  {chip.label}
+                </button>
+              ))
+            : labels.map((label, i) => (
+                <button
+                  key={label}
+                  type="button"
+                  // aria-disabled, not disabled, so a waiting pill keeps keyboard focus.
+                  aria-disabled={props.busy}
+                  onClick={() => {
+                    if (props.busy) return;
+                    pressed.current = true;
+                    if (i === 0) on.primary();
+                    else on.secondary();
+                  }}
+                  className={`pill max-sm:flex-auto max-sm:px-4 max-sm:text-[18px] sm:min-w-[240px] ${i === 0 ? "pill-ink" : ""}`}
+                >
+                  {label}
+                </button>
+              ))}
         </div>
 
         {screen === "signed-out" && (
@@ -270,7 +348,8 @@ export default function DayView(props: DayViewProps) {
         )}
       </main>
 
-      {screen && screen !== "signed-out" && (
+      {/* Setup is one tap per card, so the dock waits until it's done. */}
+      {screen && screen !== "signed-out" && screen !== "setup" && (
         <nav aria-label="Zeno" className="flex justify-center gap-2 pb-4 sm:gap-4 sm:pt-2 short:pt-0">
           <VoiceRing phase={voice.phase} levelRef={voice.levelRef} onClick={on.talk} />
           <DockButton ref={typeRef} label="Type" icon="type" onClick={on.type} />
@@ -347,7 +426,7 @@ function Countdown({ minutes, startedAt }: { minutes: number; startedAt: string 
 
 // Zeno's words. aria-hidden because the live region above the card reads the same line once.
 // shortcut: words keep a steady speaking pace, not real word timings; switch to TTS timepoints if the voice hook exposes them
-function Said({ text, mode }: { text: string; mode: "all" | "pace" | "wait" }) {
+function Said({ text, mode }: { text: string; mode: SayMode }) {
   return (
     <span className={mode === "all" ? undefined : mode} aria-hidden="true">
       {text.split(/\s+/).map((word, i) => (
@@ -359,26 +438,74 @@ function Said({ text, mode }: { text: string; mode: "all" | "pace" | "wait" }) {
   );
 }
 
-function Write({ onSend, onClose }: { onSend(text: string): void; onClose(): void }) {
+// The box stays, empty and focused, after each send, so the conversation can go on.
+function Write({ busy, onSend, onClose }: { busy: boolean; onSend(text: string): void; onClose(): void }) {
+  const box = useRef<HTMLTextAreaElement>(null);
+  const send = () => {
+    const text = box.current?.value.trim();
+    // While Zeno is busy the words wait in the box for the next Enter, so two turns never run at once.
+    if (!box.current || !text || busy) return;
+    onSend(text);
+    box.current.value = "";
+    box.current.focus();
+  };
   return (
-    <textarea
-      autoFocus
-      rows={1}
-      enterKeyHint="send"
-      className="write"
-      aria-label="Type to Zeno"
-      placeholder="Type here, then press Enter"
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          onClose();
-        } else if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-          event.preventDefault();
-          const text = event.currentTarget.value.trim();
-          if (text) onSend(text);
-        }
-      }}
-    />
+    <div className="flex items-start gap-4">
+      <textarea
+        ref={box}
+        autoFocus
+        rows={1}
+        enterKeyHint="send"
+        className="write min-w-0 flex-1"
+        aria-label="Type to Zeno"
+        placeholder="Type to Zeno"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onClose();
+          } else if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            send();
+          }
+        }}
+      />
+      <button type="button" aria-disabled={busy} onClick={send} className="pill pill-small pill-ink send shrink-0">
+        Send
+      </button>
+    </div>
+  );
+}
+
+function Paste({ onSave }: { onSave(text: string): void }) {
+  const box = useRef<HTMLTextAreaElement>(null);
+  return (
+    <div className="flex flex-col items-end gap-4">
+      <textarea ref={box} autoFocus rows={3} className="write paste" aria-label="Your notes" placeholder="Paste notes here" />
+      <button
+        type="button"
+        onClick={() => {
+          const text = box.current?.value.trim();
+          if (text) onSave(text);
+          else box.current?.focus();
+        }}
+        className="pill pill-small pill-ink"
+      >
+        Save notes
+      </button>
+    </div>
+  );
+}
+
+function Dots({ at, of }: { at: number; of: number }) {
+  return (
+    <ol
+      aria-label={at < of ? `Setup, card ${at + 1} of ${of}` : "Setup done"}
+      className="mt-4 flex h-9 w-full max-w-[760px] items-center justify-center gap-3 sm:mt-6 short:mt-3"
+    >
+      {Array.from({ length: of }, (_, i) => (
+        <li key={i} aria-current={i === at ? "step" : undefined} className={`size-3 rounded-full ${i <= at ? "bg-ink" : "bg-track"}`} />
+      ))}
+    </ol>
   );
 }
 
@@ -386,7 +513,7 @@ function DockButton({ label, icon, onClick, ref }: { label: string; icon: IconNa
   return (
     <button ref={ref} type="button" onClick={onClick} className="flex w-16 flex-col items-center gap-2 rounded-2xl font-medium sm:w-[88px]">
       <span className="grid h-[120px] place-items-center short:h-24">
-        <span className="knob">
+        <span className="knob tap">
           <Icon name={icon} />
         </span>
       </span>

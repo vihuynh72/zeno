@@ -361,7 +361,7 @@ body {
   inset: 0 0 auto;
   z-index: 20;
   --to: translate(calc(50% + 112px), calc(72px - 50%)) rotate(8deg) scale(0.17);
-  animation: to-pile 0.7s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+  animation: to-pile 0.3s cubic-bezier(0.65, 0, 0.35, 1) forwards;
 }
 @media (max-width: 1119px) {
   .pile {
@@ -373,6 +373,15 @@ body {
 }
 
 /* ---------- Controls ---------- */
+/* A press is a tap: no text selection, callout or grey flash on a long press, and no double-tap zoom wait. */
+button {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
@@ -385,16 +394,33 @@ body {
   background: var(--card);
   color: var(--ink);
   font-size: 20px;
+  line-height: 24px;
   font-weight: 700;
+  text-align: center;
   transition:
-    background-color 0.15s,
-    transform 0.1s;
+    background-color 0.12s,
+    transform 0.12s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.pill:hover {
-  background: var(--desk);
+/* Touch screens keep :hover after a tap, which read as a button stuck pressed; only real pointers get it. */
+@media (hover: hover) {
+  .pill:hover {
+    background: var(--desk);
+  }
+  .pill-ink:hover {
+    background: color-mix(in srgb, var(--ink) 82%, var(--card));
+  }
+  .pill-quiet:hover {
+    background: var(--card);
+  }
+  button:hover .knob {
+    background: var(--desk);
+  }
 }
-.pill:active {
-  transform: scale(0.98);
+/* Down at once, back up quickly on release. */
+.pill:active,
+button:active .tap {
+  transform: scale(0.96);
+  transition-duration: 0s;
 }
 .pill[aria-disabled="true"] {
   opacity: 0.5;
@@ -405,13 +431,22 @@ body {
   background: var(--ink);
   color: var(--card);
 }
-.pill-ink:hover {
-  background: color-mix(in srgb, var(--ink) 82%, var(--card));
+.pill-quiet {
+  border-color: var(--track);
+  background: transparent;
+  color: var(--ink-2);
 }
 .pill-small {
   min-height: 52px;
   padding: 0 24px;
   font-size: 18px;
+}
+/* Two chips a row on phones: less side padding, so a label wraps to two lines at most. */
+@media (max-width: 639px) {
+  .pill {
+    padding-inline: 16px;
+    font-size: 18px;
+  }
 }
 
 .knob {
@@ -422,10 +457,22 @@ body {
   border: 2px solid var(--ink);
   border-radius: 999px;
   background: var(--card);
-  transition: background-color 0.15s;
 }
-button:hover > .knob {
-  background: var(--desk);
+.tap {
+  transition:
+    background-color 0.12s,
+    transform 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Send sits on the same rule as the words being typed. */
+.lines .send {
+  margin-top: calc((var(--lh) - 52px) / 2);
+}
+/* Pasted notes scroll inside the card instead of stretching it. */
+.paste {
+  min-height: calc(var(--lh) * 2);
+  max-height: calc(var(--lh) * 5);
+  overflow-y: auto;
 }
 
 .dots circle {
@@ -448,7 +495,7 @@ button:hover > .knob {
   box-shadow: -1px 0 0 var(--track), 0 -1px 0 var(--track), -24px 0 48px -24px rgb(0 0 0 / 0.3);
 }
 .sheet[open] {
-  animation: sheet-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: sheet-in 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .sheet::backdrop {
   background: rgb(20 20 18 / 0.32);
@@ -493,7 +540,11 @@ button:hover > .knob {
 
 /* ---------- Motion ---------- */
 .rise {
-  animation: rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: rise 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+/* A newer line (the model's opening over the quick one) settles in place instead of popping. */
+.fade {
+  animation: swap 0.2s ease-out both;
 }
 .pace > span {
   animation: word 0.32s ease-out both;
@@ -512,6 +563,12 @@ button:hover > .knob {
   from {
     opacity: 0;
     filter: blur(4px);
+  }
+}
+@keyframes swap {
+  from {
+    opacity: 0;
+    filter: blur(2px);
   }
 }
 @keyframes stamp {
@@ -545,12 +602,14 @@ button:hover > .knob {
 /* The /preview gallery shows still frames for screenshots. */
 .still .pace > span,
 .still .rise,
+.still .fade,
 .still .sheet[open] {
   animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .rise,
+  .fade,
   .stamp,
   .sheet[open],
   .pace > span,
