@@ -1,6 +1,6 @@
 # Zeno handoff
 
-Last updated: 2026-10-29, evening PT, by Claude (Claude Code session with Vi).
+Last updated: 2026-10-31, 3:30 AM PT, by Claude (session 2, autonomous while Vi slept).
 Read this first, then the Linear doc **"Zeno hackathon build plan (Nov 4)"** (project Zeno, team VI).
 
 ## 0. Session 2 (2026-10-31, 1:21-4:21 AM PT, autonomous while Vi slept)
@@ -25,6 +25,38 @@ Almost instant first moment; Zeno talks by default; "good morning" at 1 AM was w
 ### Speed findings (production, 2026-10-31 1:27 AM)
 - First screen waited 4.3 s: page TTFB 114 ms and first paint 0.6 s were fine; `/api/day` took 4.3 s because it waited on the model opening (3.1-3.4 s at reasoning_effort low, about 800 reasoning tokens) behind Calendar, Gmail and Neon.
 - A talk turn without a tool call: 2.3 s (model 1.5 s at minimal, prompt about 2,200 tokens); with a tool call about 4-7 s (two model rounds).
+
+
+### Results (all live on main = production, commit f83989b)
+- **Voice works again.** The PR #3 merge had kept the text-only `use-voice` stub, so Zeno never spoke or listened. Restored the real hook (d8b95a2) and added `listenAuto` (`src/lib/listen.ts`): Muse Voice Transcribe through `/api/listen` first, Web Speech after the relay fails once.
+- **"Still up?" before 5 AM** on both client (`day-flow.ts`) and server (`brief.ts`); the model opening is time-aware (late night offers winding down or setting up tomorrow).
+- **Instant first card.** `GET /api/day` never calls the model (82-140 ms warm locally, 1.2 s cold on production with Google); the model opening and its options come from the new `GET /api/day/opening` (reasoning_effort minimal, 2-4 s) and swap in. The browser caches the last day, so a returning visit paints in 0.04-0.2 s (measured 84 ms locally, 220 ms first paint on production).
+- **Tap-first.** The opening comes with up to 3 options; every Zeno question comes with quick replies (strict JSON `{say, options}` together with tools: 10 of 10 live turns valid); "Something else" opens talking. Typing has a visible Send button.
+- **First-run setup** (5 one-tap cards, shown when a person has no memories and no goals) saves each answer as a memory; "paste notes" runs `POST /api/import` (Muse extracts up to 8 durable facts, never health or money). The opening after setup waits for those saves, so it can mention them.
+- **Desk:** Today now unfolds in the middle of the page: goal strip, calendar timeline, inbox (personal mail first; bulk mail is marked). Seed of the future workstation.
+- **Faster talk:** replies capped at about 25 words; turns without a tool call 0.7-1.8 s (was 2.3 s); turns with a tool call 2.2-3.7 s. Skipping the second model round was tested and rejected: Muse always puts a future-tense preamble next to tool calls.
+- **Daily streak:** "N days in a row" (days with a finished step, in the person's time zone) in the top bar on wide screens; the done count moves to the top bar on phones.
+- **Press feel:** no stuck pressed states, no long-press menus, hover only on devices that hover.
+- **Design finish review:** the shipped Impeccable finish reviewer returned **fix** (not ship); all 8 material fixes plus 2 live-test bugs were applied. The verdict pass that scores those fixes did NOT run (time). DESIGN.md was written from the shipped code and is committed. Its sidecar `.impeccable/design.json` and the review screenshots were lost when the worktree was removed; regenerate with the `impeccable-documenter` agent.
+- **Docs:** `docs/SUBMISSION.md` (description, both Meta fields, 3-minute shot list, demo-account prep, checklist), README updated, Linear VI-306 to VI-318.
+
+### How it was verified
+- Every merge: tsc, eslint, `next build`, 8 self-checks (`day-flow`, `desk-rows`, `agent`, `speak`, `session-json`, `streak`, `tz`, `listen-check`).
+- Production: page and every route answer; on Vi's account the first card painted in 220 ms and setup appeared (left untouched for Vi).
+- End to end on a local production build with real Muse and Neon as the fake user `agent-test@zeno.local` (all its rows deleted afterwards): setup, import, opening with options, quick replies that used the imported notes, a 5-step roadmap from a tool call, desk, focus timer, DONE stamp, check-in.
+- Not verified: speaking into a real microphone (needs Vi), Safari and Firefox, motion beyond still frames.
+
+### Known issues
+- The instant cache is keyed by first name, the date and part of the day; it is cleared on sign-out, but two accounts with the same first name on one browser could briefly see each other's cached card. Fix: add a stable account key to `DayResponse`.
+- Low items from reviews: a double-tap can answer two setup cards; failed setup saves are silent; an hours-old cached opening can be spoken if `/api/day/opening` fails; the desk closes when a text selection is dragged past its edge; no fold-back animation on close.
+- After a chip tap Zeno speaks but does not open the mic; the mic opens only on Talk or "Something else". Deliberate (no surprise hot mic); confirm with Vi.
+
+### Next steps (in order)
+1. Vi: do the first-run setup on production, then press Talk in Chrome and speak (real mic, Meta voice input).
+2. Run the finish-review verdict pass (fresh `impeccable-finish-reviewer` over new screenshots of `/preview`), then regenerate `.impeccable/design.json`.
+3. Demo account prep and the video (VI-317, `docs/SUBMISSION.md`).
+4. Calendar block (VI-315), then prep pack (VI-316); mail actions on the desk (VI-314) only if time remains.
+5. The known issues above.
 
 ## 1. What Zeno is, and the deadline
 
@@ -52,70 +84,47 @@ Zeno is a voice-first daily helper: it gives a short spoken brief from your cale
 - Visual world: **Index Card** (white ruled study card, blue rules, red margin line, the roadmap as a stack beneath, Atkinson Hyperlegible Next and Mono) fused with the **On Air dot ring** as the voice indicator around the Talk button. Light and dark follow the system. Vi: "simple, human, very ADHD friendly, not overwhelming". The card world must later grow into a workstation (calendar, inbox, AI as cards) without cluttering the guided flow.
 - Process: Claude merges to `main` itself after checks; Claude may change anything in the Linear Zeno project; ask Vi before big product choices.
 
-## 4. What is live on main / production
+## 4. What is live (main = production)
 
 | Commit | What |
 |---|---|
-| ff2f9a8 | Google token refresh (Reconnect Google when it fails), user time zone via `tz` cookie (`src/lib/tz.ts`), current time in the model context, honest source labels, Muse calls with `reasoning_effort` (chat minimal, brief low + strict JSON schema), chat history, parallel context loading with a 2-min Google cache, friendly auth error landing, Google token kept out of `/api/auth/session`, Achernar voice |
-| 02d69b0 | `src/lib/day.ts`: the API contract between the new screens and routes |
-| de74604 | Meta realtime speech-to-text: `/api/listen` WebSocket relay (`upgradeWebSocket` from `@vercel/functions`) to `muse-voice-transcribe-1.0`, browser adapter `listenMeta()` in `src/lib/listen-meta.ts` |
+| ff2f9a8 | Session 1 foundation: Google token refresh, user time zone (`src/lib/tz.ts`), honest sources, `reasoning_effort`, chat history, parallel context, Achernar voice |
+| de74604 | Muse Voice Transcribe realtime relay (`/api/listen`, `listenMeta`) |
+| 263fd6b, 7f5d950, 71108df | PRs #1-#3 (agent core, voice loop, Index Card screens), merged by Vi |
+| d8b95a2 | Real voice hook restored, `listenAuto`, "Still up?" greeting, extended `src/lib/day.ts` contract |
+| bc97e56, 4962493, a7dcc91 | Instant day + opening endpoint + options + memory save/import; tap-first UI + setup + press feel; desk |
+| ac25ca2, f83989b | Finish-review fixes + DESIGN.md; daily streak |
 
-Verified on production: time zone and honest brief; `/api/auth/session` has no access token; voice relay end to end (final transcript 0.58 s after speech ends, 10 live partials). The **old UI** (brief, calendar, email, goals, talk cards) is still what users see.
+## 5. In flight
 
-## 5. In flight: three open PRs (links in section 9)
+Nothing. All branches are merged into `main`; all worktrees were removed. Old local branches (`feat/*`, `design/finish`, `fix/foundation`) can be deleted.
 
-Three parallel tracks were built and adversarially reviewed by sub-agents in git worktrees under `.claude/worktrees/` on this Mac:
+## 6. Remaining work
 
-- `feat/agent-core`: tables `goals`, `steps`, `memories`; `src/lib/goals.ts`; `src/lib/agent.ts` (warm-friend prompt `ZENO_VOICE_PROMPT`, Muse tool loop: set_goal, update_steps, start_step, finish_step, remember, forget, with short refs s1/m1 instead of UUIDs); routes `GET /api/day`, `POST /api/talk`, `PATCH /api/steps/[id]`, `GET/DELETE /api/memory`.
-- `feat/voice-core`: `src/lib/use-voice.ts` (hands-free half-duplex loop: listening, thinking, speaking, listening), `src/lib/listen.ts` (`listenWeb`, Web Speech adapter with mic level), sentence-pipelined TTS in `src/lib/speak.ts`, `/api/speak` returning MP3 bytes.
-- `feat/guided-day-ui`: the Index Card screens, dot ring, Today and Memory sheets, `/preview` state gallery (dev only), deletes the old UI components and old routes. Ships a **stub** `src/lib/use-voice.ts`.
-
-### Merge order (next session's first job)
-1. Merge `feat/agent-core`, then `feat/voice-core` (both leave the old UI working).
-2. Merge `feat/guided-day-ui` last. Conflict on `src/lib/use-voice.ts`: **keep voice-core's real file**, drop the UI stub.
-3. Wire Meta voice input: `useVoice(options, { listen })` accepts an adapter; `listenMeta` (src/lib/listen-meta.ts) and `listenWeb` share the same `ListenHandlers` shape. Use `listenMeta` in Chrome and fall back to `listenWeb` on `network` / `unsupported`. Pass `levelRef` so the ring moves. Stop (not pause) the Meta session whenever Zeno is idle or in focus mode: an open session streams about 32 KB/s and Vercel Hobby's 10 GB transfer quota pauses the whole project for 30 days if exceeded. `listenMeta` already auto-stops after 2 min without speech or when the tab is hidden.
-4. Run all checks (section 7), deploy, test on production with Vi's account: typed turns end to end (set a goal, edit the roadmap, start, finish, remember), then ask Vi to test voice in Chrome.
-5. Impeccable finish: spawn the `impeccable-finish-reviewer` with screenshots and the direction contract, fix, then `impeccable-documenter` to write DESIGN.md (`.impeccable/surfaces/src-app-page-tsx.md` holds the contract, seed a8b9951e90f4c9e5).
-
-## 6. Remaining work after that (priority order)
-
-1. Calendar block: add `https://www.googleapis.com/auth/calendar.events` to the Google scope in `src/auth.ts` (everyone re-consents once), a `schedule_step` tool that only proposes, and a confirm button before writing (Meta AUP).
-2. Prep pack: Muse Responses API with the built-in `web_search` tool ($2.50 per 1k queries) for 2-3 sources on the first step. Cut first if late.
-3. Demo data in dotcainha@gmail.com (calendar week, a few emails), then record the 3-minute video (storyboard idea: problem, Start my day, spoken brief, talk about an avoided task, tiny first step and roadmap edited by voice, focus card, "done" stamp, under-the-hood slide on Muse Spark tools + Muse Voice Transcribe).
-4. Submission text: description, "use of Meta products" (Muse Spark with per-surface reasoning effort, tool calling that edits goals, roadmap and memory, strict JSON schema; Muse Voice Transcribe realtime with endpointing and keyword biasing through a Vercel WebSocket relay), "why Meta's models matter".
-5. README: local voice needs `npx vercel@65.7.0 dev --local`.
-6. Deferred past Nov 4 (record as unmet in Linear, per C09): journal, undo, drag planner, travel-aware conflicts, overfull-day tradeoffs, durable background work, email drafts and sending, Productive News, scheduled reflection, MCP, team mode, native apps.
+See "Next steps" in section 0, the Linear issues VI-306 to VI-318, and `docs/SUBMISSION.md`. Deferred past Nov 4 (record as unmet, per C09): journal, undo, drag planner, travel-aware conflicts, overfull-day tradeoffs, durable background work, email sending, Productive News, scheduled reflection, MCP, team mode, native apps.
 
 ## 7. How to work in this repo
 
-- Fresh checkout: `npm ci`, then `npx next typegen` (otherwise tsc fails on `LayoutProps`).
-- Checks before any merge: `npx tsc --noEmit --incremental false`, `npx eslint src/`, `npx next build`, `TZ=UTC node src/lib/tz.check.ts`, `node src/lib/session-json.check.ts`, `node --no-warnings scripts/listen-check.mjs`, plus any new `*.check.ts`.
+- Fresh checkout: `npm ci`, then `npx next typegen` (otherwise tsc fails on `LayoutProps`). If tsc complains about deleted routes, delete `.next/dev` (stale generated types).
+- Checks before any merge: `npx tsc --noEmit --incremental false`, `npx eslint src/`, `npx next build`, every `src/**/*.check.ts` (plain `node`), `node scripts/listen-check.mjs`.
 - Next 16 with `cacheComponents: true`: never export `runtime`, `dynamic`, `revalidate`, `fetchCache` or `dynamicParams` from a route; `maxDuration` is fine.
-- Voice locally: `npx vercel@65.7.0 dev --local` (plain `next dev` cannot upgrade WebSockets, so `/api/listen` fails there).
+- Voice locally: `npx vercel@65.7.0 dev --local` (plain `next dev` cannot upgrade WebSockets; Zeno then falls back to Web Speech).
+- Testing signed-in flows without touching Vi's account: run `next start` with `AUTH_TRUST_HOST=true`, mint an Auth.js session for `agent-test@zeno.local` with `@auth/core/jwt` `encode` (salt `authjs.session-token`, the app's AUTH_SECRET, never printed), use `http://127.0.0.1:<port>` (an old httpOnly cookie on `localhost` blocks it), and delete that user's rows afterwards.
 - Env var names (values in `.env.local` and Vercel, never in git): `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `META_MODEL_API_KEY`, `GOOGLE_TTS_API_KEY`, `DATABASE_URL`.
-- Muse facts (tested): `muse-spark-1.3` always reasons; `reasoning_effort: "minimal"` gives a first token in about 1-2 s on Zeno prompts (default effort took about 10 s); tool calls arrive with a spoken-sounding preamble ("Got it, I'll add that"): never speak it as the result; `tool_choice` only supports `"auto"`; Meta has no TTS.
+- Muse facts (tested): `muse-spark-1.3` always reasons; `reasoning_effort: "minimal"` gives a first token in about 1-2 s; tools plus a strict `response_format` json_schema work in one request; tool calls arrive with a future-tense preamble that must never be spoken as the result; `tool_choice` only supports `"auto"`; Meta has no TTS.
 - The server runs in UTC: use `src/lib/tz.ts` for anything about "today" or clock times.
+- A `/preview?state=<name>&theme=<light|dark>` gallery shows every screen in `next dev` (it is a 404 in production).
 
 ## 8. Open items for Vi
 
-- Click **Reconnect Google** on Zeno once (sessions from before the token fix have no refresh token).
-- Google OAuth audience: Vi said the app is "not testing or in production"; confirm in Google Auth Platform > Audience, and if it is in Testing, add dotcainha@gmail.com as a test user. Testing-mode refresh tokens expire after 7 days, so sign in again before the Nov 9 finals.
+- Go through first-run setup yourself, then try Talk with the real mic in Chrome.
+- Google OAuth audience: confirm in Google Auth Platform > Audience; if it is in Testing, add dotcainha@gmail.com as a test user. Testing-mode refresh tokens expire after 7 days, so sign in again before the Nov 9 finals.
+- "Import contacts": read as importing context (pasted notes). Say if you meant Google Contacts.
 - Rotate the Meta and Google keys after Nov 4 (they were pasted into a chat once); restrict the Google key to the Text-to-Speech API.
 - Local-only files (gitignored or untracked on purpose): `PRODUCT.md`, `.impeccable/` (design contract, decision sketches, detector config), `zeno-onboarding.html`.
 
-## 9. Pull requests (open, not merged)
+## 9. History notes
 
-All three passed tsc, eslint, next build and their self-checks after an adversarial review and fix pass. Merge in this order (section 5):
-
-1. https://github.com/vihuynh72/zeno/pull/1 `feat/agent-core`: goals, roadmap, memory, warm-friend agent with Muse tool calls. Live-measured: `minimal` effort gives concrete roadmaps with 5-10 min first steps; a turn with one tool call takes about 4-7 s.
-2. https://github.com/vihuynh72/zeno/pull/2 `feat/voice-core`: hands-free voice loop, sentence-pipelined speech, `listenWeb`.
-3. https://github.com/vihuynh72/zeno/pull/3 `feat/guided-day-ui`: the Index Card screens. Keep PR 2's `src/lib/use-voice.ts` over this PR's stub.
-
-Their worktrees (with node_modules installed) are still on this Mac: `.claude/worktrees/wf_5329a5e3-138-1` (PR 1), `-2` (PR 2), `-3` (PR 3). A `/preview?state=<name>&theme=<light|dark>` gallery shows every screen in `next dev`.
-
-Known small issues left (low severity, from the reviews):
-- PR 2: the phase becomes `speaking` slightly before audio starts, so words can lead the voice; without Web Audio, `start()` throws instead of falling back to the browser voice.
-- PR 3: Memory "Forget" loses focus; roadmap titles truncate on phones; a failed turn drops the typed text; "Start my day" after "Not now" replays the opening from page load; Sign out only lives in the Memory sheet.
-- PR 1: the AI opening may say "Good evening" a little before 6 PM (model's call); the 25 s abort path was never triggered live.
-
-Privacy note: one headless voice test used this Mac's real microphone, so about 10 s of ambient audio went to Chrome's speech service; the local log was deleted. Snippets may remain in that sub-agent's local Claude transcript.
+- Session 1 (2026-10-29): onboarding, research, foundation fixes, Meta voice relay, PRs #1-#3. Vi merged them; the PR #3 merge kept the `use-voice` stub (fixed in session 2).
+- Session 1 privacy note: one headless voice test used this Mac's real microphone (about 10 s of ambient audio to Chrome's speech service; local log deleted).
+- Session 2 privacy note: during a production test at 1:28 AM Zeno auto-listened for a few seconds after speaking before Claude stopped it; all later tests muted audio and used typing only.
