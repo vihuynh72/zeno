@@ -4,6 +4,8 @@ export type EmailSummary = {
   subject: string;
   snippet: string;
   unread: boolean;
+  // From someone who may expect an answer, not a bulk or no-reply sender.
+  personal: boolean;
 };
 
 type GmailListResponse = {
@@ -46,6 +48,10 @@ async function gmailFetch(accessToken: string, path: string) {
   return response.json();
 }
 
+// Gmail's Promotions, Social, Updates and Forums tabs, and no-reply senders: mail nobody answers.
+const BULK = /^CATEGORY_(PROMOTIONS|SOCIAL|UPDATES|FORUMS)$/;
+const NO_REPLY = /no-?reply|do-?not-?reply|notifications?@|mailer-daemon|newsletter/i;
+
 export async function getRecentEmail(accessToken: string): Promise<EmailSummary[]> {
   const list = (await gmailFetch(
     accessToken,
@@ -63,11 +69,16 @@ export async function getRecentEmail(accessToken: string): Promise<EmailSummary[
     ),
   );
 
-  return messages.map((message) => ({
-    id: message.id ?? crypto.randomUUID(),
-    from: header(message, "From") || "Unknown sender",
-    subject: header(message, "Subject") || "(no subject)",
-    snippet: (message.snippet ?? "").slice(0, 160),
-    unread: (message.labelIds ?? []).includes("UNREAD"),
-  }));
+  return messages.map((message) => {
+    const from = header(message, "From");
+    const labels = message.labelIds ?? [];
+    return {
+      id: message.id ?? crypto.randomUUID(),
+      from: from || "Unknown sender",
+      subject: header(message, "Subject") || "(no subject)",
+      snippet: (message.snippet ?? "").slice(0, 160),
+      unread: labels.includes("UNREAD"),
+      personal: Boolean(from) && !NO_REPLY.test(from) && !labels.some((label) => BULK.test(label)),
+    };
+  });
 }

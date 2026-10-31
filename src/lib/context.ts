@@ -1,7 +1,7 @@
 import type { Session } from "next-auth";
 import { getTodayEvents, type CalendarEvent } from "@/lib/calendar";
 import type { Goal, Memory } from "@/lib/day";
-import { databaseConfigured, ensureSchema, getSql } from "@/lib/db";
+import { databaseConfigured } from "@/lib/db";
 import { getRecentEmail, type EmailSummary } from "@/lib/gmail";
 import { currentGoal, listMemories } from "@/lib/goals";
 import { formatDate, formatTime } from "@/lib/tz";
@@ -11,10 +11,9 @@ export type UserContext = {
   timeZone: string;
   events: CalendarEvent[];
   calendarState: "ok" | "no-access" | "error";
-  tasks: Array<{ title: string; done: boolean }>;
   goal: Goal | null;
   memories: Memory[];
-  // The database: tasks, goal and memories load together.
+  // The database: goal and memories load together.
   tasksState: "ok" | "not-configured" | "error";
   emails: EmailSummary[];
   emailState: "ok" | "no-access" | "error";
@@ -40,7 +39,6 @@ export async function loadUserContext(
   const accessToken = session.error ? undefined : session.accessToken;
   let events: CalendarEvent[] = [];
   let calendarState: UserContext["calendarState"] = "no-access";
-  let tasks: UserContext["tasks"] = [];
   let goal: Goal | null = null;
   let memories: Memory[] = [];
   let tasksState: UserContext["tasksState"] = "not-configured";
@@ -57,25 +55,11 @@ export async function loadUserContext(
         calendarState = "error";
       }
     })(),
-    // Tasks, goal and memories are always read fresh so a goal added a moment ago is never missing.
+    // Goal and memories are always read fresh so a goal added a moment ago is never missing.
     (async () => {
       if (!databaseConfigured()) return;
       try {
-        await ensureSchema();
-        const sql = getSql();
-        const [rows, current, remembered] = await Promise.all([
-          sql`
-            SELECT title, done FROM tasks
-            WHERE user_email = ${email}
-            ORDER BY created_at ASC
-          `,
-          currentGoal(email),
-          listMemories(email),
-        ]);
-        tasks = rows.map((row) => ({
-          title: String(row.title),
-          done: Boolean(row.done),
-        }));
+        const [current, remembered] = await Promise.all([currentGoal(email), listMemories(email)]);
         goal = current;
         memories = remembered;
         tasksState = "ok";
@@ -94,7 +78,7 @@ export async function loadUserContext(
     })(),
   ]);
 
-  return { email, timeZone, events, calendarState, tasks, goal, memories, tasksState, emails, emailState };
+  return { email, timeZone, events, calendarState, goal, memories, tasksState, emails, emailState };
 }
 
 // Time, calendar and email. The Guided day leaves out the old tasks list, which its screens never show.
@@ -145,23 +129,5 @@ export function dayToText(context: UserContext, now = new Date()): string {
     );
   }
 
-  return lines.join("\n");
-}
-
-// The old brief and chat routes also see the tasks list.
-export function contextToText(context: UserContext, now = new Date()): string {
-  const lines = [dayToText(context, now)];
-  if (context.tasksState === "ok") {
-    if (context.tasks.length === 0) {
-      lines.push("Goals list: empty.");
-    } else {
-      lines.push("Goals list:");
-      for (const task of context.tasks) {
-        lines.push(`- [${task.done ? "done" : "open"}] ${task.title}`);
-      }
-    }
-  } else {
-    lines.push("Goals list: could not be read. Do not describe it as empty, and do not invent goals.");
-  }
   return lines.join("\n");
 }

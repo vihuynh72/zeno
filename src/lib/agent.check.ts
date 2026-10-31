@@ -7,8 +7,8 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { checkCall, cleanHistory, goalText, systemPrompt } = await import("./agent.ts");
-const { ruleOpening } = await import("./brief.ts");
+const { checkCall, cleanHistory, goalText, memoriesFrom, openingPrompt, parseReply, systemPrompt } = await import("./agent.ts");
+const { ruleOpening, ruleOptions, senderName } = await import("./brief.ts");
 
 // History: only the last 12 plain user and assistant turns, each cut to 2000 characters.
 const history = cleanHistory([
@@ -129,5 +129,71 @@ assert.equal(
   ruleOpening({ ...context, calendarState: "error", emailState: "no-access" }, "Vi", new Date("2026-10-30T03:00:00Z")),
   "Good evening, Vi. I couldn't check your calendar or inbox just now. What's one thing you want to move forward today?",
 );
+// Late at night an open step waits too, so the line matches the one late-night option.
+assert.equal(
+  ruleOpening({ ...context, goal }, "Sam", new Date("2026-10-30T08:10:00Z")),
+  "Still up, Sam? Want to set up tomorrow's first step before you sleep?",
+);
+
+// Replies are strict JSON; tappable answers only follow a question, and stay short and distinct.
+assert.deepEqual(parseReply('{"say":" Want to start? ","options":["Yes"," yes ","Not yet","Later","Too many"]}'), {
+  say: "Want to start?",
+  options: ["Yes", "Not yet", "Later"],
+});
+assert.deepEqual(parseReply('{"say":"Saved it.","options":["Okay"]}'), { say: "Saved it.", options: [] });
+assert.deepEqual(parseReply(`{"say":"Ready?","options":[3,null,"${"x".repeat(49)}","Go"]}`), { say: "Ready?", options: ["Go"] });
+for (const bad of [null, "", "I'll add that to your plan.", '{"say":"  "}', '{"options":[]}', "null", "[1]"]) {
+  assert.equal(parseReply(bad), null, String(bad));
+}
+
+// Imported notes: at most 8 distinct short memories; a reply that is not JSON is an error.
+const facts = Array.from({ length: 9 }, (_, i) => `Fact ${i}.`);
+assert.deepEqual(memoriesFrom(JSON.stringify({ memories: [" Takes CS 161. ", "takes cs 161.", "", 7, "x".repeat(201), ...facts] })), [
+  "Takes CS 161.",
+  ...facts.slice(0, 7),
+]);
+assert.deepEqual(memoriesFrom('{"memories":"Takes CS 161."}'), []);
+assert.throws(() => memoriesFrom("Sure! Here are the facts"), /not JSON/);
+
+// The model opening follows the person's clock: late night winds down, evening wraps up, morning starts.
+const night = openingPrompt(context, "Vi", [], new Date("2026-10-30T08:10:00Z")); // 1:10 AM in Los Angeles
+assert.match(night, /late at night: greet them as still up/);
+assert.doesNotMatch(night, /It is morning|It is evening|finished yesterday:/);
+assert.match(openingPrompt(context, "Vi", ["Draft the intro"], new Date("2026-10-30T02:15:00Z")), /It is evening[\s\S]*Steps they finished yesterday: Draft the intro\./);
+assert.match(openingPrompt(context, null, [], new Date("2026-10-29T15:40:00Z")), /It is morning/);
+
+// Rule options come only from real context: the open step, one personal unread email, the next event worth prepping.
+const at = (iso: string) => ({ start: iso, end: iso });
+const busy = {
+  ...context,
+  goal,
+  events: [
+    { id: "1", title: "Office hours", allDay: false, ...at("2026-10-29T15:00:00Z") }, // 8 AM, already past
+    { id: "2", title: "Club fair", allDay: true, start: "2026-10-29", end: "2026-10-30" },
+    { id: "3", title: "Lunch with Ana", allDay: false, ...at("2026-10-29T19:00:00Z") },
+    { id: "4", title: "CS 161 lecture", allDay: false, ...at("2026-10-29T20:00:00Z") },
+    { id: "5", title: "Biology lab", allDay: false, ...at("2026-10-29T22:00:00Z") },
+  ],
+  emails: [
+    { id: "a", from: "Deals <deals@shop.example>", subject: "Sale", snippet: "", unread: true, personal: false },
+    { id: "b", from: "Ana Lopez <ana@school.edu>", subject: "Hi", snippet: "", unread: false, personal: true },
+    { id: "c", from: "Jordan Kim <jkim@school.edu>", subject: "Slides?", snippet: "", unread: true, personal: true },
+  ],
+};
+const nine = new Date("2026-10-29T16:00:00Z"); // 9 AM in Los Angeles
+assert.deepEqual(ruleOptions(busy, nine), ["Keep going on write a thesis", "Reply to Jordan", "Prep for CS 161 lecture"]);
+// Before 5 AM it offers tomorrow instead of the day's picks.
+assert.deepEqual(ruleOptions(busy, new Date("2026-10-30T08:10:00Z")), ["Set up tomorrow"]);
+assert.deepEqual(ruleOptions(context, nine), []);
+const longStep = { ...goal, steps: [step("z", "AP exam review with flashcards and notes", 20, "todo")] };
+assert.deepEqual(ruleOptions({ ...context, goal: longStep }, nine), ["Keep going on AP exam review with…"]);
+assert.deepEqual(ruleOptions({ ...context, goal: { ...goal, steps: [step("y", "Done thing", 5, "done")] } }, nine), []);
+
+assert.equal(senderName("Ana Lopez <ana@school.edu>"), "Ana");
+assert.equal(senderName("ana.lopez@school.edu"), "Ana");
+assert.equal(senderName("<jkim@school.edu>"), "Jkim");
+assert.equal(senderName("Prof. Kim <kim@school.edu>"), "Prof. Kim");
+assert.equal(senderName("Dr. Ana Lopez <ana@school.edu>"), "Dr. Lopez");
+assert.equal(senderName('"Lopez, Ana" <ana@school.edu>'), "Lopez");
 
 console.log("agent self-check passed");
