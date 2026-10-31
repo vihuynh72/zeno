@@ -27,7 +27,7 @@ Almost instant first moment; Zeno talks by default; "good morning" at 1 AM was w
 - A talk turn without a tool call: 2.3 s (model 1.5 s at minimal, prompt about 2,200 tokens); with a tool call about 4-7 s (two model rounds).
 
 
-### Results (all live on main = production, commit f83989b)
+### Results (all live on main = production, commit 3ddaf78)
 - **Voice works again.** The PR #3 merge had kept the text-only `use-voice` stub, so Zeno never spoke or listened. Restored the real hook (d8b95a2) and added `listenAuto` (`src/lib/listen.ts`): Muse Voice Transcribe through `/api/listen` first, Web Speech after the relay fails once.
 - **"Still up?" before 5 AM** on both client (`day-flow.ts`) and server (`brief.ts`); the model opening is time-aware (late night offers winding down or setting up tomorrow).
 - **Instant first card.** `GET /api/day` never calls the model (82-140 ms warm locally, 1.2 s cold on production with Google); the model opening and its options come from the new `GET /api/day/opening` (reasoning_effort minimal, 2-4 s) and swap in. The browser caches the last day, so a returning visit paints in 0.04-0.2 s (measured 84 ms locally, 220 ms first paint on production).
@@ -38,24 +38,28 @@ Almost instant first moment; Zeno talks by default; "good morning" at 1 AM was w
 - **Daily streak:** "N days in a row" (days with a finished step, in the person's time zone) in the top bar on wide screens; the done count moves to the top bar on phones.
 - **Press feel:** no stuck pressed states, no long-press menus, hover only on devices that hover.
 - **Design finish review:** the shipped Impeccable finish reviewer returned **fix** (not ship); all 8 material fixes plus 2 live-test bugs were applied. The verdict pass that scores those fixes did NOT run (time). DESIGN.md was written from the shipped code and is committed. Its sidecar `.impeccable/design.json` and the review screenshots were lost when the worktree was removed; regenerate with the `impeccable-documenter` agent.
+- **Prep pack (VI-316):** on the plan card, "Find sources" asks Muse Spark through the Responses API with the built-in `web_search` tool for 2-3 sources for the current step (`POST /api/prep`, `src/lib/prep.ts`, `src/components/prep-pack.tsx`). Only the goal and step titles are sent; URLs are validated (https, real host, length) and stored on the step (`steps.prep` jsonb, added by `ensureSchema`, already present in the production database). Live: 4-7 s, 2 searches, real sources (NHS Couch to 5K, OpenStax limit laws); about $0.005 per prep.
+- **Hardening:** the instant cache is keyed by an opaque account key (HMAC of the email, never the email); another tab or account can no longer write its day back; a double-tap cannot answer two setup cards; failed setup saves are said plainly; a stale model opening is never kept or spoken; the desk no longer closes when text selection is dragged past its edge.
 - **Docs:** `docs/SUBMISSION.md` (description, both Meta fields, 3-minute shot list, demo-account prep, checklist), README updated, Linear VI-306 to VI-318.
 
 ### How it was verified
-- Every merge: tsc, eslint, `next build`, 8 self-checks (`day-flow`, `desk-rows`, `agent`, `speak`, `session-json`, `streak`, `tz`, `listen-check`).
+- Every merge: tsc, eslint, `next build`, and the self-checks (`day-flow`, `desk-rows`, `agent`, `speak`, `session-json`, `streak`, `prep`, `tz`, `listen-check`, plus `goals.check.ts`, which needs `DATABASE_URL` and writes then deletes a throwaway user).
 - Production: page and every route answer; on Vi's account the first card painted in 220 ms and setup appeared (left untouched for Vi).
 - End to end on a local production build with real Muse and Neon as the fake user `agent-test@zeno.local` (all its rows deleted afterwards): setup, import, opening with options, quick replies that used the imported notes, a 5-step roadmap from a tool call, desk, focus timer, DONE stamp, check-in.
 - Not verified: speaking into a real microphone (needs Vi), Safari and Firefox, motion beyond still frames.
 
 ### Known issues
-- The instant cache is keyed by first name, the date and part of the day; it is cleared on sign-out, but two accounts with the same first name on one browser could briefly see each other's cached card. Fix: add a stable account key to `DayResponse`.
-- Low items from reviews: a double-tap can answer two setup cards; failed setup saves are silent; an hours-old cached opening can be spoken if `/api/day/opening` fails; the desk closes when a text selection is dragged past its edge; no fold-back animation on close.
+- First paint can still show the previous account's saved card for a moment on a shared browser (the account is only known once `/api/day` answers; the card is then dropped). Fixing it fully needs a JS-readable account cookie.
+- Prep pack: URLs are checked for shape but not matched against the actual search results, so a plausible invented link could slip through; no rate limit on `/api/prep` (same exposure as `/api/talk`); private-IP hosts are not blocked; the first source link takes focus after a search.
+- Low items from reviews: when every setup save fails the summary still opens with "All set"; a save that fails after "Start my day" is silent; no fold-back animation when the desk closes.
 - After a chip tap Zeno speaks but does not open the mic; the mic opens only on Talk or "Something else". Deliberate (no surprise hot mic); confirm with Vi.
+- Copy to confirm with Vi: failed setup saves read "I couldn't save N of your answers. Tell me again anytime."
 
 ### Next steps (in order)
 1. Vi: do the first-run setup on production, then press Talk in Chrome and speak (real mic, Meta voice input).
 2. Run the finish-review verdict pass (fresh `impeccable-finish-reviewer` over new screenshots of `/preview`), then regenerate `.impeccable/design.json`.
 3. Demo account prep and the video (VI-317, `docs/SUBMISSION.md`).
-4. Calendar block (VI-315), then prep pack (VI-316); mail actions on the desk (VI-314) only if time remains.
+4. Calendar block (VI-315); mail actions on the desk (VI-314) only if time remains.
 5. The known issues above.
 
 ## 1. What Zeno is, and the deadline
@@ -94,6 +98,7 @@ Zeno is a voice-first daily helper: it gives a short spoken brief from your cale
 | d8b95a2 | Real voice hook restored, `listenAuto`, "Still up?" greeting, extended `src/lib/day.ts` contract |
 | bc97e56, 4962493, a7dcc91 | Instant day + opening endpoint + options + memory save/import; tap-first UI + setup + press feel; desk |
 | ac25ca2, f83989b | Finish-review fixes + DESIGN.md; daily streak |
+| 412490b, 76ac1fd, 3ddaf78 | Hardening (account-keyed cache, double-tap guard, honest save failures, no stale openings); prep pack with Muse web search |
 
 ## 5. In flight
 
