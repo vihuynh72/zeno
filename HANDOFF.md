@@ -3,6 +3,29 @@
 Last updated: 2026-10-29, evening PT, by Claude (Claude Code session with Vi).
 Read this first, then the Linear doc **"Zeno hackathon build plan (Nov 4)"** (project Zeno, team VI).
 
+## 0. Session 2 (2026-10-31, 1:21-4:21 AM PT, autonomous while Vi slept)
+
+### What Vi asked for (after testing the app)
+Almost instant first moment; Zeno talks by default; "good morning" at 1 AM was wrong; it is slow; typing feels wrong ("people like to consume, not create"), so give options to tap; short and fast-paced "like a reel"; habit-forming ("addictive") so people commit; a smarter AI with real context; a first-run setup where people onboard themselves and Zeno stores that context well; calendar and email in the middle of the page (a mail feature is coming); pressing a button for long "feels weird". Vi asked to be challenged where wrong.
+
+### Where I push back
+- "Addictive": build an honest habit loop (instant start, one tap to begin, a satisfying DONE stamp, a streak of days with a finished step), not infinite feeds or guilt. It fits judging (Impact) and Vi's own "not overwhelming" rule.
+- "Instant": the model cannot answer in 200 ms, so the first card renders from the browser cache and the model's words swap in when ready. That is the standard way to make it feel instant.
+- Sound "on by default": browsers block audio until the person taps once on a site they rarely visit; Zeno tries to speak and falls back to a "Hear Zeno" button, never an error.
+- "Import contacts": read as importing context (pasted notes, syllabus, to-dos). Google Contacts would need another OAuth scope and adds little before Nov 4. Confirm with Vi.
+
+### Feature map (Linear VI-306 to VI-318)
+1. Instant wake-up (VI-306), 2. tap-first choices (VI-307), 3. Zeno talks by default (VI-308), 4. 60-second first-run setup (VI-309), 5. import notes into memory (VI-310), 6. desk: calendar + inbox in the middle (VI-311, the workstation seed), 7. faster talk turns (VI-312), 8. daily streak + done pile (VI-313), 9. mail actions on the desk (VI-314), 10. calendar block (VI-315), 11. prep pack (VI-316), 12. demo video + submission (VI-317, due Nov 4), 13. context retrieval upgrade (VI-318).
+
+### Context design (how Zeno knows the person)
+- Sources, in prompt order: persona and what Zeno remembers (stable, so prompt caching can help), then today's calendar and inbox (live, cached 2 min per user), then the current goal and steps (Neon), then the last 12 turns (kept in the browser, never stored), then the new message.
+- Durable context lives in Neon `memories` (at most 50 per user, 200 chars each, visible in the Memory sheet, deletable). It is filled by: the first-run setup cards, the `remember` tool during talk, and pasted notes (`POST /api/import` extracts up to 8 facts). No embeddings: Meta offers no embedding model and 50 short facts fit in about 1-2k tokens. When memory or notes outgrow the prompt, add Postgres full-text search and send only the top matches (VI-318).
+- Never stored: audio, raw pasted notes (only the extracted facts), chat transcripts. Never sent to `*-contributor` models.
+
+### Speed findings (production, 2026-10-31 1:27 AM)
+- First screen waited 4.3 s: page TTFB 114 ms and first paint 0.6 s were fine; `/api/day` took 4.3 s because it waited on the model opening (3.1-3.4 s at reasoning_effort low, about 800 reasoning tokens) behind Calendar, Gmail and Neon.
+- A talk turn without a tool call: 2.3 s (model 1.5 s at minimal, prompt about 2,200 tokens); with a tool call about 4-7 s (two model rounds).
+
 ## 1. What Zeno is, and the deadline
 
 Zeno is a voice-first daily helper: it gives a short spoken brief from your calendar, inbox and goals, helps you pick one thing, shrinks it to a tiny first step (or a short roadmap), and walks you through it on one card at a time.
