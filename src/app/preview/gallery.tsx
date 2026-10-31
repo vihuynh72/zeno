@@ -27,6 +27,13 @@ const roadmap = (...statuses: Step["status"][]): Goal => ({
   ],
 });
 
+// The plan with sources already found for its first open step.
+const PREPPED = roadmap("done", "todo", "todo", "todo");
+PREPPED.steps[1].prep = [
+  { title: "How to brainstorm essay points", url: "https://example.com/brainstorm", why: "Three quick ways to find points worth arguing" },
+  { title: "Outlining a history essay", url: "https://example.com/outline", why: "Shows how each point maps to one paragraph" },
+];
+
 // Around the real clock (to the half hour), so the desk shows a past, a current and a later event.
 const at = (minutes: number) => new Date(Math.floor(Date.now() / 1_800_000) * 1_800_000 + minutes * 60_000).toISOString();
 
@@ -148,6 +155,11 @@ const STATES: Record<string, Fixture> = {
   plan: {
     screen: "plan",
     goal: roadmap("done", "todo", "todo", "todo"),
+    line: "Here's a plan in small steps. The first one takes ten minutes.",
+  },
+  prep: {
+    screen: "plan",
+    goal: PREPPED,
     line: "Here's a plan in small steps. The first one takes ten minutes.",
   },
   focus: { screen: "focus", goal: roadmap("done", "doing", "todo", "todo") },

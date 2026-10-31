@@ -1,4 +1,4 @@
-import type { Goal, Memory, StepStatus } from "@/lib/day";
+import type { Goal, Memory, PrepSource, StepStatus } from "@/lib/day";
 import { ensureSchema, getSql } from "@/lib/db";
 
 // A step for a new or edited roadmap; `id` keeps an existing todo step.
@@ -28,13 +28,15 @@ function goalFrom(rows: Record<string, unknown>[]): Goal | null {
         status: row.status as StepStatus,
         startedAt: iso(row.started_at),
         doneAt: iso(row.done_at),
+        // Checked by sourcesFrom before it was stored.
+        prep: (row.prep as PrepSource[] | null) ?? null,
       })),
   };
 }
 
 function goalQuery(email: string, goalId: string) {
   return getSql()`
-    SELECT g.id AS goal_id, g.title AS goal_title, s.id, s.title, s.minutes, s.status, s.started_at, s.done_at
+    SELECT g.id AS goal_id, g.title AS goal_title, s.id, s.title, s.minutes, s.status, s.started_at, s.done_at, s.prep
     FROM goals g LEFT JOIN steps s ON s.goal_id = g.id AND s.user_email = ${email}
     WHERE g.id = ${goalId} AND g.user_email = ${email}
     ORDER BY s.position
@@ -95,7 +97,9 @@ export async function replaceRemainingSteps(email: string, goalId: string, steps
     ...steps.map((step, index) =>
       step.id
         ? sql`
-            UPDATE steps SET title = ${step.title}, minutes = ${step.minutes}, position = ${start + index}
+            UPDATE steps SET title = ${step.title}, minutes = ${step.minutes}, position = ${start + index},
+              -- Sources found for the old title do not fit a renamed step.
+              prep = CASE WHEN title = ${step.title} THEN prep END
             WHERE id = ${step.id} AND goal_id = ${goalId} AND user_email = ${email} AND status = 'todo'
           `
         : sql`
@@ -154,6 +158,23 @@ export async function setStepStatus(email: string, stepId: string, status: StepS
     goalQuery(email, goalId),
   ]);
   return goalFrom(results[results.length - 1]);
+}
+
+// The step's title and its goal's: the only words the prep search ever sees.
+export async function stepTitles(email: string, stepId: string): Promise<{ goal: string; step: string } | null> {
+  await ensureSchema();
+  const [row] = await getSql()`
+    SELECT g.title AS goal, s.title AS step
+    FROM steps s JOIN goals g ON g.id = s.goal_id AND g.user_email = ${email}
+    WHERE s.id = ${stepId} AND s.user_email = ${email}
+  `;
+  return row ? { goal: String(row.goal), step: String(row.step) } : null;
+}
+
+// Only the latest search is kept.
+export async function savePrep(email: string, stepId: string, sources: PrepSource[]) {
+  await ensureSchema();
+  await getSql()`UPDATE steps SET prep = ${JSON.stringify(sources)}::jsonb WHERE id = ${stepId} AND user_email = ${email}`;
 }
 
 export async function listMemories(email: string): Promise<Memory[]> {

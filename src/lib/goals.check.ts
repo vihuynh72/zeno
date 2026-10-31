@@ -8,7 +8,7 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { currentGoal, replaceRemainingSteps, setGoal, setStepStatus } = await import("./goals.ts");
+const { currentGoal, replaceRemainingSteps, savePrep, setGoal, setStepStatus, stepTitles } = await import("./goals.ts");
 const { getSql } = await import("./db.ts");
 
 const email = `goals-check-${crypto.randomUUID()}@example.invalid`;
@@ -27,6 +27,18 @@ try {
   const extended = await currentGoal(email);
   assert.equal(extended?.id, quiz.id, "new steps reopen a finished goal");
   assert.deepEqual(extended.steps.map((step) => step.status), ["done", "todo"]);
+
+  // Sources stay on their step, for its owner only, until the step is renamed.
+  const todo = extended.steps[1];
+  const sources = [{ title: "Limits practice", url: "https://example.com/limits", why: "Five short problems with answers" }];
+  assert.equal(await stepTitles("someone-else@example.invalid", todo.id), null, "another person's step is not found");
+  assert.deepEqual(await stepTitles(email, todo.id), { goal: "Quiz prep", step: "Try five practice limits" });
+  await savePrep(email, todo.id, sources);
+  assert.deepEqual((await currentGoal(email))?.steps[1].prep, sources, "the latest sources come back with the goal");
+  await replaceRemainingSteps(email, quiz.id, [{ id: todo.id, title: "Try five practice limits", minutes: 10 }]);
+  assert.deepEqual((await currentGoal(email))?.steps[1].prep, sources, "a kept title keeps its sources");
+  await replaceRemainingSteps(email, quiz.id, [{ id: todo.id, title: "Try three practice limits", minutes: 10 }]);
+  assert.equal((await currentGoal(email))?.steps[1].prep, null, "a renamed step drops them");
 
   // Once that goal is done, the paused one comes back where it was left.
   await setStepStatus(email, extended.steps[1].id, "done");

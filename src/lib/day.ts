@@ -1,8 +1,11 @@
 // Contract between the Guided day screens and their routes:
 // GET /api/day, GET /api/day/opening, POST /api/talk, PATCH /api/steps/[id],
-// GET and POST /api/memory, DELETE /api/memory/[id], POST /api/import.
+// GET and POST /api/memory, DELETE /api/memory/[id], POST /api/import, POST /api/prep.
 
 export type StepStatus = "todo" | "doing" | "done" | "skipped";
+
+// A web page found for a step; url is always https.
+export type PrepSource = { title: string; url: string; why: string };
 
 export type Step = {
   id: string;
@@ -11,6 +14,8 @@ export type Step = {
   status: StepStatus;
   startedAt: string | null;
   doneAt: string | null;
+  // The latest sources found for this step, or null before anyone asked.
+  prep?: PrepSource[] | null;
 };
 
 // The one goal Zeno is helping with now; steps are in roadmap order.
@@ -61,6 +66,11 @@ export type TalkAction = {
 export type TalkResponse =
   | { state: "ok"; reply: string; goal: Goal | null; actions: TalkAction[]; options: string[] }
   | { state: "signed-out" | "no-key" | "bad-request" | "model-error" };
+
+// POST /api/prep body: { stepId }; up to 3 sources, found from the goal and step titles alone.
+export type PrepResponse =
+  | { state: "ok"; sources: PrepSource[] }
+  | { state: "signed-out" | "not-found" | "bad-request" | "error" };
 
 // PATCH /api/steps/[id] body: { status: StepStatus }
 export type StepResponse =
