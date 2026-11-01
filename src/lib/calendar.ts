@@ -66,14 +66,18 @@ export function calendarWriteFor(session: Pick<Session, "accessToken" | "error" 
   return session.scope?.split(" ").includes(CALENDAR_WRITE) ? "ok" : "needs-permission";
 }
 
+const ZENO_DESCRIPTION = "Added by Zeno";
+
 // The calendars the person shows in Google Calendar; hidden ones are skipped, as Google's own grid does.
+// The Zeno calendar always counts, even if Google lists it unselected, so Zeno's own blocks stay busy time.
 async function shownCalendars(accessToken: string): Promise<{ id: string; color: string | null }[]> {
-  const data = await google<{ items?: { id?: string; selected?: boolean; primary?: boolean; backgroundColor?: string }[] }>(
+  type Listed = { id?: string; selected?: boolean; primary?: boolean; description?: string; backgroundColor?: string };
+  const data = await google<{ items?: Listed[] }>(
     accessToken,
-    "/users/me/calendarList?maxResults=250&fields=items(id,selected,primary,backgroundColor)",
+    "/users/me/calendarList?maxResults=250&fields=items(id,selected,primary,description,backgroundColor)",
   );
   return (data.items ?? []).flatMap((item) =>
-    item.id && (item.selected || item.primary)
+    item.id && (item.selected || item.primary || item.description === ZENO_DESCRIPTION)
       ? [{ id: item.id, color: /^#[0-9a-f]{6}$/i.test(item.backgroundColor ?? "") ? item.backgroundColor! : null }]
       : [],
   );
@@ -153,7 +157,7 @@ function atHour(timeZone: string, dayStart: number, hour: number) {
   return guess - drift * HOUR;
 }
 
-export const WAKING = { from: 8, to: 23 };
+const WAKING = { from: 8, to: 23 };
 
 // Waking hours (whole local hours) over `days` local days, starting now rounded up to 5 minutes.
 export function wakingWindows(timeZone: string, now: Date, days: number, hours = WAKING): Interval[] {
@@ -265,7 +269,8 @@ function validBlock(raw: unknown, today: string, now: number): CalendarBlock | n
   if (kind === "deadline") clean = clean.replace(/^due:\s*/i, ""); // booking adds "Due: " itself
   const length = [...clean].length;
   if (length < 1 || length > 120) return null;
-  const block = { title: clean, kind: kind as CalendarBlock["kind"], ...(isId(stepId) ? { stepId } : {}) };
+  // Only a timed block is a step's booking; a deadline never links one.
+  const block = { title: clean, kind: kind as CalendarBlock["kind"], ...(isId(stepId) && kind !== "deadline" ? { stepId } : {}) };
 
   if (kind === "deadline") {
     const days = realDate(date) ? daysBetween(today, date) : NaN;
@@ -292,7 +297,7 @@ async function savedZenoCalendar(email: string): Promise<string | null> {
 export async function createZenoCalendar(accessToken: string, timeZone: string): Promise<string> {
   const created = await google<{ id?: string }>(accessToken, "/calendars", {
     method: "POST",
-    body: { summary: "Zeno", description: "Added by Zeno", timeZone },
+    body: { summary: "Zeno", description: ZENO_DESCRIPTION, timeZone },
   });
   if (!created.id) throw new Error("Calendar create returned no id");
   return created.id;
@@ -387,7 +392,8 @@ export async function unbookBlock(accessToken: string, email: string, eventId: s
   if (!calendarId) return;
   const stepId = await deleteBlock(accessToken, calendarId, eventId);
   // shortcut: undoing an older block of a step booked twice clears the newer link too; guard on event_id if re-booking ships
-  if (isId(stepId)) await setStepSchedule(email, stepId, null, null);
+  // The event is gone now, so a failed unlink is logged, not reported as a failed undo.
+  if (isId(stepId)) await setStepSchedule(email, stepId, null, null).catch((error) => console.error("Unlinking the step failed:", error));
 }
 
 // All-day events on the Zeno calendar (its "Due:" deadlines) from today through the next 14 days, soonest first.

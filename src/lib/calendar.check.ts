@@ -127,20 +127,23 @@ assert.equal(calendarFailure(new Error("network down")), "error");
             { id: "me@example.com", primary: true, selected: true, backgroundColor: "#9fe1e7" },
             { id: "hidden@example.com", selected: false },
             { id: "club@group.calendar.google.com", selected: true },
+            { id: "zeno-cal@group.calendar.google.com", selected: false, description: "Added by Zeno" },
           ],
         })
       : Response.json({
           calendars: {
             "me@example.com": { busy: [{ start: "2026-11-03T17:00:00Z", end: "2026-11-03T18:00:00Z" }] },
             "club@group.calendar.google.com": { errors: [{ domain: "global", reason: "notFound" }] },
+            "zeno-cal@group.calendar.google.com": { busy: [{ start: "2026-11-03T16:30:00Z", end: "2026-11-03T16:40:00Z" }] },
           },
         }),
   );
-  const slots = await freeSlots("tok", LA, { minutes: 30 }, new Date("2026-11-03T15:58:00Z"));
+  const slots = await freeSlots("tok", LA, { minutes: 15 }, new Date("2026-11-03T15:58:00Z"));
   assert.deepEqual(slots, [
-    { start: "2026-11-03T16:00:00.000Z", end: "2026-11-03T17:00:00.000Z" },
+    { start: "2026-11-03T16:00:00.000Z", end: "2026-11-03T16:30:00.000Z" },
+    { start: "2026-11-03T16:40:00.000Z", end: "2026-11-03T17:00:00.000Z" },
     { start: "2026-11-03T18:00:00.000Z", end: "2026-11-04T07:00:00.000Z" },
-  ]);
+  ], "a Zeno block counts as busy even when its calendar is listed unselected");
   assert.equal(calls.length, 2);
   assert.equal(calls[0].method, "GET");
   assert.ok(calls[0].url.startsWith(`${API}/users/me/calendarList?`));
@@ -154,7 +157,7 @@ assert.equal(calendarFailure(new Error("network down")), "error");
       timeMin: "2026-11-03T16:00:00.000Z",
       timeMax: "2026-11-04T07:00:00.000Z",
       timeZone: LA,
-      items: [{ id: "me@example.com" }, { id: "club@group.calendar.google.com" }],
+      items: [{ id: "me@example.com" }, { id: "club@group.calendar.google.com" }, { id: "zeno-cal@group.calendar.google.com" }],
     },
   });
   stub(() => Response.json({}));
@@ -174,9 +177,9 @@ assert.equal(calendarFailure(new Error("network down")), "error");
     [{ title: "Email Prof Patel", kind: "step", stepId, start: "2026-11-02T17:30:00.000Z", end: "2026-11-02T17:40:00.000Z" }],
     "times normalize to UTC; whitespace collapses; a client eventId is dropped",
   );
-  assert.deepEqual(one({ title: "Due: Lab report", kind: "deadline", date: "2026-11-06" }), [
+  assert.deepEqual(one({ title: "Due: Lab report", kind: "deadline", date: "2026-11-06", stepId }), [
     { title: "Lab report", kind: "deadline", date: "2026-11-06" },
-  ]);
+  ], "Due: is added by booking, and a deadline never links a step");
   assert.deepEqual(one({ title: "Buy stamps", kind: "todo", start: "2026-11-02T18:00:00Z", end: "2026-11-02T18:05:00Z", stepId: null }), [
     { title: "Buy stamps", kind: "todo", start: "2026-11-02T18:00:00.000Z", end: "2026-11-02T18:05:00.000Z" },
   ]);
