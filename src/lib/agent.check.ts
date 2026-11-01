@@ -112,6 +112,7 @@ assert.deepEqual(
   {
     name: "set_goal",
     title: "Clean my room",
+    due: null,
     steps: [
       { id: undefined, title: "Clear the floor", minutes: 10 },
       { id: undefined, title: "Make the bed", minutes: null },
@@ -119,6 +120,8 @@ assert.deepEqual(
   },
 );
 const fine = { title: "Clear the floor", minutes: 10 };
+assert.equal((checkCall(call("set_goal", { title: "Paper", due: "2026-11-13", steps: [fine] }), null, refs) as { due?: string }).due, "2026-11-13");
+for (const due of ["Nov 13", "2026-11-31", 20261113]) assert.ok(errorOf("set_goal", { title: "Paper", due, steps: [fine] }), String(due));
 assert.ok(errorOf("set_goal", "{not json"));
 assert.ok(errorOf("set_goal", { title: "Room", steps: [] }));
 assert.ok(errorOf("set_goal", { title: "Room", steps: Array(8).fill(fine) }));

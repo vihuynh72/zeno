@@ -111,7 +111,7 @@ export async function loadUserContext(
 export function dayToText(context: UserContext, now = new Date()): string {
   const lines: string[] = [];
   const zone = context.timeZone;
-  lines.push(`Today is ${formatDate(now, zone)}. It is now ${formatTime(now, zone)} (${zone}).`);
+  lines.push(`Today is ${formatDate(now, zone)} (${localDate(zone, now)}). It is now ${formatTime(now, zone)} (${zone}).`);
 
   if (context.calendarState === "ok") {
     if (context.events.length === 0) {

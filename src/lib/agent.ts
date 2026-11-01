@@ -249,6 +249,8 @@ export type Notes = {
 
 // Patterns come only from what the person did, never from what they say or paste.
 const SAID_GROUPS = MEMORY_GROUPS.filter((group) => group !== "patterns");
+const GROUP_GUIDE =
+  "about: who they are; routines: classes, shifts and regular plans; projects: projects and deadlines; interests: interests and life goals; people: people who matter to them; work-style: how they work best.";
 
 const NOTES_SCHEMA = {
   name: "notes",
@@ -301,9 +303,9 @@ export async function extractNotes(notes: string, timeZone: string, now = new Da
         content: [
           "You read a person's pasted notes for Zeno, a helper that plans their days, and return three lists.",
           "facts: lasting facts that help plan later days, like classes, work shifts, routines, how they like to work, people who matter, interests and goals.",
-          "Write each as one short sentence about them, at most 20 words, like 'Takes CS 161 on Tuesdays and Thursdays.', with its group: about, routines, projects, interests, people or work-style.",
+          `Write each as one short sentence about them, at most 20 words, like 'Takes CS 161 on Tuesdays and Thursdays.', with its group. ${GROUP_GUIDE}`,
           "todos: things they need to do, each a short title starting with a verb, an honest estimate in whole minutes, and due as YYYY-MM-DD when the notes give a day, else an empty string.",
-          "deadlines: due dates and exams that have a date, each a short title and its date as YYYY-MM-DD.",
+          "deadlines: due dates and exams that have a date, each a short title naming the thing without the word due, like 'CS 161 problem set 3', and its date as YYYY-MM-DD.",
           `Today is ${formatDate(now, timeZone)} (${today}); a day like 'friday' or 'Nov 18' means the next one on or after today.`,
           "A to-do or deadline is never also a fact. Skip one-off chatter.",
           `For facts: ${NEVER_KEEP}`,
@@ -409,6 +411,7 @@ export const TOOLS = [
         type: "object",
         properties: {
           title: { type: "string", description: "Short name for the goal, in their words." },
+          due: { type: "string", description: "Its due date as YYYY-MM-DD, only when they gave one." },
           steps: {
             type: "array",
             minItems: 1,
@@ -482,12 +485,7 @@ export const TOOLS = [
         type: "object",
         properties: {
           text: { type: "string", description: "One short sentence, like 'Works best right after class.'" },
-          group: {
-            type: "string",
-            enum: SAID_GROUPS,
-            description:
-              "about: who they are; routines: classes, shifts and regular plans; projects: projects and deadlines; interests: interests and life goals; people: people who matter to them; work-style: how they work best.",
-          },
+          group: { type: "string", enum: SAID_GROUPS, description: GROUP_GUIDE },
         },
         required: ["text", "group"],
       },
@@ -527,7 +525,7 @@ export const TOOLS = [
 
 type Checked =
   | { error: string }
-  | { name: "set_goal"; title: string; steps: NewStep[] }
+  | { name: "set_goal"; title: string; due: string | null; steps: NewStep[] }
   | { name: "update_steps"; goalId: string; steps: NewStep[] }
   | { name: "step"; stepId: string; status: StepStatus }
   | { name: "remember"; text: string; group: MemoryGroup }
@@ -570,8 +568,10 @@ export function checkCall(call: ToolCall, goal: Goal | null, refs: Refs, slots: 
     case "set_goal": {
       const title = titleOf(args?.title);
       const steps = stepsOf(args?.steps, null, refs);
+      const due = args?.due === undefined || args.due === "" ? null : args.due;
       if (!title) return { error: "title must be 1 to 120 characters" };
-      return typeof steps === "string" ? { error: steps } : { name: "set_goal", title, steps };
+      if (due !== null && !isDate(due)) return { error: "due must be a date written YYYY-MM-DD" };
+      return typeof steps === "string" ? { error: steps } : { name: "set_goal", title, due, steps };
     }
     case "update_steps": {
       if (!goal) return { error: "there is no current goal yet, use set_goal" };
@@ -679,7 +679,7 @@ export async function talk(
       }
       const changed =
         checked.name === "set_goal"
-          ? await setGoal(email, checked.title, checked.steps)
+          ? await setGoal(email, checked.title, checked.steps, checked.due)
           : checked.name === "update_steps"
             ? await replaceRemainingSteps(email, checked.goalId, checked.steps)
             : await setStepStatus(email, checked.stepId, checked.status);
