@@ -59,6 +59,24 @@ The weights changed on 2026-11-01: group accuracy came in at 10, retrieval went 
 
 The overall score is out of 100. Compare runs on it, then read the per-run "failures" list. It shows the user turn, Zeno's reply, the actions and the stored rows for every miss. A keyword miss can be a phrasing the matcher doesn't know rather than a real failure, so check the evidence before you change the prompt. Model calls are a lower bound (one call per turn, plus one when a tool saved something). The exact number is the count of `Model call` lines in the server log.
 
+## Review fixes (2026-11-01)
+
+Branch `integrate/backend` after the review fixes (pattern hysteresis, every to-do kept, talk proposals only on request with write access, the never-list on talk and import, calendar and email text marked as data), `--runs 1` three times against a fresh local production build on port 3231. Run 3 used the final wording of the data rule.
+
+| metric | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| store recall (talk, import) | 83%, 100% | 100%, 100% | 100%, 100% |
+| import precision, explicit recall, group accuracy | 100% | 100% | 100% |
+| junk rate, duplicate rows | 0 | 0 | 0 |
+| request errors | 1 | 0 | 0 |
+| update, forget, retrieval | 100% | 100% | 100% |
+| health kept (report only) | 2 | 2 | 2 |
+| false claims | 1 | 1 | 0 |
+| talk p50 / p95 ms | 2103 / 5725 | 2904 / 6044 | 2158 / 6904 |
+| **overall** | **95.0** | **97.5** | **100.0** |
+
+Run 1's talk miss was a Muse timeout on the soccer turn (the request error), not a scoring change. Both false claims were the same true "already noted" reply on the bio lab duplicate seen before. Health kept: the Lexapro line from talk and the insulin refill to-do from import, in every run (drug names are open for Vi).
+
 ## Integrated backend (2026-11-01)
 
 Branch `integrate/backend` (calendar, brain, profile and streak merged, then wired), `--runs 1` twice against a local production build on port 3231. From here the import expects the poster board errand kept as a "To do:" memory (7 import items, 1 import junk item), so earlier import scores are not directly comparable.
