@@ -8,7 +8,7 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { blockedFact, eventLine, extractFacts, factsFrom, readSources, sameFact, sensitiveEmail } = await import("./profile.ts");
+const { balanced, blockedFact, eventLine, extractFacts, factsFrom, readSources, sameFact, sensitiveEmail } = await import("./profile.ts");
 const { cleanBody } = await import("./gmail.ts");
 const { factKey } = await import("./goals.ts");
 
@@ -133,6 +133,13 @@ assert.deepEqual(factsFrom(reply1, known, 20), [
 ]);
 assert.equal(factsFrom(reply1, [], 1).length, 1, "capped");
 assert.deepEqual(factsFrom('{"facts": "nope"}', [], 8), []);
+
+// Over the cap every group gets a turn; under it nothing changes.
+const fact = (text: string, group: "routines" | "people" | "projects") => ({ text, group, source: "calendar" as const });
+const busy = [fact("r1", "routines"), fact("r2", "routines"), fact("r3", "routines"), fact("p1", "projects"), fact("r4", "routines"), fact("q1", "people"), fact("p2", "projects")];
+assert.deepEqual(balanced(busy, 4).map((item) => item.text), ["r1", "r2", "p1", "q1"]);
+assert.deepEqual(balanced(busy, 6).map((item) => item.text), ["r1", "r2", "r3", "p1", "q1", "p2"]);
+assert.deepEqual(balanced(busy, 20), busy);
 assert.throws(() => factsFrom("Sure! Here are the facts", [], 8), /not JSON/);
 
 // ---- Events become one line each; a repeating event once, with its rule.

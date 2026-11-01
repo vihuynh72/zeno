@@ -223,8 +223,10 @@ function profilePrompt(max: number): string {
     "Health details are fine when they help planning.",
     "Each fact is one short sentence about them, at most 20 words, starting with a verb and without their name, like",
     "'Takes BIO 121 lab Wednesdays 2 to 4:50 PM.' or 'Works library shifts Tuesdays and Thursdays 8 to noon.'",
-    "group: about (school, major, year, job, home town), routines (classes, shifts, practices and other repeating plans), projects (projects, exams, deadlines),",
-    "interests (interests, hobbies and goals, health and fitness included), people (one person's name and role to them, nothing private about them),",
+    "group: about (school, major, year, job, home town, health conditions that affect planning),",
+    "routines (classes, shifts, practices and other repeating plans), projects (projects, exams, deadlines),",
+    "interests (interests, hobbies and life goals, fitness and weight goals included),",
+    "people (one fact per key person, their name and role to them, like 'Has Prof Kim for CHEM 1A.' or 'Reports to Sam, the cafe shift lead.'; nothing private about them),",
     "work-style (how they work best, only when the data shows it). source: calendar or email, where you saw it.",
     "Never write a fact about sexual or reproductive health, religion, politics, immigration or visa status, account balances, debts or money owed,",
     "passwords, codes or verification links, or anything private about another person. Never copy links, codes, phone numbers, street addresses or ID numbers.",
@@ -311,7 +313,19 @@ export async function extractFacts({ name, email, timeZone, known, events, email
     lists.flatMap((list) => list[index] ?? []),
   ).flat();
   // The two calls can find the same fact.
-  return merged.filter((fact, index) => !merged.slice(0, index).some((other) => sameFact(other.text, fact.text))).slice(0, max);
+  return balanced(merged.filter((fact, index) => !merged.slice(0, index).some((other) => sameFact(other.text, fact.text))), max);
+}
+
+// Over the cap, each group takes its turn (every group's best fact first, then the second best...), so a busy
+// calendar cannot crowd out the people and goals. The facts kept stay in their order.
+export function balanced(facts: ProfileFact[], max: number): ProfileFact[] {
+  const seen = new Map<string, number>();
+  return facts
+    .map((fact, index) => ({ fact, index, turn: seen.set(fact.group, (seen.get(fact.group) ?? 0) + 1).get(fact.group) ?? 0 }))
+    .sort((a, b) => a.turn - b.turn || a.index - b.index)
+    .slice(0, max)
+    .sort((a, b) => a.index - b.index)
+    .map(({ fact }) => fact);
 }
 
 const iso = (value: unknown) => new Date(value as string).toISOString();
