@@ -159,8 +159,9 @@ export function dayToText(context: UserContext, now = new Date()): string {
     );
   }
 
-  // Free time and deadlines come from the same calendars, so they share the honesty rule above.
-  // shortcut: a failed read of either arrives as an empty list, so an empty one is never said as "none"; have loadUserContext mark a failed read (null) to say "could not be read".
+  // Free time and deadlines come from the same calendars, so they share the honesty rule above. An empty list is
+  // never said as "none" (the free time may cover today only, and deadlines also live in memory); one that failed to
+  // load on its own (freeState, deadlinesState) is said as unread.
   if (context.calendarState === "ok") {
     const days = [
       ["today", localDate(zone, now)],
@@ -171,8 +172,11 @@ export function dayToText(context: UserContext, now = new Date()): string {
       const said = slots.map((slot) => `${formatTime(slot.start, zone)} to ${formatTime(slot.end, zone)}`).join(", ");
       if (said) lines.push(`Free time ${label}: ${said}.`);
     }
+    if (context.free.length === 0 && context.freeState === "error") lines.push("Free time: could not be read. Do not invent free time.");
     if (context.deadlines.length > 0) {
       lines.push(`Deadlines: ${context.deadlines.map((item) => `${item.title}, due ${dueIn(item.daysLeft)} (${item.date})`).join("; ")}.`);
+    } else if (context.deadlinesState === "error") {
+      lines.push("Deadlines on their Zeno calendar: could not be read. Do not say they have none.");
     }
   } else {
     lines.push("Free time and deadlines: could not be read. Do not invent free time or deadlines.");

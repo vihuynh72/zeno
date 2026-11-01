@@ -475,6 +475,10 @@ const unread = dayToText({ ...context, calendarState: "no-access", tasksState: "
 assert.match(unread, /Free time and deadlines: could not be read\. Do not invent free time or deadlines\./);
 assert.match(unread, /Streak and progress: could not be read\. Do not guess them\./);
 assert.doesNotMatch(unread, /Free time today/);
+// The calendar read, but free time or the Zeno calendar's deadlines failed on their own: said as unread, never "none".
+const partly = dayToText({ ...context, freeState: "error", deadlinesState: "error" }, at);
+assert.match(partly, /\nFree time: could not be read\. Do not invent free time\.\nDeadlines on their Zeno calendar: could not be read\. Do not say they have none\.\n/);
+assert.doesNotMatch(dayToText({ ...context, freeState: "error", free: [{ start: "2026-11-02T17:30:00Z", end: "2026-11-02T19:00:00Z" }] }, at), /could not be read/, "talk's own read of free time stands");
 
 // The model opening follows the person's clock and names one pick; an at-risk evening leads with the streak.
 const night = openingPrompt(context, "Vi", [], new Map(), new Date("2026-10-30T08:10:00Z")); // 1:10 AM in Los Angeles
