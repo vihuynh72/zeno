@@ -7,7 +7,7 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { kindOf, patternsIn } = await import("./patterns.ts");
+const { alreadySaid, kindOf, patternsIn } = await import("./patterns.ts");
 
 const LA = "America/Los_Angeles";
 // A local time in Los Angeles in October (PDT, UTC-7); Date.UTC rolls a late hour into the next day.
@@ -61,14 +61,28 @@ assert.deepEqual(
   [],
   "steps without an estimate or never started don't count",
 );
-
-// Long steps skipped: 3 skips or more of steps planned at 30 minutes or more.
+// Spans that say nothing about the person: timers left running overnight, and Start then Done 20 seconds later.
+assert.deepEqual(patternsIn([took(10, 5, 5), took(11, 5, 5), took(12, 5, 1440), took(13, 5, 1440)], LA), [], "left running");
+assert.deepEqual(patternsIn([10, 11, 12, 13].map((day) => took(day, 5, 1 / 3)), LA), [], "two quick taps");
+// The longest span that counts is 3x the plan or 2 hours, whichever is longer.
+const tens = [10, 11, 12].map((day) => took(day, 5, 10));
+assert.deepEqual(patternsIn([...tens, took(13, 5, 120)], LA), ["Steps take you about 2x as long as you plan."], "2 hours counts");
+assert.deepEqual(patternsIn([...tens, took(13, 5, 121)], LA), [], "past 2 hours doesn't");
 assert.deepEqual(
-  patternsIn([skipped(la(10, 9), 30), skipped(la(11, 9), 45), skipped(la(12, 9), 60)], LA),
-  ["You often skip steps of 30 minutes or more."],
-  "three long skips",
+  patternsIn([10, 11, 12, 13].map((day) => took(day, 10, 40)), LA),
+  ["Steps take you 3x as long as you plan, or more."],
+  "4x is said as 3x or more",
 );
+
+// Long steps skipped: 3 skips or more of steps planned at 30 minutes or more, and at least half of those steps.
+const longSkips = [skipped(la(10, 9), 30), skipped(la(11, 9), 45), skipped(la(12, 9), 60)];
+assert.deepEqual(patternsIn(longSkips, LA), ["You often skip steps of 30 minutes or more."], "three long skips");
 assert.deepEqual(patternsIn([skipped(la(10, 9), 30), skipped(la(11, 9), 45), skipped(la(12, 9), 25)], LA), [], "25 minutes is not long");
+const longDone = (count: number) => Array.from({ length: count }, (_, index) => done(la(13 + index, 15), 30));
+assert.deepEqual(patternsIn([...longSkips, ...longDone(3)], LA), ["You often skip steps of 30 minutes or more."], "3 of 6 skipped");
+assert.deepEqual(patternsIn([...longSkips, ...longDone(4)], LA), [], "3 of 7 is not often");
+const mornings = Array.from({ length: 37 }, (_, index) => done(la(10 + (index % 5), 9, index), 30));
+assert.deepEqual(patternsIn([...mornings, ...longSkips], LA), ["You finish most steps in the morning."], "3 skips among 40");
 
 // Tiny starts: 3 finished steps or more of 10 minutes or less, finished more often than longer ones.
 const tiny = [done(la(10, 9), 5), done(la(11, 9), 10), done(la(12, 9), 5)];
@@ -98,5 +112,26 @@ assert.ok(all.every((text) => kindOf(text) !== null), "every pattern has a kind"
 assert.equal(kindOf("You finish most steps in the morning."), kindOf(all[0]), "a new time of day replaces the old one");
 assert.equal(kindOf("Steps take you less time than you plan."), kindOf(all[1]), "faster replaces slower");
 assert.equal(kindOf("Maya has bio lab on Tuesdays."), null, "other memories are never replaced");
+
+// What was already said stays: the same sentence, or a real-length multiple half a step away.
+const times = (multiple: number) => `Steps take you about ${multiple}x as long as you plan.`;
+assert.ok(alreadySaid(times(2), [{ text: times(1.5) }]) && alreadySaid(times(1.5), [{ text: times(2) }]), "half a step is noise");
+assert.ok(alreadySaid("Steps take you 3x as long as you plan, or more.", [{ text: times(2.5) }]), "2.5x to 3x is noise too");
+assert.ok(!alreadySaid(times(2.5), [{ text: times(1.5) }]), "a whole 1x is news");
+assert.ok(!alreadySaid("Steps take you less time than you plan.", [{ text: times(1.5) }]), "faster replaces slower");
+assert.ok(!alreadySaid(all[0], [{ text: "You finish most steps in the morning." }]), "a new time of day replaces the old one");
+assert.ok(alreadySaid(all[0], [{ text: all[0] }]), "the same sentence");
+// A median that wobbles around 1.75 (17 and 18 minutes for 10-minute steps), one step at a time, as learnFromSteps sees it.
+let said: { text: string }[] = [];
+let rewrites = 0;
+const wobble = [17, 18, 17, 18, 17, 18, 17].map((real, index) => took(10 + index, 10, real));
+for (let count = 4; count <= wobble.length; count++) {
+  for (const text of patternsIn(wobble.slice(0, count), LA).filter((found) => kindOf(found) === kindOf(times(2)))) {
+    if (alreadySaid(text, said)) continue;
+    said = [{ text }];
+    rewrites++;
+  }
+}
+assert.equal(rewrites, 1, "said once, then kept");
 
 console.log("patterns self-check passed");

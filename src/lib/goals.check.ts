@@ -8,8 +8,10 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { currentGoal, replaceRemainingSteps, savePrep, setGoal, setStepStatus, stepTitles } = await import("./goals.ts");
+const { changeStepStatus, currentGoal, finishedDays, recentSteps, replaceRemainingSteps, savePrep, setGoal, setStepStatus, stepTitles } =
+  await import("./goals.ts");
 const { getSql } = await import("./db.ts");
+const { localDate } = await import("./tz.ts");
 
 const email = `goals-check-${crypto.randomUUID()}@example.invalid`;
 try {
@@ -48,6 +50,35 @@ try {
 
   await setStepStatus(email, back.steps[1].id, "done");
   assert.equal(await currentGoal(email), null, "nothing is left");
+
+  // Start, Start again, Done, Done again: a restart opens a fresh timer; a repeated Done keeps the first finish.
+  const report = await setGoal(email, "Lab report", [
+    { title: "Outline the methods", minutes: 5 },
+    { title: "Read the rubric", minutes: 30 },
+  ]);
+  const [outline, rubric] = report.steps.map((step) => step.id);
+  const started = await changeStepStatus(email, outline, "doing");
+  const restarted = await changeStepStatus(email, outline, "doing");
+  const finished = await changeStepStatus(email, outline, "done");
+  const repeated = await changeStepStatus(email, outline, "done");
+  const first = (change: typeof started) => change?.goal.steps[0];
+  assert.deepEqual([started?.before, restarted?.before, finished?.before, repeated?.before], ["todo", "doing", "doing", "done"]);
+  assert.ok(Date.parse(first(restarted)?.startedAt ?? "") > Date.parse(first(started)?.startedAt ?? ""), "Start again restarts the timer");
+  assert.equal(first(repeated)?.doneAt, first(finished)?.doneAt, "a repeated Done keeps the first finish");
+  assert.equal(first(repeated)?.startedAt, first(restarted)?.startedAt, "Done keeps the start");
+  await setStepStatus(email, rubric, "skipped");
+
+  // History: a step finished 31 days ago still counts for the streak's days, not for patterns.
+  await getSql()`UPDATE steps SET done_at = now() - interval '31 days' WHERE id = ${essay.steps[0].id}`;
+  const zone = "Pacific/Kiritimati"; // UTC+14: its date differs from the server's for 14 hours a day
+  assert.deepEqual(
+    await finishedDays(email, zone),
+    { [localDate(zone, new Date(Date.now() - 31 * 86_400_000))]: 1, [localDate(zone)]: 4 },
+    "finished steps per local date over the whole history; skips don't count",
+  );
+  const recent = await recentSteps(email);
+  assert.deepEqual(recent.map((step) => step.status), ["done", "done", "done", "done", "skipped"], "the last 30 days, oldest first");
+  assert.deepEqual(recent.map((step) => step.startedAt !== null), [false, false, false, true, false], "only the outline was started");
 } finally {
   // Steps go with their goals.
   await getSql()`DELETE FROM goals WHERE user_email = ${email}`;

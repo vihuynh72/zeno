@@ -118,9 +118,18 @@ export async function replaceRemainingSteps(email: string, goalId: string, steps
 }
 
 export async function setStepStatus(email: string, stepId: string, status: StepStatus): Promise<Goal | null> {
+  return (await changeStepStatus(email, stepId, status))?.goal ?? null;
+}
+
+// setStepStatus, plus the status the step had before, so a route can tell a new finish from a repeated tap.
+export async function changeStepStatus(
+  email: string,
+  stepId: string,
+  status: StepStatus,
+): Promise<{ goal: Goal; before: StepStatus } | null> {
   await ensureSchema();
   const sql = getSql();
-  const [step] = await sql`SELECT goal_id FROM steps WHERE id = ${stepId} AND user_email = ${email}`;
+  const [step] = await sql`SELECT goal_id, status FROM steps WHERE id = ${stepId} AND user_email = ${email}`;
   if (!step) return null;
   const goalId = String(step.goal_id);
   const results = await sql.transaction([
@@ -133,14 +142,12 @@ export async function setStepStatus(email: string, stepId: string, status: StepS
           `,
         ]
       : []),
-    // A repeated tap keeps the first start and finish, so real length and the streak's days stay true.
+    // Start always restarts the timer (a step left running yesterday opens fresh); a repeated Done or Skip keeps
+    // the first finish, so the streak's days stay true.
     sql`
       UPDATE steps SET
         status = ${status},
-        started_at = CASE
-          WHEN ${status} = 'doing' THEN CASE WHEN status = 'doing' THEN coalesce(started_at, now()) ELSE now() END
-          WHEN ${status} = 'todo' THEN NULL
-          ELSE started_at END,
+        started_at = CASE WHEN ${status} = 'doing' THEN now() WHEN ${status} = 'todo' THEN NULL ELSE started_at END,
         done_at = CASE WHEN ${status} IN ('done', 'skipped') THEN
           CASE WHEN status = ${status} THEN coalesce(done_at, now()) ELSE now() END END
       WHERE id = ${stepId} AND user_email = ${email}
@@ -162,7 +169,8 @@ export async function setStepStatus(email: string, stepId: string, status: StepS
     `,
     goalQuery(email, goalId),
   ]);
-  return goalFrom(results[results.length - 1]);
+  const goal = goalFrom(results[results.length - 1]);
+  return goal && { goal, before: step.status as StepStatus };
 }
 
 // The step's title and its goal's: the only words the prep search ever sees.

@@ -77,7 +77,8 @@ export type Progress = {
   restDaysLeft: number;
   // Evening, a live streak and nothing finished today: the first card offers a 5-minute save.
   atRisk: boolean;
-  // A milestone (3, 7, 14, 30, 50, 100) reached today, for the bigger stamp; null otherwise.
+  // A milestone (3, 7, 14, 30, 50, 100) for the bigger stamp, set only on the PATCH /api/steps response whose Done
+  // finished the day's first step; null otherwise (GET /api/day, skips, repeated or later Dones).
   milestone: number | null;
 };
 

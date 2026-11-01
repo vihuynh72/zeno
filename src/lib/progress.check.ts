@@ -12,7 +12,8 @@ const { progressFrom } = await import("./progress.ts");
 
 const LA = "America/Los_Angeles";
 const TOKYO = "Asia/Tokyo";
-const at = (finished: Record<string, number>, now: string, zone = LA) => progressFrom(finished, zone, new Date(now));
+const at = (finished: Record<string, number>, now: string, zone = LA, justFinished = false) =>
+  progressFrom(finished, zone, new Date(now), justFinished);
 const future = ["future", "future", "future", "future", "future", "future"];
 
 // Empty history, noon on Thursday Oct 29.
@@ -26,15 +27,17 @@ assert.deepEqual(
 const week = { "2026-10-25": 1, "2026-10-26": 2, "2026-10-27": 1, "2026-10-28": 3, "2026-10-30": 1, "2026-10-31": 1 };
 // Noon on Sunday Nov 1, the day DST ends, just after the day's first step: the 7th day in a row.
 assert.deepEqual(
-  at({ ...week, "2026-11-01": 1 }, "2026-11-01T20:00:00Z"),
+  at({ ...week, "2026-11-01": 1 }, "2026-11-01T20:00:00Z", LA, true),
   {
     streak: 7, best: 7, week: ["done", "done", "done", "rest", "done", "done", "done"],
     stepsThisWeek: 9, restDaysLeft: 0, atRisk: false, milestone: 7,
   },
   "a full week with one rest day reaches 7",
 );
-const second = at({ ...week, "2026-11-01": 2 }, "2026-11-01T20:00:00Z");
+const second = at({ ...week, "2026-11-01": 2 }, "2026-11-01T20:00:00Z", LA, true);
 assert.deepEqual([second.milestone, second.stepsThisWeek], [null, 10], "the second step that day gets the normal stamp");
+// The same counts after a request that finished nothing new (a page load, a skip, a repeated Done): no milestone.
+assert.equal(at({ ...week, "2026-11-01": 1 }, "2026-11-01T20:05:00Z").milestone, null, "a later skip doesn't celebrate again");
 
 // Evenings on the DST day: 01:30Z is 5:30 PM PST (6:30 PM in PDT), 02:30Z is 6:30 PM.
 assert.equal(at(week, "2026-11-02T01:30:00Z").atRisk, false, "5:30 PM is not evening yet");
@@ -56,12 +59,17 @@ const spring = at({ "2026-03-07": 1, "2026-03-08": 1 }, "2026-03-09T07:30:00Z");
 assert.deepEqual([spring.week[0], spring.streak, spring.restDaysLeft], ["today", 2, 1], "DST starts on a Monday");
 
 // Milestones at 3, 7, 14, 30, 50 and 100 only.
-assert.equal(at({ "2026-10-29": 1, "2026-10-30": 1, "2026-10-31": 1 }, "2026-10-31T19:00:00Z").milestone, 3, "3 days");
-assert.equal(at({ "2026-10-28": 1, "2026-10-29": 1, "2026-10-30": 1, "2026-10-31": 1 }, "2026-10-31T19:00:00Z").milestone, null, "4 days");
+assert.equal(at({ "2026-10-29": 1, "2026-10-30": 1, "2026-10-31": 1 }, "2026-10-31T19:00:00Z", LA, true).milestone, 3, "3 days");
+assert.equal(
+  at({ "2026-10-28": 1, "2026-10-29": 1, "2026-10-30": 1, "2026-10-31": 1 }, "2026-10-31T19:00:00Z", LA, true).milestone,
+  null,
+  "4 days",
+);
 const hundred = Object.fromEntries(
   Array.from({ length: 100 }, (_, index) => [new Date(Date.UTC(2026, 9, 31 - 99 + index)).toISOString().slice(0, 10), 1]),
 );
-assert.deepEqual([at(hundred, "2026-10-31T19:00:00Z").streak, at(hundred, "2026-10-31T19:00:00Z").milestone], [100, 100], "100 days");
+const day100 = at(hundred, "2026-10-31T19:00:00Z", LA, true);
+assert.deepEqual([day100.streak, day100.milestone], [100, 100], "100 days");
 
 // A person in Tokyo (UTC+9, no DST): their dates and evenings, not the server's.
 const tokyo = { "2026-10-30": 1, "2026-10-31": 1 };

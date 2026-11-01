@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import type { StepResponse, StepStatus } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
-import { isId, setStepStatus } from "@/lib/goals";
+import { changeStepStatus, isId } from "@/lib/goals";
 import { learnFromSteps } from "@/lib/patterns";
 import { progressFor } from "@/lib/progress";
 import { timeZoneFrom } from "@/lib/tz";
@@ -28,16 +28,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const timeZone = timeZoneFrom((await cookies()).get("tz")?.value);
 
   try {
-    const goal = await setStepStatus(email, id, status as StepStatus);
-    if (!goal) {
+    const changed = await changeStepStatus(email, id, status as StepStatus);
+    if (!changed) {
       return NextResponse.json({ state: "not-found" } satisfies StepResponse, { status: 404 });
     }
+    const goal = changed.goal;
     if (status !== "done" && status !== "skipped") {
       return NextResponse.json({ state: "ok", goal } satisfies StepResponse);
     }
     // Extras: the status change is already saved, so a failure here only leaves them out.
     const [progress, learned] = await Promise.all([
-      progressFor(email, timeZone).catch((error) => {
+      progressFor(email, timeZone, status === "done" && changed.before !== "done").catch((error) => {
         console.error("Progress failed:", error);
         return undefined;
       }),

@@ -25,24 +25,28 @@ export function patternsIn(steps: StepRecord[], timeZone: string): string[] {
     for (const [part, count] of parts) if (count / done.length >= 0.6) found.push(`You finish most steps ${part}.`);
   }
 
-  // Real length versus the estimate: 4 started steps or more with an estimate, compared by the median.
+  // Real length versus the estimate: 4 started steps or more with an estimate, compared by the median. Under a
+  // minute (two quick taps) or longer than both 3x the plan and 2 hours (a timer left running) says nothing.
   const ratios = done
-    .flatMap((step) =>
-      step.minutes && step.startedAt ? [(Date.parse(step.doneAt) - Date.parse(step.startedAt)) / 60_000 / step.minutes] : [],
-    )
+    .flatMap((step) => {
+      const real = step.startedAt ? (Date.parse(step.doneAt) - Date.parse(step.startedAt)) / 60_000 : 0;
+      return step.minutes && real >= 1 && real <= Math.max(3 * step.minutes, 120) ? [real / step.minutes] : [];
+    })
     .sort((a, b) => a - b);
   if (ratios.length >= 4) {
     const half = ratios.length / 2;
     const median = ratios.length % 2 ? ratios[Math.floor(half)] : (ratios[half - 1] + ratios[half]) / 2;
-    // Rounded to the half, so small changes don't rewrite the memory.
-    if (median >= 1.5) found.push(`Steps take you about ${Math.round(median * 2) / 2}x as long as you plan.`);
-    else if (median <= 0.7) found.push("Steps take you less time than you plan.");
+    // To the half, up to 3x: a bigger number would only stretch plans past the 5-minute start.
+    const multiple = Math.min(Math.round(median * 2) / 2, 3);
+    if (median >= 1.5) {
+      found.push(multiple < 3 ? `Steps take you about ${multiple}x as long as you plan.` : "Steps take you 3x as long as you plan, or more.");
+    } else if (median <= 0.7) found.push("Steps take you less time than you plan.");
   }
 
-  // Long steps skipped: 3 skips or more of steps planned at 30 minutes or more.
-  if (steps.filter((step) => step.status === "skipped" && (step.minutes ?? 0) >= 30).length >= 3) {
-    found.push("You often skip steps of 30 minutes or more.");
-  }
+  // Long steps skipped: 3 skips or more of steps planned at 30 minutes or more, and at least half of those steps.
+  const long = steps.filter((step) => (step.minutes ?? 0) >= 30);
+  const longSkips = long.filter((step) => step.status === "skipped").length;
+  if (longSkips >= 3 && longSkips / long.length >= 0.5) found.push("You often skip steps of 30 minutes or more.");
 
   // Tiny starts: 3 finished steps or more of 10 minutes or less, finished more often than longer ones.
   const finishRate = (list: StepRecord[]) => list.filter((step) => step.status === "done").length / list.length;
@@ -58,13 +62,25 @@ export function patternsIn(steps: StepRecord[], timeZone: string): string[] {
   return found;
 }
 
+const multipleOf = (text: string) => Number(/(\d+(?:\.\d+)?)x /.exec(text)?.[1]);
+
+// Already said: the same sentence, or a real-length multiple within half a step of the one said, which is noise
+// (a median near 1.75 would flip between 1.5x and 2x on every step).
+export function alreadySaid(text: string, known: { text: string }[]): boolean {
+  return known.some(
+    (memory) =>
+      memory.text === text ||
+      (kindOf(memory.text) === kindOf(text) && Math.abs(multipleOf(memory.text) - multipleOf(text)) < 1),
+  );
+}
+
 // After a step is finished or skipped: a new pattern in the last 30 days, saved as a "patterns" memory and
 // returned, or null. One new pattern per call, so each one gets its own Noted line.
 export async function learnFromSteps(email: string, timeZone: string): Promise<Memory | null> {
   const [steps, memories] = await Promise.all([recentSteps(email), listMemories(email)]);
   const known = memories.filter((memory) => memory.source === "pattern");
   for (const text of patternsIn(steps, timeZone)) {
-    if (known.some((memory) => memory.text === text)) continue;
+    if (alreadySaid(text, known)) continue;
     // A changed pattern (say, a new time of day) replaces the old one of its kind.
     await Promise.all(
       known.filter((memory) => kindOf(memory.text) === kindOf(text)).map((memory) => forgetMemory(email, memory.id)),
