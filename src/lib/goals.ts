@@ -133,11 +133,16 @@ export async function setStepStatus(email: string, stepId: string, status: StepS
           `,
         ]
       : []),
+    // A repeated tap keeps the first start and finish, so real length and the streak's days stay true.
     sql`
       UPDATE steps SET
         status = ${status},
-        started_at = CASE WHEN ${status} = 'doing' THEN now() WHEN ${status} = 'todo' THEN NULL ELSE started_at END,
-        done_at = CASE WHEN ${status} IN ('done', 'skipped') THEN now() END
+        started_at = CASE
+          WHEN ${status} = 'doing' THEN CASE WHEN status = 'doing' THEN coalesce(started_at, now()) ELSE now() END
+          WHEN ${status} = 'todo' THEN NULL
+          ELSE started_at END,
+        done_at = CASE WHEN ${status} IN ('done', 'skipped') THEN
+          CASE WHEN status = ${status} THEN coalesce(done_at, now()) ELSE now() END END
       WHERE id = ${stepId} AND user_email = ${email}
     `,
     // Nothing left to do finishes the goal; reopening a step brings it back.
@@ -238,24 +243,33 @@ export async function stepsFinishedBetween(email: string, start: Date, end: Date
   return rows.map((row) => String(row.title));
 }
 
-// Local calendar dates (YYYY-MM-DD in timeZone) with a finished step.
-// shortcut: only the last 60 days are read, so a longer run shows as about 60; widen it when someone gets there.
-export async function finishedDays(email: string, timeZone: string): Promise<string[]> {
+// Finished steps per local calendar date (YYYY-MM-DD in timeZone), over the whole history so the best streak is true.
+// One row per active day, so even years of use stay small.
+export async function finishedDays(email: string, timeZone: string): Promise<Record<string, number>> {
   await ensureSchema();
   const rows = await getSql()`
-    SELECT DISTINCT to_char(done_at AT TIME ZONE ${timeZone}, 'YYYY-MM-DD') AS day FROM steps
-    WHERE user_email = ${email} AND status = 'done' AND done_at > now() - interval '60 days'
+    SELECT to_char(done_at AT TIME ZONE ${timeZone}, 'YYYY-MM-DD') AS day, count(*) AS steps FROM steps
+    WHERE user_email = ${email} AND status = 'done' AND done_at <= now()
+    GROUP BY 1
   `;
-  return rows.map((row) => String(row.day));
+  return Object.fromEntries(rows.map((row) => [String(row.day), Number(row.steps)]));
 }
 
-// Days in a row in `dates`, counted back from today, or from yesterday while today has none yet.
-// Both are local calendar dates; stepping them in UTC means a DST change never skips or repeats a day.
-export function streakFrom(dates: string[], today: string): number {
-  const done = new Set(dates);
-  const day = new Date(`${today}T00:00:00Z`);
-  if (!done.has(today)) day.setUTCDate(day.getUTCDate() - 1);
-  let streak = 0;
-  for (; done.has(day.toISOString().slice(0, 10)); day.setUTCDate(day.getUTCDate() - 1)) streak++;
-  return streak;
+// A finished or skipped step, for the patterns Zeno notices; startedAt is null when it was never started.
+export type StepRecord = { status: "done" | "skipped"; minutes: number | null; startedAt: string | null; doneAt: string };
+
+// Steps finished or skipped in the last 30 days, oldest first.
+export async function recentSteps(email: string): Promise<StepRecord[]> {
+  await ensureSchema();
+  const rows = await getSql()`
+    SELECT status, minutes, started_at, done_at FROM steps
+    WHERE user_email = ${email} AND status IN ('done', 'skipped') AND done_at > now() - interval '30 days'
+    ORDER BY done_at
+  `;
+  return rows.map((row) => ({
+    status: row.status === "done" ? "done" : "skipped",
+    minutes: row.minutes === null ? null : Number(row.minutes),
+    startedAt: iso(row.started_at),
+    doneAt: iso(row.done_at) as string,
+  }));
 }
