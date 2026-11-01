@@ -11,10 +11,10 @@ import { timeZoneFrom } from "@/lib/tz";
 
 export const maxDuration = 30;
 
-// Body { text }: pasted notes, 1 to 8000 characters. Facts and deadlines become grouped memories (keepNotes saves
-// them one at a time, so addMemory's dedupe and group caps see each save); with calendar access, deadlines and the
-// to-dos that fit free time in the next 3 days come back as a proposal to book (nothing is written to the calendar
-// here). Without it the proposal is empty. Every to-do that can't be booked is kept as a "To do:" memory.
+// Body { text }: pasted notes, 1 to 8000 characters. Facts, deadlines and to-dos become grouped memories (keepNotes
+// saves them one at a time, so addMemory's dedupe and group caps see each save); when Zeno may write to its calendar,
+// deadlines and the to-dos that fit free time in the next 3 days also come back as a proposal to book (nothing is
+// written to the calendar here). Without write access (no access, or a sign-in from before it) the proposal is empty.
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.email) {
@@ -31,7 +31,8 @@ export async function POST(request: Request) {
 
   const email = session.user.email;
   const timeZone = timeZoneFrom((await cookies()).get("tz")?.value);
-  const accessToken = calendarWriteFor(session) === "no-access" ? undefined : session.accessToken;
+  // A proposal booking would refuse (needs-permission) is no proposal.
+  const accessToken = calendarWriteFor(session) === "ok" ? session.accessToken : undefined;
   try {
     // Free time loads while the model reads; a failed read still proposes the deadlines.
     const [notes, slots] = await Promise.all([

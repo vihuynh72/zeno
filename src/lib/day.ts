@@ -77,8 +77,8 @@ export type Progress = {
   restDaysLeft: number;
   // Evening, a live streak and nothing finished today: the first card offers a 5-minute save.
   atRisk: boolean;
-  // A milestone (3, 7, 14, 30, 50, 100) for the bigger stamp, set only on the PATCH /api/steps response whose Done
-  // finished the day's first step; null otherwise (GET /api/day, skips, repeated or later Dones).
+  // A milestone (3, 7, 14, 30, 50, 100) for the bigger stamp, set only on the PATCH /api/steps or POST /api/talk
+  // response whose Done finished the day's first step; null otherwise (GET /api/day, skips, repeated or later Dones).
   milestone: number | null;
 };
 
@@ -141,7 +141,8 @@ export type TalkResponse =
       goal: Goal | null;
       actions: TalkAction[];
       options: string[];
-      // Blocks Zeno suggests booking; nothing is written until the person taps.
+      // Blocks Zeno suggests booking; nothing is written until the person taps. Always empty unless the request
+      // body has proposals: true (a client that shows and books them) and calendarWrite is "ok".
       proposal: CalendarBlock[];
       // Set when the turn finished or skipped a step, as PATCH /api/steps/[id] returns it, milestone included.
       progress?: Progress;
@@ -174,9 +175,9 @@ export type SaveMemoryResponse =
   | { state: "ok"; memories: Memory[] }
   | { state: "signed-out" | "bad-request" | "error" };
 
-// POST /api/import body { text }: pasted notes become grouped memories plus a proposal to book their
-// deadlines (all-day) and to-dos (timed, at free times). Nothing is booked until the person taps. A to-do that
-// can't be booked (no free time in 3 days, or no calendar access) is kept as a "To do: …" memory instead.
+// POST /api/import body { text }: pasted notes become grouped memories (every to-do as a "To do: …" memory, dropped
+// once it is booked), plus, when calendarWrite is "ok", a proposal to book their deadlines (all-day) and the to-dos
+// that fit free time in 3 days (timed). Nothing is booked until the person taps; an unbooked proposal loses nothing.
 export type ImportResponse =
   | { state: "ok"; memories: Memory[]; proposal: CalendarBlock[] }
   | { state: "signed-out" | "bad-request" | "error" };

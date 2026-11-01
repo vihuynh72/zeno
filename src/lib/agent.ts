@@ -13,8 +13,9 @@ import {
   type StepStatus,
   type TalkAction,
 } from "@/lib/day";
-import { addMemory, changeStepStatus, forgetMemory, replaceRemainingSteps, setGoal, type NewStep } from "@/lib/goals";
+import { addMemory, changeStepStatus, forgetMemory, replaceRemainingSteps, setGoal, todoMemory, type NewStep } from "@/lib/goals";
 import { learnFromSteps } from "@/lib/patterns";
+import { blockedFact } from "@/lib/profile";
 import { progressFor } from "@/lib/progress";
 import { formatDate, localDate, localHour, localIso } from "@/lib/tz";
 
@@ -342,7 +343,13 @@ export async function extractNotes(notes: string, timeZone: string, now = new Da
   return notesFrom(text, today);
 }
 
-// The model's lists are untrusted: keep what fits, drop the rest. Past dates are no deadline.
+// The never-list backstop for pasted notes, as scans have it. Not its "instructions" guard, which is for other
+// people's mail: the notes are the person's own, and "Read the lab instructions" is a real to-do.
+// blockedFact checks "instructions" last, so it names that only when nothing else matched.
+const neverKept = (text: string) => ![null, "instructions"].includes(blockedFact(text));
+
+// The model's lists are untrusted: keep what fits and is not on the never-list, drop the rest. Past dates are no
+// deadline.
 export function notesFrom(text: string, today: string): Notes {
   let data: { facts?: unknown; todos?: unknown; deadlines?: unknown } | null;
   try {
@@ -357,19 +364,19 @@ export function notesFrom(text: string, today: string): Notes {
   const facts = items(data?.facts).flatMap((item) => {
     const fact = typeof item.text === "string" ? item.text.trim() : "";
     const key = fact.toLowerCase();
-    if (!fact || fact.length > 200 || seen.has(key)) return [];
+    if (!fact || fact.length > 200 || seen.has(key) || neverKept(fact)) return [];
     seen.add(key);
     return [{ text: fact, group: SAID_GROUPS.find((group) => group === item.group) ?? "about" }];
   });
   const todos = items(data?.todos).flatMap((item) => {
     const title = titleOf(item.title);
-    return title && isMinutes(item.minutes)
+    return title && isMinutes(item.minutes) && !neverKept(title)
       ? [{ title, minutes: item.minutes, due: isDate(item.due) && item.due >= today ? item.due : null }]
       : [];
   });
   const deadlines = items(data?.deadlines).flatMap((item) => {
     const title = titleOf(item.title);
-    return title && isDate(item.date) && item.date >= today ? [{ title, date: item.date }] : [];
+    return title && isDate(item.date) && item.date >= today && !neverKept(title) ? [{ title, date: item.date }] : [];
   });
   return { facts: facts.slice(0, 8), todos: todos.slice(0, 6), deadlines: deadlines.slice(0, 6) };
 }
@@ -378,24 +385,23 @@ export function notesFrom(text: string, today: string): Notes {
 export const deadlineMemory = (deadline: { title: string; date: string }) =>
   `${deadline.title}, due ${formatDate(new Date(`${deadline.date}T12:00:00Z`), "UTC")}.`;
 
-// Saves what imported notes hold: every fact and every deadline as a memory (a deadline's memory expires the day
-// after it is due). With calendar access (slots, maybe empty) it also returns the proposal to book, only what
-// booking accepts: each deadline all-day and the to-dos that fit the free time. A to-do that can't be booked (no
-// free time that fits, or no calendar access: null) is kept as a "To do:" memory, so nothing pasted is lost.
+// Saves what imported notes hold: every fact, deadline and to-do as a memory (a deadline's or dated to-do's memory
+// expires the day after it is due), so nothing pasted is lost even when the proposal is never booked. With calendar
+// write access (slots, maybe empty) it also returns the proposal to book, only what booking accepts: each deadline
+// all-day and the to-dos that fit the free time. Booking a to-do drops its "To do:" memory (dropTodos).
 export async function keepNotes(email: string, notes: Notes, slots: FreeSlot[] | null, timeZone: string, now = new Date()): Promise<CalendarBlock[]> {
   // One at a time, so each save's dedupe and group caps see the one before it.
   for (const fact of notes.facts) await addMemory(email, fact.text, { group: fact.group, source: "you" });
   for (const deadline of notes.deadlines) {
     await addMemory(email, deadlineMemory(deadline), { group: "projects", source: "you", expiresOn: nextDate(deadline.date) });
   }
-  const placed = slots ? placeTodos(notes.todos, slots, timeZone, now) : [];
-  for (const todo of notes.todos.filter((item) => !placed.some((block) => block.title === item.title))) {
-    await addMemory(email, `To do: ${todo.title}`, { group: "projects", source: "you" });
+  for (const todo of notes.todos) {
+    await addMemory(email, todoMemory(todo.title), { group: "projects", source: "you", expiresOn: todo.due && nextDate(todo.due) });
   }
   if (!slots) return [];
   const deadlines = notes.deadlines.map((deadline) => ({ title: deadline.title, kind: "deadline" as const, date: deadline.date }));
   // A deadline past booking's 120 days stays a memory only, so the batch never earns a 400.
-  return validBlocks([...deadlines, ...placed], timeZone, now) ?? [];
+  return validBlocks([...deadlines, ...placeTodos(notes.todos, slots, timeZone, now)], timeZone, now) ?? [];
 }
 
 type Slot = { start: number; end: number };
@@ -638,6 +644,9 @@ export function checkCall(call: ToolCall, goal: Goal | null, refs: Refs, slots: 
     case "remember": {
       const text = typeof args?.text === "string" ? args.text.trim() : "";
       if (!text) return { error: "text must be one short sentence" };
+      // The never-list, server side, all of it: this tool sits next to calendar and email text other people wrote.
+      const topic = blockedFact(text);
+      if (topic) return { error: `not saved: Zeno never keeps ${topic}. Don't say you saved it.` };
       // A missing group is filed under about; patterns come only from what they did.
       const group = args?.group === undefined ? "about" : SAID_GROUPS.find((known) => known === args?.group);
       return group ? { name: "remember", text, group } : { error: `group must be one of ${SAID_GROUPS.join(", ")}` };
@@ -677,15 +686,18 @@ const EFFORT = "minimal";
 
 // One turn of the Guided day conversation: the model may change the goal, steps and memory through tools and
 // suggest calendar blocks, then answers in words. Returns the final words only, never a tool preamble.
+// Blocks are offered only when the client shows proposals (offer) and booking would take them (calendar write
+// access); otherwise the model sees no free slots for propose_block, so it never offers a booking nobody can tap.
 export async function talk(
   context: UserContext,
   firstName: string | null,
   history: ChatMessage[],
   message: string,
+  offer = false,
 ): Promise<{ reply: string; goal: Goal | null; actions: TalkAction[]; options: string[]; proposal: CalendarBlock[]; progress?: Progress }> {
   const email = context.email;
   const refs: Refs = new Map();
-  const slots = roundSlots(context.free);
+  const slots = offer && context.calendarWrite === "ok" ? roundSlots(context.free) : [];
   let goal = context.goal;
   const actions: TalkAction[] = [];
   const proposal: CalendarBlock[] = [];

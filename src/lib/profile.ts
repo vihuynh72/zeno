@@ -150,7 +150,8 @@ async function googleGet(accessToken: string, url: string): Promise<unknown> {
   return response.json();
 }
 
-const mask = (text: string) => text.replace(/https?:\/\/\S+|www\.\S+/gi, "[link]").replace(/<<<|>>>/g, "");
+// Whole runs of brackets, so removing one can't join its neighbors into a new marker (">><<<>").
+const mask = (text: string) => text.replace(/https?:\/\/\S+|www\.\S+/gi, "[link]").replace(/[<>]{3,}/g, "");
 
 // One line per event: title, when, how it repeats, where. A repeating event is listed once, at its first time.
 export function eventLine(event: GoogleEvent, timeZone: string): string | null {

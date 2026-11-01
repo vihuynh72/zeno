@@ -331,6 +331,17 @@ export async function dropMemories(email: string, ids: string[]): Promise<void> 
   await getSql()`DELETE FROM memories WHERE user_email = ${email} AND id = ANY(${ids}::uuid[])`;
 }
 
+// A pasted to-do, kept as a memory until it is booked (dropTodos) or the day after it is due.
+export const todoMemory = (title: string) => `To do: ${title}`;
+
+// Booked to-dos are on the calendar now, so their "To do:" memories go; dropped, not forgotten, so a later paste
+// of the same to-do is kept again.
+export async function dropTodos(email: string, titles: string[]): Promise<void> {
+  if (titles.length === 0) return;
+  await ensureSchema();
+  await getSql()`DELETE FROM memories WHERE user_email = ${email} AND source = 'you' AND text = ANY(${titles.map(todoMemory)}::text[])`;
+}
+
 // What the profile scan saved since `since`, in the order it saved them, so a repeat call that day sees them too.
 export async function scannedSince(email: string, since: Date): Promise<Memory[]> {
   await ensureSchema();

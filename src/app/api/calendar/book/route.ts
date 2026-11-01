@@ -5,6 +5,7 @@ import { bookBlocks, calendarFailure, calendarWriteFor, validBlocks } from "@/li
 import { forgetCalendar } from "@/lib/context";
 import type { BookResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
+import { dropTodos } from "@/lib/goals";
 import { timeZoneFrom } from "@/lib/tz";
 
 export const maxDuration = 30;
@@ -38,6 +39,8 @@ export async function POST(request: Request) {
   try {
     const booked = await bookBlocks(accessToken, email, timeZone, blocks);
     forgetCalendar(email);
+    // A booked to-do lives on the calendar now; a failed clean-up only leaves its memory, never fails the booking.
+    await dropTodos(email, booked.filter((block) => block.kind === "todo").map((block) => block.title)).catch(() => {});
     return NextResponse.json({ state: "ok", booked } satisfies BookResponse);
   } catch (error) {
     const state = calendarFailure(error);

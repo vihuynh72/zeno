@@ -1,12 +1,14 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { checkPlan } from "@/lib/agent";
 import type { GoalResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
 import { setGoal, setStepStatus } from "@/lib/goals";
+import { localDate, timeZoneFrom } from "@/lib/tz";
 
 // Body { title, due?, steps: { title, minutes }[], start? }: saves a plan without the model, so a tap on the
-// first card's plan is instant; start: true also starts step 1.
+// first card's plan is instant; start: true also starts step 1. A due date before the person's today is refused.
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.email) {
@@ -14,7 +16,8 @@ export async function POST(request: Request) {
   }
   const body = (await request.json().catch(() => null)) as { start?: unknown } | null;
   const plan = checkPlan(body);
-  if (!plan || (body?.start !== undefined && typeof body.start !== "boolean")) {
+  const today = localDate(timeZoneFrom((await cookies()).get("tz")?.value));
+  if (!plan || (plan.due !== null && plan.due < today) || (body?.start !== undefined && typeof body.start !== "boolean")) {
     return NextResponse.json({ state: "bad-request" } satisfies GoalResponse, { status: 400 });
   }
   if (!databaseConfigured()) {

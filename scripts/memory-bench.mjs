@@ -76,7 +76,7 @@ const UPDATE = { say: "Heads up, my library shifts moved to Friday afternoons no
 const FORGET = { say: "Can you forget what I told you about soccer? I don't want that saved.", fact: "soccer" }; // case 7
 
 // Case 9: a messy syllabus plus notes for a second user, with 6 lasting facts, an errand, 1 junk line and 1 health
-// line. The bench users have no calendar, so every to-do can't be booked and is kept as a "To do:" memory (Vi,
+// line. Every to-do is kept as a "To do:" memory until it is booked, and the bench users have no calendar (Vi,
 // 2026-11-01: nothing pasted is lost).
 const IMPORT_TEXT = `CS 146 Data Structures, Fall syllabus
 Lectures Mon/Wed 10:30-11:45 in DH 450
