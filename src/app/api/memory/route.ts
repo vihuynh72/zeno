@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import type { MemoryResponse, SaveMemoryResponse } from "@/lib/day";
+import { MEMORY_GROUPS, type MemoryResponse, type SaveMemoryResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
 import { addMemory, listMemories } from "@/lib/goals";
 
@@ -22,15 +22,17 @@ export async function GET() {
   }
 }
 
-// Body { text }: one thing the person tells Zeno to remember, 1 to 200 characters.
+// Body { text, group? }: one thing the person tells Zeno to remember, 1 to 200 characters, in one of MEMORY_GROUPS
+// ("about" when left out).
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ state: "signed-out" } satisfies SaveMemoryResponse, { status: 401 });
   }
-  const body = (await request.json().catch(() => null)) as { text?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { text?: unknown; group?: unknown } | null;
   const text = typeof body?.text === "string" ? body.text.trim() : "";
-  if (!text || [...text].length > 200) {
+  const group = MEMORY_GROUPS.find((known) => known === body?.group);
+  if (!text || [...text].length > 200 || (body?.group != null && !group)) {
     return NextResponse.json({ state: "bad-request" } satisfies SaveMemoryResponse, { status: 400 });
   }
   if (!databaseConfigured()) {
@@ -38,7 +40,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    await addMemory(session.user.email, text);
+    await addMemory(session.user.email, text, { group });
     const memories = await listMemories(session.user.email);
     return NextResponse.json({ state: "ok", memories } satisfies SaveMemoryResponse);
   } catch (error) {

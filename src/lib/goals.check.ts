@@ -53,4 +53,166 @@ try {
   await getSql()`DELETE FROM goals WHERE user_email = ${email}`;
 }
 
+// Memory: one row per fact whatever its case, punctuation or spacing; caps that drop the oldest scanned facts first.
+const { GROUP_CAPS, addMemory, forgetMemory, listMemories } = await import("./goals.ts");
+const memoryEmail = `profile-check-${crypto.randomUUID()}@zeno.local`;
+const sql = getSql();
+try {
+  const lab = await addMemory(memoryEmail, "  Bio lab Wednesdays at 2pm. ", { group: "routines" });
+  assert.deepEqual([lab?.text, lab?.group, lab?.source], ["Bio lab Wednesdays at 2pm.", "routines", "you"]);
+  assert.equal(await addMemory(memoryEmail, "bio lab wednesdays at 2 PM", { group: "about", source: "calendar" }), null, "the same fact in any group");
+  assert.equal(await addMemory(memoryEmail, " ... ", {}), null, "no words, nothing saved");
+  assert.equal((await addMemory(memoryEmail, "Bio lab Thursdays at 2pm."))?.group, "about", "another day is another fact; the group defaults to about");
+
+  // patterns keeps its 10 freshest noticed facts; what the person said never takes their slots.
+  const cap = GROUP_CAPS.patterns;
+  for (let n = 1; n <= 3; n++) await addMemory(memoryEmail, `Said pattern ${n}`, { group: "patterns" });
+  for (let n = 1; n <= cap + 2; n++) await addMemory(memoryEmail, `Noticed pattern ${n}`, { group: "patterns", source: "pattern" });
+  const patterns = (await listMemories(memoryEmail)).filter((memory) => memory.group === "patterns");
+  assert.deepEqual(
+    patterns.map((memory) => memory.text),
+    [...Array.from({ length: cap }, (_, index) => `Noticed pattern ${cap + 2 - index}`), "Said pattern 3", "Said pattern 2", "Said pattern 1"],
+    "newest first; the 2 oldest noticed ones were dropped and the person's words kept",
+  );
+  for (let n = 4; n <= cap + 1; n++) await addMemory(memoryEmail, `Said pattern ${n}`, { group: "patterns" });
+  assert.ok(
+    await addMemory(memoryEmail, "Noticed pattern late", { group: "patterns", source: "pattern" }),
+    "a group full of the person's own words still takes a new noticed fact",
+  );
+  const full = (await listMemories(memoryEmail)).filter((memory) => memory.group === "patterns");
+  assert.deepEqual(
+    [full.filter((memory) => memory.source === "you").length, full.filter((memory) => memory.source === "pattern").length],
+    [cap + 1, cap],
+    "the person's own words all stay; noticed ones keep their freshest 10",
+  );
+
+  // A removed fact never comes back from a scan; the person can still say it again.
+  const coaching = await addMemory(memoryEmail, "Has ADHD coaching every other Friday at 3 PM.", { group: "about", source: "calendar" });
+  assert.ok(coaching && (await forgetMemory(memoryEmail, coaching.id)));
+  assert.equal(await forgetMemory(memoryEmail, coaching.id), false, "removing twice finds nothing");
+  assert.equal(
+    await addMemory(memoryEmail, "has ADHD coaching every other Friday at 3pm", { group: "about", source: "calendar" }),
+    null,
+    "a scan never brings it back",
+  );
+  assert.equal((await addMemory(memoryEmail, "Has ADHD coaching every other Friday at 3 PM.", { group: "about" }))?.source, "you", "said again, it saves");
+
+  // The whole profile keeps 120: past it, the oldest non-"you" fact goes.
+  await sql`
+    INSERT INTO memories (user_email, text, memory_group, source, created_at)
+    SELECT ${memoryEmail}, 'Scanned fact ' || n, 'projects', 'email', now() - interval '1 day' + n * interval '1 second'
+    FROM generate_series(1, 120 - ${(await listMemories(memoryEmail)).length}) AS n
+  `;
+  assert.ok(await addMemory(memoryEmail, "Has ADHD and starts best with a timer.", { group: "about" }));
+  const all = await listMemories(memoryEmail);
+  assert.equal(all.length, 120);
+  assert.ok(!all.some((memory) => memory.text === "Scanned fact 1") && all.some((memory) => memory.text === "Scanned fact 2"));
+  assert.deepEqual(
+    [...new Set(all.map((memory) => memory.group))],
+    ["about", "routines", "projects", "patterns"],
+    "listed in Memory's group order",
+  );
+  assert.equal(all[0].text, "Has ADHD and starts best with a timer.", "newest first within a group");
+} finally {
+  await sql`DELETE FROM memories WHERE user_email = ${memoryEmail}`;
+  await sql`DELETE FROM user_state WHERE user_email = ${memoryEmail}`;
+}
+
+// The daily profile scan, with Google and Muse stubbed and the real database: once a local day, the same facts
+// again on a repeat call, removed facts never relearned, and the day given back when the model or the mail fails.
+const { scanProfile } = await import("./profile.ts");
+const scanEmail = `profile-scan-check-${crypto.randomUUID()}@zeno.local`;
+const zone = "America/Los_Angeles";
+const session = { accessToken: "token-xyz", user: { name: "Maya Tran" } };
+const realFetch = globalThis.fetch;
+const realLog = console.log;
+const modelBodies: { messages: { content: string }[]; response_format: { json_schema: { schema: { properties: { facts: { maxItems: number } } } } } }[] = [];
+const gmailQueries: string[] = [];
+let modelReplies: string[] = [];
+let gmailStatus = 200;
+const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" } });
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = new URL(input instanceof Request ? input.url : String(input));
+  if (url.hostname === "api.meta.ai") {
+    modelBodies.push(JSON.parse(String(init?.body)));
+    return json({ choices: [{ message: { content: modelReplies.shift() ?? '{"facts":[]}' } }] });
+  }
+  if (url.hostname === "www.googleapis.com") {
+    if (url.pathname.endsWith("/calendarList")) return json({ items: [{ id: "maya@example.com", primary: true, selected: true }] });
+    return json({
+      items: [
+        {
+          summary: "ADHD coaching",
+          recurrence: ["RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=FR"],
+          start: { dateTime: "2026-10-02T15:00:00-07:00" },
+          end: { dateTime: "2026-10-02T15:45:00-07:00" },
+        },
+      ],
+    });
+  }
+  if (url.hostname === "gmail.googleapis.com") {
+    if (gmailStatus !== 200) return json({ error: { code: gmailStatus } }, gmailStatus);
+    gmailQueries.push(url.searchParams.get("q") ?? "");
+    return json({ messages: [] });
+  }
+  return realFetch(input, init);
+}) as typeof fetch;
+const scannedAt = async () => {
+  const [row] = await sql`SELECT profile_scanned_at FROM user_state WHERE user_email = ${scanEmail}`;
+  return new Date(row.profile_scanned_at).getTime();
+};
+const dayBack = () => sql`UPDATE user_state SET profile_scanned_at = profile_scanned_at - interval '1 day' WHERE user_email = ${scanEmail}`;
+const texts = (result: Awaited<ReturnType<typeof scanProfile>>) => (result.state === "ok" ? result.learned.map((memory) => memory.text) : result.state);
+try {
+  process.env.META_MODEL_API_KEY ??= "check-only";
+  console.log = () => undefined;
+  const coaching = "Has ADHD coaching every other Friday at 3 PM.";
+  const major = "Is a junior biology major at SJSU.";
+  modelReplies = [JSON.stringify({ facts: [{ text: coaching, group: "about", source: "calendar" }, { text: major, group: "about", source: "email" }] })];
+  assert.deepEqual(texts(await scanProfile(scanEmail, session, zone, { first: true })), [coaching, major], "the first scan learns");
+  assert.ok(gmailQueries.every((q) => q.startsWith("newer_than:30d ")), "the first scan reads 30 days of mail");
+  assert.equal(modelBodies[0].response_format.json_schema.schema.properties.facts.maxItems, 20);
+
+  // A reload or a retry of setup the same day gets the same facts, without reading Google or calling the model.
+  assert.deepEqual(texts(await scanProfile(scanEmail, session, zone, { first: true })), [coaching, major], "a repeat call sees them");
+  assert.equal(modelBodies.length, 1, "and makes no model call");
+
+  // Removed on day 1, never relearned on day 2, even reworded.
+  const learned = await listMemories(scanEmail);
+  assert.ok(await forgetMemory(scanEmail, learned.find((memory) => memory.text === coaching)?.id ?? ""));
+  assert.deepEqual(texts(await scanProfile(scanEmail, session, zone)), [major], "a removed fact is not shown again");
+  await dayBack();
+  gmailQueries.length = 0;
+  modelReplies = [
+    JSON.stringify({
+      facts: [
+        { text: "Has ADHD coaching every other Friday at 3pm.", group: "about", source: "calendar" },
+        { text: "Plays intramural soccer Monday nights.", group: "routines", source: "calendar" },
+      ],
+    }),
+  ];
+  assert.deepEqual(texts(await scanProfile(scanEmail, session, zone)), ["Plays intramural soccer Monday nights."], "day 2 learns only what is new");
+  assert.match(modelBodies[1].messages[1].content, /Removed by the person, never add again:\n- Has ADHD coaching every other Friday at 3 PM\./);
+  assert.equal(modelBodies[1].response_format.json_schema.schema.properties.facts.maxItems, 8, "a daily scan keeps up to 8");
+  assert.ok(gmailQueries.length === 2 && gmailQueries.every((q) => /^after:\d+ /.test(q)), "a daily scan reads mail since the last one");
+
+  // A model failure gives the day back.
+  await dayBack();
+  const before = await scannedAt();
+  modelReplies = ["Sure! Here is what I found"];
+  await assert.rejects(scanProfile(scanEmail, session, zone), /not JSON/);
+  assert.equal(await scannedAt(), before, "the day is given back after a model failure");
+
+  // Mail that cannot be read gives the day back too, after the calendar facts are saved.
+  gmailStatus = 500;
+  modelReplies = [JSON.stringify({ facts: [{ text: "Has stats section Wednesdays at 10 AM.", group: "routines", source: "calendar" }] })];
+  assert.deepEqual(texts(await scanProfile(scanEmail, session, zone)), ["Has stats section Wednesdays at 10 AM."]);
+  assert.equal(await scannedAt(), before, "unread mail is read again next time");
+} finally {
+  globalThis.fetch = realFetch;
+  console.log = realLog;
+  await sql`DELETE FROM memories WHERE user_email = ${scanEmail}`;
+  await sql`DELETE FROM user_state WHERE user_email = ${scanEmail}`;
+}
+
 console.log("goals self-check passed");

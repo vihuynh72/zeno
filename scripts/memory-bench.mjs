@@ -1,6 +1,6 @@
-// Memory bench: does Zeno store, retrieve, update and forget what a person tells it?
+// Memory bench: does Zeno store, group, retrieve, update and forget what a person tells it?
 // Talks to a running server as fake users bench-<runid>-<n>@zeno.local, scores the stored rows and the
-// replies with keyword matchers (no LLM judge), then deletes every bench row. About 30 Muse calls per run.
+// replies with keyword matchers (no LLM judge), then deletes this run's rows. About 32 Muse calls per run.
 // Run: node --env-file=.env.local scripts/memory-bench.mjs [--base http://127.0.0.1:3210] [--runs 1] [--keep] [--json path]
 // See docs/MEMORY-BENCH.md.
 import assert from "node:assert/strict";
@@ -16,27 +16,32 @@ import { neon } from "@neondatabase/serverless";
 // group has a keyword that starts a word in it, ignoring case.
 const PERSONA = "Maya Tran";
 
+// The grouped profile (src/lib/day.ts MEMORY_GROUPS). `groups` is where a person would look for the fact: one
+// memory, one group; a second is allowed only where both read equally well.
+const GROUPS = ["about", "routines", "projects", "interests", "people", "work-style", "patterns"];
+
 // Lasting facts said in passing (case 1) and asked for outright (case 4). `seed` is saved through
 // POST /api/memory when talk missed the fact, so retrieval, duplicate, update and forget always have a row.
 const FACTS = [
-  { id: "library-shifts", match: [["library", "shift"], ["tue", "thu"]], seed: "Works library shifts on Tuesdays and Thursdays from 8 to noon." },
-  { id: "bio-lab", match: [["bio"], ["lab"], ["wed"]], seed: "Has bio lab every Wednesday at 2 PM." },
-  { id: "focus-before-11", match: [["11", "eleven"]], seed: "Focuses best before 11 AM." },
-  { id: "tiny-first-steps", match: [["tiny", "small", "short", "10", "ten min", "ten-min"], ["step", "start", "task", "chunk"]] },
-  { id: "pomodoro", match: [["pomodoro", "25"]] },
-  { id: "soccer", match: [["soccer"]], seed: "Plays intramural soccer on Monday nights at 7." },
+  { id: "library-shifts", groups: ["routines", "about"], match: [["library", "shift"], ["tue", "thu"]], seed: "Works library shifts on Tuesdays and Thursdays from 8 to noon." },
+  { id: "bio-lab", groups: ["routines"], match: [["bio"], ["lab"], ["wed"]], seed: "Has bio lab every Wednesday at 2 PM." },
+  { id: "focus-before-11", groups: ["work-style"], match: [["11", "eleven"]], seed: "Focuses best before 11 AM." },
+  { id: "tiny-first-steps", groups: ["work-style"], match: [["tiny", "small", "short", "10", "ten min", "ten-min"], ["step", "start", "task", "chunk"]] },
+  { id: "pomodoro", groups: ["work-style"], match: [["pomodoro", "25"]] },
+  { id: "soccer", groups: ["routines", "interests"], match: [["soccer"]], seed: "Plays intramural soccer on Monday nights at 7." },
 ];
 const EXPLICIT = [
-  { id: "capstone-due", match: [["capstone"], ["dec", "12/5"]], seed: "Capstone is due December 5." },
-  { id: "bio-major", match: [["bio"], ["major", "junior"]] },
+  { id: "capstone-due", groups: ["projects"], match: [["capstone"], ["dec", "12/5"]], seed: "Capstone is due December 5." },
+  { id: "bio-major", groups: ["about"], match: [["bio"], ["major", "junior"]] },
 ];
-// Said in passing and never worth storing (cases 2 and 3).
+// Said in passing and never worth storing (cases 2 and 3). Health is report-only: docs/PLAN-NOV.md keeps health
+// details that help planning, so storing it is neither a hit nor a miss.
 const JUNK = [
   { id: "tired-today", kind: "transient", match: [["tired", "slept", "sleep", "exhausted"]] },
   { id: "cold-brew", kind: "transient", match: [["cold brew", "coffee", "caffeine"]] },
   { id: "slow-wifi", kind: "transient", match: [["wifi", "wi-fi", "internet"]] },
   { id: "rent-money", kind: "sensitive", match: [["rent", "money", "400", "broke", "financ"]] },
-  { id: "medication", kind: "sensitive", match: [["lexapro", "medication", "meds", "antidepress", "ssri", "prescri"]] },
+  { id: "medication", kind: "health", match: [["lexapro", "medication", "meds", "antidepress", "ssri", "prescri"]] },
 ];
 
 // One planning conversation; `about` names what each turn carries. Turn 3 also sets a goal.
@@ -65,6 +70,8 @@ const RECALL_BEFORE = [
 const RECALL_AFTER = [{ ask: "Which day is my library shift now?", expect: [["friday"]] }];
 
 const RESTATE = { say: "Oh btw, I have bio lab every Wednesday at 2, can't miss it.", fact: "bio-lab" }; // case 5
+// Case 5b: the same fact in other words, which text normalization alone cannot catch.
+const REWORD = { say: "Just so you know, biology lab happens on Wednesday afternoons at two, every single week.", fact: "bio-lab" };
 const UPDATE = { say: "Heads up, my library shifts moved to Friday afternoons now.", old: "library-shifts", new: [["library", "shift"], ["friday"]] }; // case 6
 const FORGET = { say: "Can you forget what I told you about soccer? I don't want that saved.", fact: "soccer" }; // case 7
 
@@ -82,17 +89,17 @@ my notes
 - refill my insulin at the pharmacy friday before 6
 - capstone group meets thursdays 6pm on discord`;
 const IMPORT_FACTS = [
-  { id: "cs146-lectures", match: [["146", "data structures"], ["mon", "wed", "10:30"]] },
-  { id: "midterm-nov-18", match: [["midterm"], ["nov", "18"]] },
-  { id: "final-project-dec-9", match: [["final"], ["dec", "12/9"]] },
-  { id: "bookstore-saturdays", match: [["bookstore"], ["sat"]] },
-  { id: "studies-at-night", match: [["study", "studies", "work"], ["night", "after 9", "9 pm", "9pm"]] },
-  { id: "capstone-group-thursdays", match: [["capstone", "group"], ["thu"]] },
+  { id: "cs146-lectures", groups: ["routines", "about"], match: [["146", "data structures"], ["mon", "wed", "10:30"]] },
+  { id: "midterm-nov-18", groups: ["projects"], match: [["midterm"], ["nov", "18"]] },
+  { id: "final-project-dec-9", groups: ["projects"], match: [["final"], ["dec", "12/9"]] },
+  { id: "bookstore-saturdays", groups: ["routines", "about"], match: [["bookstore"], ["sat"]] },
+  { id: "studies-at-night", groups: ["work-style"], match: [["study", "studies", "work"], ["night", "after 9", "9 pm", "9pm"]] },
+  { id: "capstone-group-thursdays", groups: ["routines", "projects"], match: [["capstone", "group"], ["thu"]] },
 ];
 const IMPORT_JUNK = [
   { id: "vending-machine", kind: "transient", match: [["vending", "dollar"]] },
   { id: "poster-board-errand", kind: "one-off", match: [["poster", "jess", "ride"]] },
-  { id: "insulin", kind: "sensitive", match: [["insulin", "pharmacy", "diabet", "prescri", "refill"]] },
+  { id: "insulin", kind: "health", match: [["insulin", "pharmacy", "diabet", "prescri", "refill"]] },
 ];
 
 // Case 10: a reply that claims a save or a delete the turn's actions do not show.
@@ -123,13 +130,23 @@ const falseClaim = (reply, actions) =>
 const ratio = (flags) => (flags.length ? flags.filter(Boolean).length / flags.length : 1);
 const percentile = (values, p) => [...values].sort((a, b) => a - b)[Math.max(0, Math.ceil((p / 100) * values.length) - 1)] ?? 0;
 
+// One memory, one group: every row of a stored fact sits in the same group, and that group is one it allows.
+const oneGroup = (rows, item) => rows.length > 0 && new Set(rows.map((row) => row.group)).size === 1 && item.groups.includes(rows[0].group);
+const groupCheck = (rows, items, from) =>
+  items
+    .map((item) => ({ id: item.id, from, rows: rows.filter((row) => matches(row.text, item.match)) }))
+    .filter((item) => item.rows.length > 0)
+    .map((item) => ({ ...item, ok: oneGroup(item.rows, [...FACTS, ...EXPLICIT, ...IMPORT_FACTS].find((fact) => fact.id === item.id)) }));
+
 // Points out of 100, so later runs compare on one number. Duplicates and false claims score 1/(1+count).
+// Weights changed on 2026-11-01 (group accuracy added, retrieval 20 to 15, explicit recall 10 to 5).
 const overall = (m) =>
   15 * m.storeRecallTalk +
-  10 * m.explicitRecall +
+  5 * m.explicitRecall +
   10 * m.storeRecallImport +
   5 * m.importPrecision +
-  20 * m.retrievalAccuracy +
+  15 * m.retrievalAccuracy +
+  10 * m.groupAccuracy +
   10 * m.updateCorrect +
   10 * m.forgetCorrect +
   10 * (1 - m.junkRate) +
@@ -142,6 +159,10 @@ for (const item of [...FACTS, ...EXPLICIT].filter((fact) => fact.seed)) {
   const hits = [...FACTS, ...EXPLICIT, ...JUNK].filter((other) => matches(item.seed, other.match)).map((other) => other.id);
   assert.deepEqual(hits, [item.id], `seed for ${item.id} must match only its own fact`);
 }
+assert.ok([...FACTS, ...EXPLICIT, ...IMPORT_FACTS].every((item) => item.groups.length > 0 && item.groups.every((group) => GROUPS.includes(group))));
+assert.ok(matches(REWORD.say, byId(REWORD.fact).match) && !matches(REWORD.say, byId("library-shifts").match));
+assert.ok(oneGroup([{ group: "routines" }], byId("bio-lab")) && !oneGroup([{ group: "about" }], byId("bio-lab")));
+assert.ok(!oneGroup([{ group: "routines" }, { group: "interests" }], byId("soccer")), "one fact split over two groups");
 assert.ok(stale(byId(UPDATE.old).seed) && !stale("Library shifts moved from Tuesday and Thursday to Friday afternoons."));
 assert.ok(falseClaim("Got it, I'll remember that.", []) && !falseClaim("I've saved your stats goal.", [{ type: "goal-set" }]));
 assert.ok(falseClaim("Done, I’ve forgotten it.", [{ type: "remembered" }]) && !falseClaim("Your lab is Wednesday at two.", []));
@@ -184,13 +205,15 @@ async function request(user, method, path, body) {
   }
 }
 
-async function memories(user) {
+// Full rows ({ text, group, source }); memories() is just their texts.
+async function memoryRows(user) {
   let answer = await request(user, "GET", "/api/memory");
   // One retry: a network blip on this free read should not throw away the run's model calls.
   if (answer.data.state !== "ok") answer = await sleep(3000).then(() => request(user, "GET", "/api/memory"));
   assert.equal(answer.data.state, "ok", `GET /api/memory answered ${answer.status} ${answer.data.state}`);
-  return answer.data.memories.map((memory) => memory.text);
+  return answer.data.memories;
 }
+const memories = async (user) => (await memoryRows(user)).map((memory) => memory.text);
 
 async function runOnce(index, detail) {
   const talker = await userFor(index * 2 + 1);
@@ -219,7 +242,8 @@ async function runOnce(index, detail) {
   };
 
   const imported = await request(importer, "POST", "/api/import", { text: IMPORT_TEXT });
-  const importRows = imported.data.state === "ok" ? imported.data.memories.map((memory) => memory.text) : [];
+  const importFull = imported.data.state === "ok" ? imported.data.memories : [];
+  const importRows = importFull.map((memory) => memory.text);
   const importFacts = IMPORT_FACTS.map((item) => ({ id: item.id, rows: found(importRows, item) }));
   const importJunkRows = importRows.filter((row) => IMPORT_JUNK.some((item) => matches(row, item.match)));
   const importFactRows = importRows.filter((row) => !importJunkRows.includes(row) && IMPORT_FACTS.some((item) => matches(row, item.match)));
@@ -227,14 +251,19 @@ async function runOnce(index, detail) {
 
   const main = [];
   for (const line of PLANNING) await say(main, "planning", line.say, line.about);
-  const afterTalk = await memories(talker);
-  detail.afterTalk = afterTalk;
+  const afterTalkRows = await memoryRows(talker);
+  const afterTalk = afterTalkRows.map((memory) => memory.text);
+  detail.afterTalk = afterTalkRows.map((memory) => `[${memory.group}] ${memory.text}`);
   detail.facts = FACTS.map((item) => ({ id: item.id, rows: found(afterTalk, item) }));
   detail.explicit = EXPLICIT.map((item) => ({ id: item.id, rows: found(afterTalk, item) }));
-  detail.junk = [
+  // Measured before any seeding, on what talk and import stored themselves.
+  detail.groups = [...groupCheck(afterTalkRows, [...FACTS, ...EXPLICIT], "talk"), ...groupCheck(importFull, IMPORT_FACTS, "import")];
+  const unwanted = [
     ...JUNK.map((item) => ({ id: item.id, kind: item.kind, from: "talk", rows: found(afterTalk, item) })),
     ...IMPORT_JUNK.map((item) => ({ id: item.id, kind: item.kind, from: "import", rows: found(importRows, item) })),
   ];
+  detail.junk = unwanted.filter((item) => item.kind !== "health");
+  detail.health = unwanted.filter((item) => item.kind === "health");
   const combo = detail.turns.find((turn) => turn.message === PLANNING.find((line) => line.goal).say);
   detail.combo = {
     goalSet: combo.actions.some((action) => action.type === "goal-set"),
@@ -242,7 +271,7 @@ async function runOnce(index, detail) {
   };
 
   for (const item of [...FACTS, ...EXPLICIT].filter((fact) => fact.seed && found(afterTalk, fact).length === 0)) {
-    const { data } = await request(talker, "POST", "/api/memory", { text: item.seed });
+    const { data } = await request(talker, "POST", "/api/memory", { text: item.seed, group: item.groups[0] });
     assert.equal(data.state, "ok", `seeding ${item.id} failed`);
     detail.seeded.push(item.id);
   }
@@ -250,11 +279,13 @@ async function runOnce(index, detail) {
   detail.recall = await ask(RECALL_BEFORE, "recall");
 
   const restated = await say([], "duplicate", RESTATE.say);
+  detail.restate = { reply: restated.reply, actions: restated.actions, rows: found(await memories(talker), byId(RESTATE.fact)) };
+  const reworded = await say([], "duplicate", REWORD.say);
   const afterDup = await memories(talker);
+  detail.reworded = { reply: reworded.reply, actions: reworded.actions, rows: found(afterDup, byId(REWORD.fact)) };
   detail.duplicates = [...FACTS, ...EXPLICIT]
     .map((item) => ({ id: item.id, rows: found(afterDup, item) }))
     .filter((item) => item.rows.length > 1);
-  detail.restate = { reply: restated.reply, actions: restated.actions, rows: found(afterDup, byId(RESTATE.fact)) };
 
   const updated = await say([], "update", UPDATE.say);
   const afterUpdate = await memories(talker);
@@ -292,7 +323,9 @@ async function runOnce(index, detail) {
     storeRecallImport: ratio(importFacts.map((item) => item.rows.length > 0)),
     importPrecision: importFactRows.length + importJunkRows.length ? importFactRows.length / (importFactRows.length + importJunkRows.length) : 1,
     explicitRecall: ratio(detail.explicit.map((item) => item.rows.length > 0)),
+    groupAccuracy: ratio(detail.groups.map((item) => item.ok)),
     junkRate: 1 - ratio(detail.junk.map((item) => item.rows.length === 0)),
+    healthKept: detail.health.filter((item) => item.rows.length > 0).length,
     duplicates: detail.duplicates.reduce((sum, item) => sum + item.rows.length - 1, 0),
     updateCorrect: Number(detail.update.correct),
     forgetCorrect: Number(detail.forget.correct),
@@ -322,7 +355,14 @@ function failures(detail) {
   if (detail.import && detail.import.state !== "ok") out.push(`import ${detail.import.state} after ${detail.import.ms} ms, so nothing was imported`);
   for (const item of (detail.import?.facts ?? []).filter((fact) => fact.rows.length === 0)) out.push(`import missed ${item.id}`);
   for (const item of (detail.junk ?? []).filter((junk) => junk.rows.length > 0)) out.push(`junk stored (${item.kind}, ${item.from}) ${item.id}: ${item.rows.join(" | ")}`);
+  for (const item of (detail.groups ?? []).filter((group) => !group.ok)) {
+    out.push(`wrong group ${item.id} (${item.from}): ${item.rows.map((row) => `[${row.group}] ${row.text}`).join(" | ")}`);
+  }
   for (const item of detail.duplicates ?? []) out.push(`duplicate ${item.id}: ${item.rows.join(" | ")}`);
+  if (detail.reworded?.rows.length > 1) out.push(`reworded duplicate -> ${short(detail.reworded.reply)} [actions: ${acts(detail.reworded.actions)}]`);
+  for (const item of (detail.health ?? []).filter((health) => health.rows.length > 0)) {
+    out.push(`health kept (report only, allowed when it helps planning; ${item.from}) ${item.id}: ${item.rows.join(" | ")}`);
+  }
   if (detail.update && !detail.update.correct) {
     out.push(`update wrong: stale [${detail.update.staleRows.join(" | ")}], new [${detail.update.newRows.join(" | ")}] -> ${short(detail.update.reply)} [actions: ${acts(detail.update.actions)}]`);
   }
@@ -336,13 +376,14 @@ function failures(detail) {
   return out;
 }
 
-// Only bench users' rows, ever: every statement is filtered on this pattern.
+// Only this run's users' rows, ever: every statement is filtered on this pattern, so a bench running at the same
+// time keeps its own rows.
 async function deleteBenchRows() {
   const sql = neon(process.env.DATABASE_URL);
   const left = {};
-  for (const table of ["steps", "goals", "memories", "tasks"]) {
-    await sql.query(`DELETE FROM ${table} WHERE user_email LIKE $1`, ["bench-%@zeno.local"]);
-    const [row] = await sql.query(`SELECT count(*)::int AS count FROM ${table} WHERE user_email LIKE $1`, ["bench-%@zeno.local"]);
+  for (const table of ["steps", "goals", "memories", "tasks", "user_state"]) {
+    await sql.query(`DELETE FROM ${table} WHERE user_email LIKE $1`, [`bench-${runId}-%@zeno.local`]);
+    const [row] = await sql.query(`SELECT count(*)::int AS count FROM ${table} WHERE user_email LIKE $1`, [`bench-${runId}-%@zeno.local`]);
     left[table] = row.count;
   }
   return left;
@@ -385,7 +426,9 @@ const ROWS = [
   ["store recall (import)", "storeRecallImport", "%"],
   ["import precision", "importPrecision", "%"],
   ["explicit-request recall", "explicitRecall", "%"],
+  ["group accuracy", "groupAccuracy", "%"],
   ["junk rate (lower is better)", "junkRate", "%"],
+  ["health kept (report only)", "healthKept", "n"],
   ["duplicate rows", "duplicates", "n"],
   ["update correct", "updateCorrect", "%"],
   ["forget correct", "forgetCorrect", "%"],
