@@ -1,9 +1,12 @@
 import NextAuth, { type DefaultSession } from "next-auth";
 import Google from "next-auth/providers/google";
+import { CALENDAR_WRITE } from "@/lib/calendar";
 
 declare module "next-auth" {
   interface Session {
     accessToken?: string;
+    // The Google scopes granted, space-separated (not a secret): calendarWriteFor reads it.
+    scope?: string;
     error?: "RefreshTokenError";
     user: DefaultSession["user"];
   }
@@ -14,6 +17,7 @@ declare module "@auth/core/jwt" {
     accessToken?: string;
     refreshToken?: string;
     expiresAt?: number;
+    scope?: string;
     error?: "RefreshTokenError";
   }
 }
@@ -23,8 +27,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     Google({
       authorization: {
         params: {
-          scope:
-            "openid email profile https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly",
+          // Reads every calendar; writes only to the Zeno calendar it creates (CALENDAR_WRITE).
+          scope: `openid email profile https://www.googleapis.com/auth/calendar.readonly ${CALENDAR_WRITE} https://www.googleapis.com/auth/gmail.readonly`,
           access_type: "offline",
           prompt: "consent",
         },
@@ -38,6 +42,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
         token.expiresAt = account.expires_at;
+        // Google's consent screen lets people untick scopes, so keep what was actually granted.
+        token.scope = account.scope;
         token.error = undefined;
         return token;
       }
@@ -66,10 +72,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             access_token: string;
             expires_in: number;
             refresh_token?: string;
+            scope?: string;
           };
           token.accessToken = data.access_token;
           token.expiresAt = Math.floor(Date.now() / 1000) + data.expires_in;
           token.refreshToken = data.refresh_token ?? token.refreshToken;
+          token.scope = data.scope ?? token.scope;
           token.error = undefined;
           return token;
         }
@@ -82,6 +90,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
     async session({ session, token }) {
       session.accessToken = token.accessToken;
+      session.scope = token.scope;
       session.error = token.error;
       return session;
     },
