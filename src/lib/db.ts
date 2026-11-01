@@ -88,6 +88,8 @@ export async function ensureSchema() {
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
           )
         `,
+        // Memories the person removed, so a later profile scan never learns them again.
+        sql`ALTER TABLE user_state ADD COLUMN IF NOT EXISTS forgotten jsonb`,
       ])
       .then(() => undefined)
       .catch((error) => {

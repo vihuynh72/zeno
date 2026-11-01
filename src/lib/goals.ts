@@ -198,8 +198,14 @@ export const GROUP_CAPS: Record<MemoryGroup, number> = {
 const TOTAL_CAP = 120;
 
 // Case, punctuation and spacing never make a new fact: "Bio lab Wednesdays at 2pm." is "bio lab wednesdays at 2 PM".
+// One space stays between words and numbers, so "due 11/2" is not "due 1/12".
 export function factKey(text: string): string {
-  return text.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  return text
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/(\d)(\p{L})/gu, "$1 $2")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
 }
 
 // Grouped in the order Memory shows them, newest first within a group.
@@ -212,8 +218,8 @@ export async function listMemories(email: string): Promise<Memory[]> {
   return rows.map(memoryFrom);
 }
 
-// Returns the saved memory, or null when nothing new was saved (so callers never claim a save): the fact was
-// already known in any group, or its group is full of things the person said themselves.
+// Returns the saved memory, or null when nothing new was saved (so callers never claim a save): the fact is
+// already known in any group, or Zeno found it itself (not "you") and the person once removed it.
 export async function addMemory(
   email: string,
   text: string,
@@ -225,7 +231,11 @@ export async function addMemory(
   const key = factKey(clean);
   if (!key) return null;
   // shortcut: read, then insert, so the same fact saved twice in one instant can land twice; add a unique key column if that shows up.
-  const known = await sql`SELECT text FROM memories WHERE user_email = ${email}`;
+  const known = await sql`
+    SELECT text FROM memories WHERE user_email = ${email}
+    UNION ALL
+    SELECT jsonb_array_elements_text(forgotten) FROM user_state WHERE user_email = ${email} AND ${source} <> 'you'
+  `;
   if (known.some((row) => factKey(String(row.text)) === key)) return null;
   const [inserted, groupTrim, totalTrim] = await sql.transaction([
     sql`
@@ -234,13 +244,11 @@ export async function addMemory(
       ON CONFLICT DO NOTHING
       RETURNING id, text, created_at, memory_group, source
     `,
-    // Over the group's cap, its oldest scanned and noticed facts go; what the person said stays.
+    // Each group keeps its freshest scanned and noticed facts; what the person said never takes their slots.
     sql`
       DELETE FROM memories WHERE id IN (
-        SELECT id FROM (
-          SELECT id, source, row_number() OVER (ORDER BY source = 'you' DESC, created_at DESC) AS rank
-          FROM memories WHERE user_email = ${email} AND memory_group = ${group}
-        ) ranked WHERE rank > ${GROUP_CAPS[group]} AND source <> 'you'
+        SELECT id FROM memories WHERE user_email = ${email} AND memory_group = ${group} AND source <> 'you'
+        ORDER BY created_at DESC OFFSET ${GROUP_CAPS[group]}
       ) RETURNING id
     `,
     // The whole profile stays small enough for every prompt; the person's own words go last.
@@ -256,10 +264,29 @@ export async function addMemory(
   return row && !trimmed ? memoryFrom(row) : null;
 }
 
+// The removed sentence is kept out of sight in user_state.forgotten, so a later scan never learns it again.
+// shortcut: the list grows by one per removal and is never trimmed; cap it if anyone removes thousands.
 export async function forgetMemory(email: string, id: string): Promise<boolean> {
   await ensureSchema();
-  const rows = await getSql()`DELETE FROM memories WHERE id = ${id} AND user_email = ${email} RETURNING id`;
+  const rows = await getSql()`
+    WITH gone AS (DELETE FROM memories WHERE id = ${id} AND user_email = ${email} RETURNING text)
+    INSERT INTO user_state (user_email, forgotten) SELECT ${email}, jsonb_build_array(gone.text) FROM gone
+    ON CONFLICT (user_email) DO UPDATE
+      SET forgotten = coalesce(user_state.forgotten, '[]'::jsonb) || EXCLUDED.forgotten, updated_at = now()
+    RETURNING user_email
+  `;
   return rows.length > 0;
+}
+
+// What the profile scan saved since `since`, in the order it saved them, so a repeat call that day sees them too.
+export async function scannedSince(email: string, since: Date): Promise<Memory[]> {
+  await ensureSchema();
+  const rows = await getSql()`
+    SELECT id, text, created_at, memory_group, source FROM memories
+    WHERE user_email = ${email} AND source IN ('calendar', 'email') AND created_at >= ${since.toISOString()}
+    ORDER BY created_at
+  `;
+  return rows.map(memoryFrom);
 }
 
 // Titles of steps marked done in [start, end), oldest first.

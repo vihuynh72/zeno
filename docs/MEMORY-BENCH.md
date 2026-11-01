@@ -127,5 +127,5 @@ This scenario was at its ceiling for that prompt. Groups and a paraphrased dupli
 ## What it can't measure
 
 - Rows are judged by keywords, so a correct row worded oddly can count as a miss, and a wrong row that uses the right words can count as a hit.
-- The caps (about 120 facts, per-group caps that drop the oldest scanned facts first), case-and-punctuation dedupe, memories older than one session, the profile scan, voice turns and the first-run setup cards are not exercised here. `src/lib/goals.check.ts` covers the caps and dedupe against the real database, and `src/lib/profile.check.ts` the scan with Google and Muse stubbed.
+- The caps (about 120 facts; each group keeps its freshest scanned facts, and the person's own words never take their slots), case-and-punctuation dedupe, removed facts staying gone, memories older than one session, the profile scan, voice turns and the first-run setup cards are not exercised here. `src/lib/goals.check.ts` covers the caps, dedupe, removed facts and the once-a-day scan against the real database, and `src/lib/profile.check.ts` the scan's filters and requests with Google and Muse stubbed.
 - With one persona and two runs per baseline, a single flaky turn moves a metric by 10 to 50 points. Use `--runs 3` or more before trusting a small change.

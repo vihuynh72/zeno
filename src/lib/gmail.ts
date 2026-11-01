@@ -119,6 +119,8 @@ export async function getProfileEmails(
     );
     messages.push(...batch.filter((message): message is GmailMessage => message !== null));
   }
+  // Every read failing is an outage, not an empty inbox: the scan then reads this mail again next time.
+  if (ids.length > 0 && messages.length === 0) throw new GmailError(502, "every message read failed");
 
   return messages.flatMap((message) => {
     const plain = partText(message.payload, "text/plain");
@@ -181,6 +183,7 @@ const QUOTE_START = [
 const SIGNATURE_START = [/^-- ?$/m, /^(Sent from my \w+|Get Outlook for \w+)/im];
 const SIGN_OFF =
   /^(best|thanks|thank you|thanks so much|many thanks|cheers|regards|best regards|kind regards|warm regards|warmly|sincerely|all the best|take care)[ \t]*[,.!]?[ \t]*$/gim;
+const GREETING = /^(hi|hey|hello|dear|good (morning|afternoon|evening))\b[^\n]*$/i;
 
 // The new words of one email, at most 1,500 characters: no quoted replies, signatures, markup, links or long numbers.
 export function cleanBody(raw: string, html = false): string {
@@ -193,10 +196,12 @@ export function cleanBody(raw: string, html = false): string {
     .split("\n")
     .filter((line) => !line.trimStart().startsWith(">"))
     .join("\n");
-  // A sign-off followed by only a few short lines starts the signature.
+  // A sign-off starts the signature only after real words and before a few short lines (a name, a title):
+  // "Thanks!" that opens a short reply is part of it.
   for (const found of text.matchAll(SIGN_OFF)) {
-    const rest = text.slice(found.index + found[0].length).trim();
-    if (rest.length <= 300 && rest.split("\n").length <= 6) {
+    const before = text.slice(0, found.index).trim();
+    const rest = text.slice(found.index + found[0].length).split("\n").filter((line) => line.trim());
+    if (before && !GREETING.test(before) && rest.length <= 4 && rest.every((line) => line.trim().length <= 60)) {
       text = text.slice(0, found.index);
       break;
     }
