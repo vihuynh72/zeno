@@ -188,7 +188,12 @@ try {
   assert.ok(await forgetMemory(laterEmail, learned.id));
   assert.equal(await learnFromSteps(laterEmail, zone), null, "quiet after Undo");
   assert.deepEqual(await listMemories(laterEmail), []);
-  assert.ok(await addMemory(laterEmail, morning, { group: "patterns", source: "pattern" }), "a pattern Zeno dropped can be noticed again");
+  // The morning pattern Zeno dropped above comes back through learnFromSteps once the same steps move to 9 AM.
+  for (const [index, item] of owl.steps.entries()) {
+    const nine = dayBounds(zone, new Date(Date.now() - (index + 1) * 86_400_000)).start.getTime() + 9 * 3_600_000;
+    await sql`UPDATE steps SET done_at = ${new Date(nine).toISOString()} WHERE id = ${item.id}`;
+  }
+  assert.equal((await learnFromSteps(laterEmail, zone))?.text, morning, "a pattern Zeno dropped can be noticed again");
 } finally {
   await sql`DELETE FROM goals WHERE user_email = ${laterEmail}`;
   await sql`DELETE FROM memories WHERE user_email = ${laterEmail}`;

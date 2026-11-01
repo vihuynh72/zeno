@@ -152,4 +152,26 @@ assert.deepEqual(reconcile([times(2.5)], [], [times(2)]).fresh, [], "not even a 
 assert.deepEqual(reconcile([morning], [], [night]).fresh, [morning], "another finding of the same kind is news");
 assert.deepEqual(reconcile([night], [], ["Has bio lab on Tuesdays."]).fresh, [night], "other removed facts never block a pattern");
 
+// A saved pattern holds on a looser line than a new one, so it is said once, not again on every wobble.
+const halves = "MMMAAA".split("").map((part, index) => done(la(10 + index, part === "M" ? 9 : 15)));
+assert.deepEqual(patternsIn(halves, LA), [], "half the steps is not most of them");
+assert.deepEqual(patternsIn(halves, LA, [morning]), [morning], "but keeps the morning once it was said");
+assert.deepEqual(patternsIn([...halves, ...[16, 17].map((day) => done(la(day, 15)))], LA, [morning]), ["You finish most steps in the afternoon."], "3 of 8 drops it for the afternoon");
+assert.deepEqual(patternsIn([...longSkips, ...longDone(4)], LA, [all[2]]), [all[2]], "3 of 7 long skips keeps it");
+assert.deepEqual(patternsIn([...tiny, done(la(13, 9), 20)], LA, [all[3]]), [all[3]], "an even finish rate keeps tiny starts");
+const slowish = [10, 11, 12, 13].map((day) => took(day, 10, 13));
+assert.deepEqual(patternsIn(slowish, LA), [], "1.3x is close enough for a new pattern");
+assert.deepEqual(patternsIn(slowish, LA, [times(2)]), [times(1.5)], "but keeps a saved slower one, a wobble away");
+// The review's sequence, one step at a time as learnFromSteps sees it: morning, morning, morning, afternoon x3, ...
+let kept: { id: string; text: string }[] = [];
+let saves = 0;
+const wobbly = "MMMAAAMMAMAM".split("").map((part, index) => done(la(1 + index, part === "M" ? 9 : 15)));
+for (let count = 1; count <= wobbly.length; count++) {
+  const { stale, fresh } = reconcile(patternsIn(wobbly.slice(0, count), LA, kept.map((row) => row.text)), kept, []);
+  kept = [...kept.filter((row) => !stale.includes(row)), ...fresh.slice(0, 1).map((text) => ({ id: `w${count}`, text }))];
+  saves += fresh.length > 0 ? 1 : 0;
+}
+assert.equal(saves, 1, "the morning is saved once, not three times");
+assert.deepEqual(kept.map((row) => row.text), [morning]);
+
 console.log("patterns self-check passed");

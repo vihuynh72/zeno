@@ -6,13 +6,19 @@ import { localHour } from "@/lib/tz";
 const KINDS = ["You finish most steps", "Steps take you", "You often skip", "Steps of 10 minutes"];
 export const kindOf = (text: string) => KINDS.find((kind) => text.startsWith(kind)) ?? null;
 
+const QUICKER = "Steps take you less time than you plan.";
+const SKIPS = "You often skip steps of 30 minutes or more.";
+const TINY = "Steps of 10 minutes or less work best for you.";
+
 const partOfDay = (hour: number) =>
   hour < 5 || hour >= 22 ? "late at night" : hour < 12 ? "in the morning" : hour < 17 ? "in the afternoon" : "in the evening";
 
 // Patterns that hold in these steps, each one short sentence, in a fixed order. Deterministic, no model, and each
-// kind needs a minimum number of steps before it says anything.
-export function patternsIn(steps: StepRecord[], timeZone: string): string[] {
+// kind needs a minimum number of steps before it says anything. A pattern in `kept` (already saved) holds on a
+// looser line than a new one, so a share that wobbles around the line is said once, not saved again and again.
+export function patternsIn(steps: StepRecord[], timeZone: string, kept: string[] = []): string[] {
   const found: string[] = [];
+  const line = (text: string, add: number, keep: number) => (kept.includes(text) ? keep : add);
   const done = steps.filter((step) => step.status === "done");
 
   // Time of day: 5 finished steps or more, 60% of them in one part of the day.
@@ -22,7 +28,10 @@ export function patternsIn(steps: StepRecord[], timeZone: string): string[] {
       const part = partOfDay(localHour(timeZone, new Date(step.doneAt)));
       parts.set(part, (parts.get(part) ?? 0) + 1);
     }
-    for (const [part, count] of parts) if (count / done.length >= 0.6) found.push(`You finish most steps ${part}.`);
+    for (const [part, count] of parts) {
+      const text = `You finish most steps ${part}.`;
+      if (count / done.length >= line(text, 0.6, 0.5)) found.push(text);
+    }
   }
 
   // Real length versus the estimate: 4 started steps or more with an estimate, compared by the median. Under a
@@ -38,15 +47,16 @@ export function patternsIn(steps: StepRecord[], timeZone: string): string[] {
     const median = ratios.length % 2 ? ratios[Math.floor(half)] : (ratios[half - 1] + ratios[half]) / 2;
     // To the half, up to 3x: a bigger number would only stretch plans past the 5-minute start.
     const multiple = Math.min(Math.round(median * 2) / 2, 3);
-    if (median >= 1.5) {
+    const slow = kept.some((text) => multipleOf(text) > 0);
+    if (median >= (slow ? 1.25 : 1.5)) {
       found.push(multiple < 3 ? `Steps take you about ${multiple}x as long as you plan.` : "Steps take you 3x as long as you plan, or more.");
-    } else if (median <= 0.7) found.push("Steps take you less time than you plan.");
+    } else if (median <= line(QUICKER, 0.7, 0.8)) found.push(QUICKER);
   }
 
   // Long steps skipped: 3 skips or more of steps planned at 30 minutes or more, and at least half of those steps.
   const long = steps.filter((step) => (step.minutes ?? 0) >= 30);
   const longSkips = long.filter((step) => step.status === "skipped").length;
-  if (longSkips >= 3 && longSkips / long.length >= 0.5) found.push("You often skip steps of 30 minutes or more.");
+  if (longSkips >= 3 && longSkips / long.length >= line(SKIPS, 0.5, 0.4)) found.push(SKIPS);
 
   // Tiny starts: 3 finished steps or more of 10 minutes or less, finished more often than longer ones.
   const finishRate = (list: StepRecord[]) => list.filter((step) => step.status === "done").length / list.length;
@@ -55,9 +65,9 @@ export function patternsIn(steps: StepRecord[], timeZone: string): string[] {
   if (
     tiny.filter((step) => step.status === "done").length >= 3 &&
     longer.length > 0 &&
-    finishRate(tiny) > finishRate(longer)
+    finishRate(tiny) > finishRate(longer) - line(TINY, 0, 0.1)
   ) {
-    found.push("Steps of 10 minutes or less work best for you.");
+    found.push(TINY);
   }
   return found;
 }
@@ -90,7 +100,7 @@ export function reconcile<T extends { text: string }>(found: string[], saved: T[
 export async function learnFromSteps(email: string, timeZone: string): Promise<Memory | null> {
   const [steps, memories, removed] = await Promise.all([recentSteps(email), listMemories(email), forgottenMemories(email)]);
   const saved = memories.filter((memory) => memory.source === "pattern");
-  const { stale, fresh } = reconcile(patternsIn(steps, timeZone), saved, removed);
+  const { stale, fresh } = reconcile(patternsIn(steps, timeZone, saved.map((memory) => memory.text)), saved, removed);
   await dropMemories(email, stale.map((memory) => memory.id));
   for (const text of fresh) {
     const learned = await addMemory(email, text, { group: "patterns", source: "pattern" });
