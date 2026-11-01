@@ -1,11 +1,12 @@
 import type { Session } from "next-auth";
+import { dueIn } from "@/lib/brief";
 import { calendarWriteFor, freeSlots, getTodayEvents, upcomingDeadlines, type CalendarEvent } from "@/lib/calendar";
 import type { CalendarWrite, Deadline, FreeSlot, Goal, Memory, Progress } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
 import { getRecentEmail, type EmailSummary } from "@/lib/gmail";
 import { currentGoal, listMemories } from "@/lib/goals";
 import { NO_PROGRESS, progressFor } from "@/lib/progress";
-import { formatDate, formatTime } from "@/lib/tz";
+import { dayBounds, formatDate, formatTime, localDate } from "@/lib/tz";
 
 export type UserContext = {
   email: string;
@@ -131,7 +132,7 @@ export async function loadUserContext(
 export function dayToText(context: UserContext, now = new Date()): string {
   const lines: string[] = [];
   const zone = context.timeZone;
-  lines.push(`Today is ${formatDate(now, zone)}. It is now ${formatTime(now, zone)} (${zone}).`);
+  lines.push(`Today is ${formatDate(now, zone)} (${localDate(zone, now)}). It is now ${formatTime(now, zone)} (${zone}).`);
 
   if (context.calendarState === "ok") {
     if (context.events.length === 0) {
@@ -156,6 +157,41 @@ export function dayToText(context: UserContext, now = new Date()): string {
     lines.push(
       "Calendar today: could not be read. Do not describe the calendar as empty or clear, and do not invent events.",
     );
+  }
+
+  // Free time and deadlines come from the same calendars, so they share the honesty rule above.
+  // shortcut: a failed read of either arrives as an empty list, so an empty one is never said as "none"; have loadUserContext mark a failed read (null) to say "could not be read".
+  if (context.calendarState === "ok") {
+    const days = [
+      ["today", localDate(zone, now)],
+      ["tomorrow", localDate(zone, dayBounds(zone, now).end)],
+    ];
+    for (const [label, date] of days) {
+      const slots = context.free.filter((slot) => localDate(zone, new Date(slot.start)) === date);
+      const said = slots.map((slot) => `${formatTime(slot.start, zone)} to ${formatTime(slot.end, zone)}`).join(", ");
+      if (said) lines.push(`Free time ${label}: ${said}.`);
+    }
+    if (context.deadlines.length > 0) {
+      lines.push(`Deadlines: ${context.deadlines.map((item) => `${item.title}, due ${dueIn(item.daysLeft)} (${item.date})`).join("; ")}.`);
+    }
+  } else {
+    lines.push("Free time and deadlines: could not be read. Do not invent free time or deadlines.");
+  }
+
+  // progressFor always returns a new object, so NO_PROGRESS itself means progress could not be read.
+  if (context.tasksState === "ok" && context.progress !== NO_PROGRESS) {
+    const { streak, best, stepsThisWeek, atRisk, milestone } = context.progress;
+    lines.push(
+      [
+        `Progress: ${streak > 0 ? `a ${streak}-day streak` : "no streak right now"} (best ${best}), ${stepsThisWeek} steps finished this week.`,
+        milestone && `They reached a ${milestone}-day milestone today.`,
+        atRisk && "Nothing is finished yet today, and one 5-minute step keeps the streak going tonight.",
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+  } else {
+    lines.push("Streak and progress: could not be read. Do not guess them.");
   }
 
   if (context.emailState === "ok") {
