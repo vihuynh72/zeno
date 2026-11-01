@@ -62,10 +62,13 @@ Zeno knows Maya right after sign-in, and day 2 is visibly smarter because of day
 - **Profile scan from Google** (with the sign-in permission): calendar (past and next 30 days) **plus full
   emails**. Learn school, work and routines; projects and deadlines; interests and life goals; key people;
   and interests or habits from purchases and events that help motivate (fitness or weight-loss goals,
-  habits to break). **Health details are kept when they help planning**, from talk and from scans.
-- **Never-list** (even with full email access): sexual or reproductive health, religion, politics,
-  immigration status, account balances or debts, passwords, codes and verification links, and other
-  people's private matters. Store facts, never the emails themselves.
+  habits to break). **Overall health is kept when it helps planning, and nothing more specific**: never a
+  medicine's name, so keep the effect or the errand ("Mornings feel foggy lately.").
+- **Private facts stay on the device** (Vi, Nov 1, later answer). Overall health, sexual orientation (nothing
+  more), religion, politics, immigration status, and balances or debts are allowed, but only in the person's
+  browser, never on Zeno's servers. Until that device-only vault ships, the server drops them (the never-list in
+  `blockedFact`). **Never kept anywhere**: passwords, codes, verification links, and other people's private
+  matters. Store facts, never the emails themselves.
 - After the first scan, a **"Here's what I learned" card** in setup: each fact with a tap to remove.
 - **Re-scan once a day, quietly** (first open of the day); new facts show as a Noted line.
 - **Learn from behavior**: finished or skipped steps, real duration versus estimate, time of day.
@@ -77,6 +80,7 @@ Zeno knows Maya right after sign-in, and day 2 is visibly smarter because of day
 ### Streaks (all four mechanics)
 - **One finished step counts** for the day, even 5 minutes.
 - **One rest day per week** (Mon–Sun), used automatically: a single missed day doesn't break the streak.
+  Days before the first finished step are `none` (a neutral dot), never `missed`.
 - **Evening save-your-streak**: after 6 PM local with a live streak and nothing finished today, the first card
   offers "One 5-minute step keeps your 6-day streak going" with a one-tap start.
 - **Milestones** at 3, 7, 14, 30, 50, 100 days: a bigger stamp and a spoken line.
