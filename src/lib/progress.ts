@@ -25,6 +25,8 @@ export function progressFrom(finished: Record<string, number>, timeZone: string,
   const today = dayOf(localDate(timeZone, now));
   const monday = mondayOf(today);
 
+  // Days before the first finished step are "none": Zeno didn't know them, so they never show as missed.
+  const first = Math.min(Infinity, ...Object.keys(finished).map(dayOf));
   let streak = 0;
   let best = 0;
   let restWeek = -1;
@@ -42,7 +44,7 @@ export function progressFrom(finished: Record<string, number>, timeZone: string,
       state = "rest";
     } else {
       streak = 0;
-      state = "missed";
+      state = day < first ? "none" : "missed";
     }
     best = Math.max(best, streak);
     if (day >= monday) {

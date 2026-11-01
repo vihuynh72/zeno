@@ -238,7 +238,7 @@ function profilePrompt(max: number): string {
     "From their calendar and recent email, write lasting facts about them that will help plan their days:",
     "school, work and routines; projects and deadlines, with dates; interests and life goals; key people (professors, boss, teammates) and who they are to them;",
     "and interests or habits that help motivate, seen in purchases and events, like a gym membership, a fitness or weight-loss goal, or a habit to break.",
-    "Health details are fine when they help planning.",
+    "Overall health is fine when it helps planning, but never name a medicine: keep the effect or the errand instead.",
     "Each fact is one short sentence about them, at most 20 words, starting with a verb and without their name, like",
     "'Takes BIO 121 lab Wednesdays 2 to 4:50 PM.' or 'Works library shifts Tuesdays and Thursdays 8 to noon.'",
     "group: about (school, major, year, job, home town, health conditions that affect planning),",

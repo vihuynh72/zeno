@@ -128,7 +128,7 @@ export async function askModel(messages: ChatMessage[], options: AskOptions): Pr
 
 // What Zeno never keeps, from talk, notes or scans (docs/PLAN-NOV.md).
 export const NEVER_KEEP =
-  "Never keep sexual or reproductive health, religion, politics, immigration status, money they have or owe, passwords, verification codes or links, or other people's private matters. Keep health details when they help plan their days, like needing short steps or having low energy in the mornings.";
+  "Never keep sexual or reproductive health, religion, politics, immigration status, money they have or owe, passwords, verification codes or links, or other people's private matters. Keep overall health only when it helps plan their days, like needing short steps or having low energy in the mornings, and never name a medicine: keep the effect or the errand instead, like 'Mornings feel foggy lately.' or 'Pharmacy pickup Friday.'";
 
 // The Guided day persona. Zeno reads the calendar and inbox and can only suggest blocks, which the person
 // books with a tap, so it never claims a calendar change; refs are tool handles the person never hears.

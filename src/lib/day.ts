@@ -71,8 +71,8 @@ export type CalendarBlock = {
 export type Progress = {
   streak: number;
   best: number;
-  // Monday to Sunday of this week.
-  week: ("done" | "rest" | "missed" | "today" | "future")[];
+  // Monday to Sunday of this week; "none" is a day before the person's first finished step.
+  week: ("done" | "rest" | "missed" | "none" | "today" | "future")[];
   stepsThisWeek: number;
   restDaysLeft: number;
   // Evening, a live streak and nothing finished today: the first card offers a 5-minute save.

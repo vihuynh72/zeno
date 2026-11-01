@@ -59,6 +59,17 @@ The weights changed on 2026-11-01: group accuracy came in at 10, retrieval went 
 
 The overall score is out of 100. Compare runs on it, then read the per-run "failures" list. It shows the user turn, Zeno's reply, the actions and the stored rows for every miss. A keyword miss can be a phrasing the matcher doesn't know rather than a real failure, so check the evidence before you change the prompt. Model calls are a lower bound (one call per turn, plus one when a tool saved something). The exact number is the count of `Model call` lines in the server log.
 
+## Medicine names and stored facts (2026-11-01)
+
+Vi's rule: overall health is kept when it helps planning, and nothing more specific. Zeno now never names a medicine.
+It keeps the effect or the errand instead. The bench counts a stored drug name as junk (`medicine-name` in talk,
+`insulin` in import). "Mornings feel foggy lately." and "To do: Pick up prescription at pharmacy" are report-only health.
+
+False claims were also too strict: in the duplicate and recall phases the fact is already stored, so "I've got that
+saved" is true. Only a claimed delete still counts there.
+
+One run: **100.0**. All metrics were 100%, with 0 junk, 0 false claims and 0 errors. Talk p50 was 2.5 s and p95 5.0 s.
+
 ## Review fixes (2026-11-01)
 
 Branch `integrate/backend` after the review fixes (pattern hysteresis, every to-do kept, talk proposals only on request with write access, the never-list on talk and import, calendar and email text marked as data), `--runs 1` three times against a fresh local production build on port 3231. Run 3 used the final wording of the data rule.

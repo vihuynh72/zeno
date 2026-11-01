@@ -19,9 +19,11 @@ const future = ["future", "future", "future", "future", "future", "future"];
 // Empty history, noon on Thursday Oct 29.
 assert.deepEqual(
   at({}, "2026-10-29T19:00:00Z"),
-  { streak: 0, best: 0, week: ["missed", "missed", "missed", "today", ...future.slice(3)], stepsThisWeek: 0, restDaysLeft: 1, atRisk: false, milestone: null },
-  "empty history",
+  { streak: 0, best: 0, week: ["none", "none", "none", "today", ...future.slice(3)], stepsThisWeek: 0, restDaysLeft: 1, atRisk: false, milestone: null },
+  "empty history: days before the first step are none, not missed",
 );
+// First step ever on Tuesday Oct 27, nothing Wednesday: Monday is none, Wednesday is the week's rest day.
+assert.deepEqual(at({ "2026-10-27": 1 }, "2026-10-29T19:00:00Z").week.slice(0, 4), ["none", "done", "rest", "today"], "none only before the first step");
 
 // Sun Oct 25 to Sat Oct 31 finished except Thursday (the week's rest day); several steps on some days.
 const week = { "2026-10-25": 1, "2026-10-26": 2, "2026-10-27": 1, "2026-10-28": 3, "2026-10-30": 1, "2026-10-31": 1 };

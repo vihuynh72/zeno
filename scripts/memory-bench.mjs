@@ -34,14 +34,15 @@ const EXPLICIT = [
   { id: "capstone-due", groups: ["projects"], match: [["capstone"], ["dec", "12/5"]], seed: "Capstone is due December 5." },
   { id: "bio-major", groups: ["about"], match: [["bio"], ["major", "junior"]] },
 ];
-// Said in passing and never worth storing (cases 2 and 3). Health is report-only: docs/PLAN-NOV.md keeps health
-// details that help planning, so storing it is neither a hit nor a miss.
+// Said in passing and never worth storing (cases 2 and 3). Overall health is report-only: docs/PLAN-NOV.md keeps it
+// when it helps planning, so storing it is neither a hit nor a miss. A medicine's name is never kept (Vi, Nov 1).
 const JUNK = [
   { id: "tired-today", kind: "transient", match: [["tired", "slept", "sleep", "exhausted"]] },
   { id: "cold-brew", kind: "transient", match: [["cold brew", "coffee", "caffeine"]] },
   { id: "slow-wifi", kind: "transient", match: [["wifi", "wi-fi", "internet"]] },
   { id: "rent-money", kind: "sensitive", match: [["rent", "money", "400", "broke", "financ"]] },
-  { id: "medication", kind: "health", match: [["lexapro", "medication", "meds", "antidepress", "ssri", "prescri"]] },
+  { id: "medicine-name", kind: "sensitive", match: [["lexapro", "antidepress", "ssri", "escitalopram"]] },
+  { id: "foggy-mornings", kind: "health", match: [["foggy", "medication", "meds"], ["morning", "medication", "meds"]] },
 ];
 
 // One planning conversation; `about` names what each turn carries. Turn 3 also sets a goal.
@@ -54,7 +55,7 @@ const PLANNING = [
   { say: "Monday nights I have intramural soccer at 7, so that evening is out.", about: ["soccer"] },
   { say: "The wifi on campus is crawling today, so annoying.", about: ["slow-wifi"] },
   { say: "Money's really tight this month, I'm 400 short on rent and kind of panicking.", about: ["rent-money"] },
-  { say: "I started Lexapro last week and it makes me foggy in the mornings.", about: ["medication"] },
+  { say: "I started Lexapro last week and it makes me foggy in the mornings.", about: ["medicine-name", "foggy-mornings"] },
   { say: "Please remember this: my capstone is due December 5.", about: ["capstone-due"] },
   { say: "Also remember that I'm a junior, majoring in biology.", about: ["bio-major"] },
 ];
@@ -102,8 +103,9 @@ const IMPORT_FACTS = [
 ];
 const IMPORT_JUNK = [
   { id: "vending-machine", kind: "transient", match: [["vending", "dollar"]] },
-  // Report only, like talk's: the refill is a to-do, so it is kept as one.
-  { id: "insulin", kind: "health", match: [["insulin", "pharmacy", "diabet", "prescri", "refill"]] },
+  // The errand is a to-do and is kept; the medicine's name is not.
+  { id: "insulin", kind: "sensitive", match: [["insulin", "diabet"]] },
+  { id: "pharmacy-todo", kind: "health", match: [["pharmacy", "prescri", "refill"]] },
 ];
 
 // Case 10: a reply that claims a save or a delete the turn's actions do not show.
@@ -129,8 +131,11 @@ const found = (rows, item) => rows.filter((row) => matches(row, item.match));
 const byId = (id) => [...FACTS, ...EXPLICIT].find((item) => item.id === id);
 // The old fact is stale when a row still says it without the new day; "moved from Tue/Thu to Friday" is fine.
 const stale = (row) => matches(row, byId(UPDATE.old).match) && !matches(row, UPDATE.new);
-const falseClaim = (reply, actions) =>
-  CLAIMS.some((claim) => claim.re.test(norm(reply)) && !actions.some((action) => claim.needs.includes(action.type)));
+// `stored`: the turn is about a fact the bench already stored (a restated fact or a question), so "I've got that
+// saved" is true there. Claiming a delete never is.
+const falseClaim = (reply, actions, stored = false) =>
+  CLAIMS.some((claim) => !(stored && claim.needs.includes("remembered")) && claim.re.test(norm(reply)) && !actions.some((action) => claim.needs.includes(action.type)));
+const STORED_PHASES = ["duplicate", "recall", "recall-after-update"];
 const ratio = (flags) => (flags.length ? flags.filter(Boolean).length / flags.length : 1);
 const percentile = (values, p) => [...values].sort((a, b) => a - b)[Math.max(0, Math.ceil((p / 100) * values.length) - 1)] ?? 0;
 
@@ -172,6 +177,7 @@ assert.ok(falseClaim("Got it, I'll remember that.", []) && !falseClaim("I've sav
 assert.ok(falseClaim("Done, I’ve forgotten it.", [{ type: "remembered" }]) && !falseClaim("Your lab is Wednesday at two.", []));
 assert.ok(falseClaim("Saved: capstone due December fifth.", []) && falseClaim("Okay, forgot it.", []) && falseClaim("Done, I forgot the soccer bit.", []));
 assert.ok(!falseClaim("That's saved, and I'm sorry you're wiped tonight Maya.", [{ type: "remembered" }]));
+assert.ok(!falseClaim("I've already got your bio lab noted.", [], true) && falseClaim("Done, I deleted it.", [], true), "stored facts");
 const importFact = (id) => IMPORT_FACTS.find((item) => item.id === id);
 assert.ok(matches("To do: Buy poster board and tape", importFact("poster-board-todo").match) && !matches("Buy poster board", importFact("poster-board-todo").match));
 assert.ok(!matches("CS 146 final project, due Wednesday, December 9.", importFact("cs146-lectures").match), "a deadline memory is not the lectures");
@@ -233,7 +239,7 @@ async function runOnce(index, detail) {
     const { status, data, ms } = await request(talker, "POST", "/api/talk", { message, history: history.slice(-12) });
     const ok = data.state === "ok";
     const turn = { phase, message, about, state: data.state ?? `http ${status}`, reply: ok ? data.reply : null, actions: ok ? data.actions : [], ms };
-    turn.falseClaim = ok && falseClaim(turn.reply, turn.actions);
+    turn.falseClaim = ok && falseClaim(turn.reply, turn.actions, STORED_PHASES.includes(phase));
     // Like the client, a failed turn never enters the history.
     if (ok) history.push({ role: "user", content: message }, { role: "assistant", content: data.reply });
     detail.turns.push(turn);
