@@ -1,5 +1,30 @@
 import type { UserContext } from "@/lib/context";
+import type { FirstPick } from "@/lib/day";
 import { localHour } from "@/lib/tz";
+
+// A deadline's days left the way people say it.
+export const dueIn = (daysLeft: number) => (daysLeft <= 0 ? "today" : daysLeft === 1 ? "tomorrow" : `in ${daysLeft} days`);
+
+// The first card when the model is unavailable: the next todo step (5 minutes into it when it is long or
+// unsized), else the nearest deadline. null when there is neither.
+export function rulePick(context: UserContext): FirstPick | null {
+  const { goal } = context;
+  const step = goal?.steps.find((item) => item.status === "todo");
+  if (goal && step) {
+    const minutes = step.minutes !== null && step.minutes <= 15 ? step.minutes : 5;
+    return {
+      goal: goal.title,
+      due: goal.due ?? null,
+      stepId: step.id,
+      steps: [{ title: step.title, minutes }],
+      why: minutes === step.minutes ? "It's next on your plan." : "It's next on your plan; 5 minutes gets it going.",
+    };
+  }
+  const deadline = context.deadlines[0];
+  return deadline
+    ? { goal: deadline.title, due: deadline.date, stepId: null, steps: [{ title: "Open it and work 5 minutes", minutes: 5 }], why: `Due ${dueIn(deadline.daysLeft)}.` }
+    : null;
+}
 
 // Before 5 AM it is still the night before for most people, not morning.
 function greetingAt(timeZone: string, now: Date, firstName: string | null) {
@@ -9,19 +34,25 @@ function greetingAt(timeZone: string, now: Date, firstName: string | null) {
   return `Good ${hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening"}${who}.`;
 }
 
-// Zeno's first line when the model is unavailable: it offers the next step and never guesses the day.
+// Zeno's first line when the model is unavailable: it offers the next step or the nearest deadline (what
+// rulePick puts on the card) and never guesses the day.
 export function ruleOpening(context: UserContext, firstName: string | null, now = new Date()): string {
   const { goal } = context;
   const next = goal?.steps.find((step) => step.status === "doing" || step.status === "todo");
+  const deadline = context.deadlines[0];
+  const late = localHour(context.timeZone, now) < 5;
   const unread = [context.calendarState !== "ok" && "calendar", context.emailState !== "ok" && "inbox"].filter(Boolean);
   return [
     greetingAt(context.timeZone, now, firstName),
     unread.length > 0 && `I couldn't check your ${unread.join(" or ")} just now.`,
-    goal && next && localHour(context.timeZone, now) >= 5
-      ? `Next up for ${goal.title}: ${next.title}. Want to pick it up?`
-      : localHour(context.timeZone, now) < 5
-        ? "Want to set up tomorrow's first step before you sleep?"
-        : "What's one thing you want to move forward today?",
+    !late && context.progress.atRisk && `One 5-minute step keeps your ${context.progress.streak}-day streak going.`,
+    late
+      ? "Want to set up tomorrow's first step before you sleep?"
+      : goal && next
+        ? `Next up for ${goal.title}: ${next.title}. Want to pick it up?`
+        : deadline
+          ? `${deadline.title} is due ${dueIn(deadline.daysLeft)}. Want to open it for 5 minutes?`
+          : "What's one thing you want to move forward today?",
   ]
     .filter(Boolean)
     .join(" ");

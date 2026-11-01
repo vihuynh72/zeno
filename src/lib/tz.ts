@@ -72,3 +72,13 @@ export function formatTime(value: string | Date, timeZone: string) {
 export function formatDate(value: Date, timeZone: string) {
   return value.toLocaleDateString("en-US", { timeZone, weekday: "long", month: "long", day: "numeric" });
 }
+
+// The zone's wall clock with its UTC offset, like 2026-11-02T09:30-08:00, so a model can copy an exact time.
+export function localIso(value: string | Date, timeZone: string) {
+  const instant = Math.floor(new Date(value).getTime() / 1000) * 1000;
+  const p = wallClock(timeZone, new Date(instant));
+  const minutes = Math.round(offset(timeZone, instant) / 60000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const zone = `${minutes < 0 ? "-" : "+"}${pad(Math.floor(Math.abs(minutes) / 60))}:${pad(Math.abs(minutes) % 60)}`;
+  return `${p.year}-${pad(p.month)}-${pad(p.day)}T${pad(p.hour)}:${pad(p.minute)}${zone}`;
+}

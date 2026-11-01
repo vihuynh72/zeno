@@ -19,6 +19,7 @@ function goalFrom(rows: Record<string, unknown>[]): Goal | null {
   return {
     id: String(rows[0].goal_id),
     title: String(rows[0].goal_title),
+    due: rows[0].goal_due ? String(rows[0].goal_due) : null,
     steps: rows
       .filter((row) => row.id !== null)
       .map((row) => ({
@@ -36,7 +37,8 @@ function goalFrom(rows: Record<string, unknown>[]): Goal | null {
 
 function goalQuery(email: string, goalId: string) {
   return getSql()`
-    SELECT g.id AS goal_id, g.title AS goal_title, s.id, s.title, s.minutes, s.status, s.started_at, s.done_at, s.prep
+    SELECT g.id AS goal_id, g.title AS goal_title, to_char(g.due, 'YYYY-MM-DD') AS goal_due,
+      s.id, s.title, s.minutes, s.status, s.started_at, s.done_at, s.prep
     FROM goals g LEFT JOIN steps s ON s.goal_id = g.id AND s.user_email = ${email}
     WHERE g.id = ${goalId} AND g.user_email = ${email}
     ORDER BY s.position
@@ -58,14 +60,15 @@ export async function hasAnyGoal(email: string): Promise<boolean> {
   return (await getSql()`SELECT 1 FROM goals WHERE user_email = ${email} LIMIT 1`).length > 0;
 }
 
-export async function setGoal(email: string, title: string, steps: NewStep[]): Promise<Goal> {
+// due is YYYY-MM-DD, checked by the caller.
+export async function setGoal(email: string, title: string, steps: NewStep[], due: string | null = null): Promise<Goal> {
   await ensureSchema();
   const sql = getSql();
   const goalId = crypto.randomUUID();
   const results = await sql.transaction([
     // One goal at a time: the old one is paused, not lost.
     sql`UPDATE goals SET status = 'paused', updated_at = now() WHERE user_email = ${email} AND status = 'active'`,
-    sql`INSERT INTO goals (id, user_email, title) VALUES (${goalId}, ${email}, ${title})`,
+    sql`INSERT INTO goals (id, user_email, title, due) VALUES (${goalId}, ${email}, ${title}, ${due})`,
     ...steps.map(
       (step, index) => sql`
         INSERT INTO steps (goal_id, user_email, title, minutes, position)

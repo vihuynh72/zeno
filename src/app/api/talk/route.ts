@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { cleanHistory, talk } from "@/lib/agent";
 import { aiConfigured } from "@/lib/ai";
+import { freeSlots } from "@/lib/calendar";
 import { loadUserContext } from "@/lib/context";
 import type { TalkResponse } from "@/lib/day";
 import { timeZoneFrom } from "@/lib/tz";
@@ -25,12 +26,17 @@ export async function POST(request: Request) {
   }
 
   const timeZone = timeZoneFrom((await cookies()).get("tz")?.value);
-  const context = await loadUserContext(session.user.email, session, timeZone);
+  const accessToken = session.error ? undefined : session.accessToken;
+  const [context, free] = await Promise.all([
+    loadUserContext(session.user.email, session, timeZone),
+    // Today and tomorrow, so a block can be offered for tomorrow morning; on failure the day's own free time stands.
+    accessToken ? freeSlots(accessToken, timeZone, { minutes: 5, days: 2 }).catch(() => null) : null,
+  ]);
   const firstName = session.user.name?.trim().split(/\s+/)[0] || null;
 
   try {
-    const result = await talk(context, firstName, cleanHistory(body?.history), message);
-    return NextResponse.json({ state: "ok", ...result, proposal: [] } satisfies TalkResponse);
+    const result = await talk({ ...context, free: free ?? context.free }, firstName, cleanHistory(body?.history), message);
+    return NextResponse.json({ state: "ok", ...result } satisfies TalkResponse);
   } catch (error) {
     console.error("Talk model call failed:", error);
     return NextResponse.json({ state: "model-error" } satisfies TalkResponse, { status: 502 });

@@ -1,9 +1,9 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { openingPrompt, parseReply, REPLY_SCHEMA, systemPrompt } from "@/lib/agent";
+import { OPENING_SCHEMA, openingPrompt, parseOpening, systemPrompt, type Refs } from "@/lib/agent";
 import { aiConfigured, askModel } from "@/lib/ai";
-import { ruleOptions } from "@/lib/brief";
+import { ruleOpening, ruleOptions, rulePick } from "@/lib/brief";
 import { loadUserContext } from "@/lib/context";
 import type { OpeningResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
@@ -12,14 +12,12 @@ import { dayBounds, timeZoneFrom } from "@/lib/tz";
 
 export const maxDuration = 30;
 
-// The model-written opening and options in one call; the screens show the rule line until it lands.
+// The model-written opening, options and first-card pick in one call; the screens show the rule line until it
+// lands. When the model fails, the rule line and rule pick answer instead, so the first card always has one thing.
 export async function GET() {
   const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ state: "signed-out" } satisfies OpeningResponse, { status: 401 });
-  }
-  if (!aiConfigured()) {
-    return NextResponse.json({ state: "error" } satisfies OpeningResponse, { status: 503 });
   }
 
   const email = session.user.email;
@@ -32,24 +30,35 @@ export async function GET() {
     loadUserContext(email, session, timeZone),
     databaseConfigured() ? stepsFinishedBetween(email, yesterday.start, yesterday.end).catch(() => []) : [],
   ]);
+  const rule = () =>
+    NextResponse.json({
+      state: "ok",
+      opening: ruleOpening(context, firstName),
+      options: ruleOptions(context),
+      pick: rulePick(context),
+    } satisfies OpeningResponse);
+  if (!aiConfigured()) return rule();
 
   try {
+    const refs: Refs = new Map();
     const text = await askModel(
       [
-        { role: "system", content: systemPrompt(firstName, context.memories, new Map()) },
-        { role: "user", content: openingPrompt(context, firstName, finished) },
+        { role: "system", content: systemPrompt(firstName, context.memories, refs) },
+        { role: "user", content: openingPrompt(context, firstName, finished, refs) },
       ],
       // Measured live on three days: low averaged 3.5 s to minimal's 2.9 s, for no better lines.
-      { effort: "minimal", maxTokens: 2048, schema: REPLY_SCHEMA },
+      { effort: "minimal", maxTokens: 2048, schema: OPENING_SCHEMA },
     );
-    const reply = parseReply(text);
+    const reply = parseOpening(text, context.goal, refs);
     if (!reply) throw new Error("Opening reply did not match the schema");
+    // A pick that fails the checks gets the rule card and the rule line that names it, never words about something else.
+    if (!reply.pick && rulePick(context)) return rule();
     // Measured live: the model can ask a question and still offer nothing to tap.
     const options = reply.options.length > 0 ? reply.options : ruleOptions(context);
-    return NextResponse.json({ state: "ok", opening: reply.say, options, pick: null } satisfies OpeningResponse);
+    return NextResponse.json({ state: "ok", opening: reply.say, options, pick: reply.pick } satisfies OpeningResponse);
   } catch (error) {
     // Never log the reply itself: it quotes the person's calendar and email.
     console.error("Opening model call failed:", error instanceof Error ? error.message.slice(0, 120) : "unknown");
-    return NextResponse.json({ state: "error" } satisfies OpeningResponse, { status: 502 });
+    return rule();
   }
 }
