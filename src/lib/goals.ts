@@ -30,13 +30,16 @@ function goalFrom(rows: Record<string, unknown>[]): Goal | null {
         doneAt: iso(row.done_at),
         // Checked by sourcesFrom before it was stored.
         prep: (row.prep as PrepSource[] | null) ?? null,
+        scheduledAt: iso(row.scheduled_at),
+        eventId: row.event_id ? String(row.event_id) : null,
       })),
   };
 }
 
 function goalQuery(email: string, goalId: string) {
   return getSql()`
-    SELECT g.id AS goal_id, g.title AS goal_title, s.id, s.title, s.minutes, s.status, s.started_at, s.done_at, s.prep
+    SELECT g.id AS goal_id, g.title AS goal_title, s.id, s.title, s.minutes, s.status, s.started_at, s.done_at, s.prep,
+      s.event_id, s.scheduled_at
     FROM goals g LEFT JOIN steps s ON s.goal_id = g.id AND s.user_email = ${email}
     WHERE g.id = ${goalId} AND g.user_email = ${email}
     ORDER BY s.position
@@ -158,6 +161,16 @@ export async function setStepStatus(email: string, stepId: string, status: StepS
     goalQuery(email, goalId),
   ]);
   return goalFrom(results[results.length - 1]);
+}
+
+// Links a step to its block on the Zeno calendar (the event id and the block's start); nulls clear the link.
+export async function setStepSchedule(email: string, stepId: string, eventId: string | null, scheduledAt: string | null): Promise<boolean> {
+  await ensureSchema();
+  const rows = await getSql()`
+    UPDATE steps SET event_id = ${eventId}, scheduled_at = ${scheduledAt}
+    WHERE id = ${stepId} AND user_email = ${email} RETURNING id
+  `;
+  return rows.length > 0;
 }
 
 // The step's title and its goal's: the only words the prep search ever sees.

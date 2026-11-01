@@ -191,7 +191,7 @@ export type WeekEvent = {
 
 export type WeekResponse =
   | { state: "ok"; timeZone: string; days: { date: string; events: WeekEvent[] }[]; write: CalendarWrite }
-  | { state: "signed-out" | "no-access" | "error" };
+  | { state: "signed-out" | "no-access" | "bad-request" | "error" };
 
 // POST /api/calendar/free body: { minutes, days? } → free slots that fit, soonest first.
 export type FreeResponse =

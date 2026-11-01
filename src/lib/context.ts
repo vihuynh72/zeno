@@ -37,9 +37,14 @@ async function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
   return data;
 }
 
+// After a booking or an undo, the next load reads this person's calendar fresh (on this instance).
+export function forgetCalendar(email: string) {
+  for (const key of ["calendar", "free", "deadlines"]) googleCache.delete(`${key}:${email}`);
+}
+
 export async function loadUserContext(
   email: string,
-  session: Pick<Session, "accessToken" | "error">,
+  session: Pick<Session, "accessToken" | "error" | "scope">,
   timeZone: string,
 ): Promise<UserContext> {
   // After a failed refresh the token is dead, so Google sources count as unavailable.
@@ -90,8 +95,8 @@ export async function loadUserContext(
     (async () => {
       if (!accessToken) return;
       [free, deadlines] = await Promise.all([
-        freeSlots(accessToken, timeZone, { minutes: 5, days: 1 }).catch(() => []),
-        upcomingDeadlines(accessToken, timeZone).catch(() => []),
+        cached(`free:${email}`, () => freeSlots(accessToken, timeZone, { minutes: 5, days: 1 })).catch(() => []),
+        cached(`deadlines:${email}`, () => upcomingDeadlines(accessToken, email, timeZone)).catch(() => []),
       ]);
     })(),
     (async () => {

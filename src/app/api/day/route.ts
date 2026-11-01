@@ -37,7 +37,7 @@ export async function GET() {
     options: ruleOptions(context),
     goal: context.goal,
     sources: { calendar: context.calendarState, email: context.emailState, goals: context.tasksState },
-    events: context.events.map(({ title, start, end, allDay }) => ({ title, start, end, allDay })),
+    events: context.events.map(({ title, start, end, allDay, zeno }) => ({ title, start, end, allDay, zeno })),
     free: context.free,
     deadlines: context.deadlines,
     calendarWrite: context.calendarWrite,
