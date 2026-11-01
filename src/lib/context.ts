@@ -139,6 +139,7 @@ export function dayToText(context: UserContext, now = new Date()): string {
   }
 
   // Free time and deadlines come from the same calendars, so they share the honesty rule above.
+  // shortcut: a failed read of either arrives as an empty list, so an empty one is never said as "none"; have loadUserContext mark a failed read (null) to say "could not be read".
   if (context.calendarState === "ok") {
     const days = [
       ["today", localDate(zone, now)],
@@ -148,18 +149,16 @@ export function dayToText(context: UserContext, now = new Date()): string {
       const slots = context.free.filter((slot) => localDate(zone, new Date(slot.start)) === date);
       const said = slots.map((slot) => `${formatTime(slot.start, zone)} to ${formatTime(slot.end, zone)}`).join(", ");
       if (said) lines.push(`Free time ${label}: ${said}.`);
-      else if (label === "today") lines.push("Free time today: none left.");
     }
-    lines.push(
-      context.deadlines.length === 0
-        ? "Deadlines on the Zeno calendar: none in the next 14 days."
-        : `Deadlines: ${context.deadlines.map((item) => `${item.title}, due ${dueIn(item.daysLeft)} (${item.date})`).join("; ")}.`,
-    );
+    if (context.deadlines.length > 0) {
+      lines.push(`Deadlines: ${context.deadlines.map((item) => `${item.title}, due ${dueIn(item.daysLeft)} (${item.date})`).join("; ")}.`);
+    }
   } else {
     lines.push("Free time and deadlines: could not be read. Do not invent free time or deadlines.");
   }
 
-  if (context.tasksState === "ok") {
+  // progressFor always returns a new object, so NO_PROGRESS itself means progress could not be read.
+  if (context.tasksState === "ok" && context.progress !== NO_PROGRESS) {
     const { streak, best, stepsThisWeek, atRisk, milestone } = context.progress;
     lines.push(
       [

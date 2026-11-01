@@ -1,19 +1,19 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { deadlineMemory, extractNotes, placeTodos } from "@/lib/agent";
+import { extractNotes, keepNotes } from "@/lib/agent";
 import { aiConfigured } from "@/lib/ai";
 import { calendarWriteFor, freeSlots } from "@/lib/calendar";
-import type { CalendarBlock, ImportResponse } from "@/lib/day";
+import type { ImportResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
-import { addMemory, listMemories } from "@/lib/goals";
+import { listMemories } from "@/lib/goals";
 import { timeZoneFrom } from "@/lib/tz";
 
 export const maxDuration = 30;
 
-// Body { text }: pasted notes, 1 to 8000 characters. Facts become grouped memories; deadlines and to-dos come
-// back as a proposal to book (nothing is written to the calendar here). Without calendar access the proposal is
-// empty and deadlines are kept as projects memories instead.
+// Body { text }: pasted notes, 1 to 8000 characters. Facts and deadlines become grouped memories; with calendar
+// access, deadlines and the to-dos that fit free time also come back as a proposal to book (nothing is written
+// to the calendar here). Without it the proposal is empty.
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.email) {
@@ -32,19 +32,12 @@ export async function POST(request: Request) {
   const timeZone = timeZoneFrom((await cookies()).get("tz")?.value);
   const accessToken = calendarWriteFor(session) === "no-access" ? undefined : session.accessToken;
   try {
-    const notes = await extractNotes(text, timeZone);
-    // One at a time, so each save's trim sees the one before it.
-    for (const fact of notes.facts) await addMemory(email, fact.text, { group: fact.group, source: "you" });
-    let proposal: CalendarBlock[] = [];
-    if (accessToken) {
-      const slots = await freeSlots(accessToken, timeZone, { minutes: 5, days: 3 }).catch(() => []);
-      proposal = [
-        ...notes.deadlines.map((deadline) => ({ title: deadline.title, kind: "deadline" as const, date: deadline.date, stepId: null })),
-        ...placeTodos(notes.todos, slots, timeZone),
-      ];
-    } else {
-      for (const deadline of notes.deadlines) await addMemory(email, deadlineMemory(deadline), { group: "projects", source: "you" });
-    }
+    // Free time loads while the model reads; a failed read still proposes the deadlines.
+    const [notes, slots] = await Promise.all([
+      extractNotes(text, timeZone),
+      accessToken ? freeSlots(accessToken, timeZone, { minutes: 5, days: 3 }).catch(() => []) : null,
+    ]);
+    const proposal = await keepNotes(email, notes, slots, timeZone);
     return NextResponse.json({ state: "ok", memories: await listMemories(email), proposal } satisfies ImportResponse);
   } catch (error) {
     // Never log the model reply: it quotes the person's notes.

@@ -23,11 +23,12 @@ registerHooks({
   load: (url, context, nextLoad) => (url in FAKES ? { format: "module", source: FAKES[url], shortCircuit: true } : nextLoad(url, context)),
 });
 const {
-  checkCall, checkPick, checkPlan, cleanHistory, deadlineMemory, goalText, isDate, notesFrom, openingPrompt, parseOpening,
-  parseReply, placeTodos, roundSlots, slotsText, systemPrompt, talk,
+  checkCall, checkPick, checkPlan, cleanHistory, deadlineMemory, extractNotes, goalText, isDate, keepNotes, notesFrom, openingPrompt,
+  parseOpening, parseReply, placeTodos, roundSlots, slotsText, systemPrompt, talk,
 } = await import("./agent.ts");
 const { rulePick, ruleOpening, ruleOptions, senderName } = await import("./brief.ts");
 const { dayToText } = await import("./context.ts");
+const { NO_PROGRESS } = await import("./progress.ts");
 const { askWithTools } = await import("./ai.ts");
 const { localIso } = await import("./tz.ts");
 
@@ -188,20 +189,25 @@ assert.equal(
   "Free slots for propose_block, start to end: 2026-11-02T09:30-08:00 to 2026-11-02T11:00-08:00.",
 );
 assert.match(slotsText([], zone), /none listed/);
-const propose = (args: object, current: typeof goal | null = goal, list = slots) => checkCall(call("propose_block", args), current, refs, list);
+const propose = (args: object, current: typeof goal | null = goal, list = slots) => checkCall(call("propose_block", args), current, refs, list, zone);
 assert.deepEqual(propose({ ref: "s4", title: "Draft the intro", minutes: 30, start: "2026-11-02T10:30-08:00" }), {
   name: "propose",
   block: { title: "Draft the intro", kind: "step", start: "2026-11-02T18:30:00.000Z", end: "2026-11-02T19:00:00.000Z", stepId: "d" },
 });
-assert.deepEqual(propose({ title: "Email Prof Patel", minutes: 10, start: "2026-11-03T18:00:00Z" }), {
+assert.deepEqual(propose({ title: "Email Prof Patel", minutes: 10, start: "2026-11-03T10:00:00-08:00" }), {
   name: "propose",
   block: { title: "Email Prof Patel", kind: "todo", start: "2026-11-03T18:00:00.000Z", end: "2026-11-03T18:10:00.000Z", stepId: null },
 });
+assert.equal((checkCall(call("propose_block", { title: "Read", minutes: 10, start: "2026-11-03T18:00Z" }), goal, refs, slots, "UTC") as { name?: string }).name, "propose");
 for (const [label, args] of [
   ["runs past the slot", { title: "Draft", minutes: 31, start: "2026-11-02T10:30-08:00" }],
   ["before the slot", { title: "Draft", minutes: 10, start: "2026-11-02T09:00-08:00" }],
   ["between slots", { title: "Draft", minutes: 10, start: "2026-11-02T12:00-08:00" }],
+  // Ten thirty at last week's -07:00 is 9:30 PST, inside the slot: Zeno would say ten thirty and book nine thirty.
+  ["last week's offset", { title: "Draft", minutes: 10, start: "2026-11-02T10:30-07:00" }],
+  ["UTC, not their clock", { title: "Draft", minutes: 10, start: "2026-11-03T18:00:00Z" }],
   ["no offset", { title: "Draft", minutes: 10, start: "2026-11-02T10:30" }],
+  ["not a real time", { title: "Draft", minutes: 10, start: "2026-11-02T25:30-08:00" }],
   ["not a time", { title: "Draft", minutes: 10, start: "tomorrow morning" }],
   ["bad minutes", { title: "Draft", minutes: 0, start: "2026-11-02T10:30-08:00" }],
   ["no title", { title: " ", minutes: 10, start: "2026-11-02T10:30-08:00" }],
@@ -226,10 +232,12 @@ for (const bad of [
   null, "plan", { ...plan, title: "" }, { ...plan, title: "x".repeat(121) }, { ...plan, due: "2026-02-30" }, { ...plan, due: "Nov 6" },
   { ...plan, steps: [] }, { ...plan, steps: Array(8).fill(plan.steps[0]) }, { ...plan, steps: [{ title: "Go", minutes: 0 }] },
   { ...plan, steps: [{ title: "Go", minutes: 241 }] }, { ...plan, steps: [{ title: "Go", minutes: 2.5 }] }, { ...plan, steps: [{ title: "Go" }] },
+  { ...plan, due: "0000-01-01" },
 ]) {
   assert.equal(checkPlan(bad), null, JSON.stringify(bad)?.slice(0, 60));
 }
 assert.ok(isDate("2028-02-29") && !isDate("2026-02-29") && !isDate("2026-13-01") && !isDate("2026-1-5"));
+assert.ok(isDate("2000-01-01") && isDate("2100-12-31") && !isDate("1999-12-31") && !isDate("2101-01-01"), "a sane year range");
 
 // The pick: a todo step of the current goal whenever there is one, else a new plan; strict on every field.
 const pickRefs = new Map<string, string>();
@@ -243,10 +251,15 @@ const newPlan = { goal: "CS 146 final project", due: "2026-12-09", step: "", ste
 assert.deepEqual(checkPick(newPlan, null, pickRefs), { goal: "CS 146 final project", due: "2026-12-09", stepId: null, steps: newPlan.steps, why: "Due soonest." });
 const allDone = { ...goal, steps: [step("a", "Reread the prompt", 10, "done")] };
 assert.deepEqual(checkPick(newPlan, allDone, pickRefs)?.stepId, null, "a goal with nothing left to do lets a new plan through");
+// The started step is open too: keep going on it.
+assert.deepEqual(checkPick({ ...newPlan, step: "s2", steps: [{ title: "Finish the thesis sentence", minutes: 5 }] }, essay, pickRefs), {
+  goal: "History essay", due: "2026-11-06", stepId: "b", steps: [{ title: "Finish the thesis sentence", minutes: 5 }], why: "Due soonest.",
+});
+const startedOnly = { ...goal, steps: [step("a", "Reread the prompt", 10, "done"), step("b", "Write a thesis", 15, "doing")] };
 for (const [label, raw, current] of [
   ["a new plan while a todo step waits", newPlan, essay],
+  ["a new plan while a started step waits", newPlan, startedOnly],
   ["a done step", { ...newPlan, step: "s1" }, essay],
-  ["a doing step", { ...newPlan, step: "s2" }, essay],
   ["an unknown ref", { ...newPlan, step: "s9" }, essay],
   ["a step with no goal", { ...newPlan, step: "s3" }, null],
   ["a long first step", { ...newPlan, steps: [{ title: "Draft it all", minutes: 61 }] }, null],
@@ -270,23 +283,41 @@ assert.deepEqual(parseOpening(JSON.stringify({ say: "Morning, Vi. Five minutes o
 assert.equal(parseOpening(JSON.stringify({ say: "Hi?", options: [], pick: newPlan }), essay, pickRefs)?.pick, null);
 assert.equal(parseOpening("not json", essay, pickRefs), null);
 
-// The rule pick when the model fails: the next todo step (5 minutes into a long or unsized one), else the
-// nearest deadline, else nothing.
+// The rule pick when the model fails: the started step, else the next todo step (5 minutes into a long or
+// unsized one, or when the streak is at risk), else the nearest deadline, else nothing, and nothing before 5 AM.
 const progress = { streak: 0, best: 0, week: [], stepsThisWeek: 0, restDaysLeft: 1, atRisk: false, milestone: null };
 const context = {
   email: "a@b.c", timeZone: zone, events: [], calendarState: "ok", goal: null, memories: [], tasksState: "ok",
   emails: [], emailState: "ok", free: [], deadlines: [], calendarWrite: "needs-permission", progress,
 } as const;
 const deadlines = [{ title: "CS 146 final project", date: "2026-11-03", daysLeft: 1 }, { title: "Midterm 2", date: "2026-11-18", daysLeft: 16 }];
-assert.deepEqual(rulePick({ ...context, goal: essay, deadlines }), {
+const nine = new Date("2026-10-29T16:00:00Z"); // 9 AM in Los Angeles
+assert.deepEqual(rulePick({ ...context, goal: essay, deadlines }, nine), {
+  goal: "History essay", due: "2026-11-06", stepId: "b", steps: [{ title: "Write a thesis", minutes: 15 }], why: "You already started it.",
+});
+const notStarted = { ...essay, steps: essay.steps.filter((item) => item.status !== "doing") };
+assert.deepEqual(rulePick({ ...context, goal: notStarted }, nine), {
   goal: "History essay", due: "2026-11-06", stepId: "c", steps: [{ title: "Outline three points", minutes: 5 }], why: "It's next on your plan; 5 minutes gets it going.",
 });
-assert.deepEqual(rulePick({ ...context, goal: { ...goal, steps: [step("z", "Email Prof Patel", 10, "todo")] } })?.steps, [{ title: "Email Prof Patel", minutes: 10 }]);
-assert.equal(rulePick({ ...context, goal: { ...goal, steps: [step("z", "Draft results", 45, "todo")] } })?.steps[0].minutes, 5);
-assert.deepEqual(rulePick({ ...context, goal: allDone, deadlines }), {
+const patel = { ...goal, steps: [step("z", "Email Prof Patel", 10, "todo")] };
+assert.deepEqual(rulePick({ ...context, goal: patel }, nine)?.steps, [{ title: "Email Prof Patel", minutes: 10 }]);
+assert.equal(rulePick({ ...context, goal: { ...goal, steps: [step("z", "Draft results", 45, "todo")] } }, nine)?.steps[0].minutes, 5);
+const evening = new Date("2026-10-30T02:30:00Z"); // 7:30 PM in Los Angeles
+const atRisk = { ...progress, streak: 6, atRisk: true };
+assert.deepEqual(rulePick({ ...context, goal: patel, progress: atRisk }, evening)?.steps, [{ title: "Email Prof Patel", minutes: 5 }], "the line promises a 5-minute step");
+assert.deepEqual(rulePick({ ...context, goal: allDone, deadlines }, nine), {
   goal: "CS 146 final project", due: "2026-11-03", stepId: null, steps: [{ title: "Open it and work 5 minutes", minutes: 5 }], why: "Due tomorrow.",
 });
-assert.equal(rulePick(context), null);
+assert.equal(rulePick(context, nine), null);
+assert.equal(rulePick({ ...context, goal, deadlines }, new Date("2026-10-30T08:10:00Z")), null, "1:10 AM offers tomorrow, not a start");
+
+// The rule card, line and first option name the same step: the started one, wherever it sits, deadline or not.
+const methods = { ...goal, steps: [step("g", "Make the graphs", 10, "todo"), step("m", "Write the methods", 20, "doing")] };
+for (const current of [{ ...context, goal: methods }, { ...context, goal: methods, deadlines }]) {
+  assert.deepEqual(rulePick(current, nine)?.steps, [{ title: "Write the methods", minutes: 5 }]);
+  assert.match(ruleOpening(current, "Vi", nine), /Next up for History essay: Write the methods\./);
+  assert.equal(ruleOptions(current, nine)[0], "Keep going on write the methods");
+}
 
 // The rule opening greets by local time, offers the next open step or deadline, and admits unread sources.
 const afternoon = new Date("2026-10-29T22:15:00Z"); // 3:15 PM in Los Angeles
@@ -401,8 +432,11 @@ assert.match(day, /\nFree time today: 9:30 AM to 11:00 AM\.\nFree time tomorrow:
 assert.match(day, /\nDeadlines: CS 146 final project, due tomorrow \(2026-11-03\); Midterm 2, due in 16 days \(2026-11-18\)\.\n/);
 assert.match(day, /\nProgress: a 6-day streak \(best 9\), 4 steps finished this week\. They reached a 7-day milestone today\. Nothing is finished yet today, and one 5-minute step keeps the streak going tonight\.\n/);
 const quiet = dayToText(context, at);
-assert.match(quiet, /\nFree time today: none left\.\nDeadlines on the Zeno calendar: none in the next 14 days\.\nProgress: no streak right now \(best 0\), 0 steps finished this week\.\n/);
-assert.doesNotMatch(quiet, /tomorrow/);
+// An empty list may be a failed read, so it is never said as "none".
+assert.match(quiet, /\nCalendar today: no events\.\nProgress: no streak right now \(best 0\), 0 steps finished this week\.\n/);
+assert.doesNotMatch(quiet, /Free time|Deadlines|none left|tomorrow/);
+// Progress that failed to load is NO_PROGRESS itself, never a real "no streak".
+assert.match(dayToText({ ...context, progress: NO_PROGRESS }, at), /\nStreak and progress: could not be read\. Do not guess them\.\n/);
 const unread = dayToText({ ...context, calendarState: "no-access", tasksState: "error", free: [{ start: "2026-11-02T17:30:00Z", end: "2026-11-02T19:00:00Z" }] }, at);
 assert.match(unread, /Free time and deadlines: could not be read\. Do not invent free time or deadlines\./);
 assert.match(unread, /Streak and progress: could not be read\. Do not guess them\./);
@@ -415,8 +449,12 @@ assert.doesNotMatch(night, /It is morning|It is evening|finished yesterday:|stre
 assert.match(openingPrompt(context, "Vi", ["Draft the intro"], new Map(), new Date("2026-10-30T02:15:00Z")), /It is evening[\s\S]*Steps they finished yesterday: Draft the intro\./);
 assert.match(openingPrompt(context, null, [], new Map(), new Date("2026-10-29T15:40:00Z")), /It is morning/);
 const risky = openingPrompt({ ...context, goal, progress: { ...progress, streak: 6, atRisk: true } }, "Vi", [], new Map(), new Date("2026-10-30T02:15:00Z"));
-assert.match(risky, /lead with saving it, like "One 5-minute step keeps your 6-day streak going"/);
+assert.match(risky, /lead with saving it, like "One 5-minute step keeps your 6-day streak going", and make the pick's step a 5-minute way in\./);
 assert.match(risky, /pick: the one most urgent thing[\s\S]*s3 \[todo\] Outline three points/);
+assert.match(night, /not to start new work, so pick nothing\./);
+// The started step comes first, and learned patterns steer the first step's length.
+assert.match(risky, /the doing one they already started, else the first todo/);
+assert.match(risky, /how they work best or the patterns you noticed in what they did point to another length/);
 
 // Rule options come only from real context: the open step, one personal unread email, the next event worth prepping.
 const point = (iso: string) => ({ start: iso, end: iso });
@@ -436,7 +474,6 @@ const busy = {
     { id: "c", from: "Jordan Kim <jkim@school.edu>", subject: "Slides?", snippet: "", unread: true, personal: true },
   ],
 };
-const nine = new Date("2026-10-29T16:00:00Z"); // 9 AM in Los Angeles
 assert.deepEqual(ruleOptions(busy, nine), ["Keep going on write a thesis", "Reply to Jordan", "Prep for CS 161 lecture"]);
 // Before 5 AM it offers tomorrow instead of the day's picks.
 assert.deepEqual(ruleOptions(busy, new Date("2026-10-30T08:10:00Z")), ["Set up tomorrow"]);
@@ -488,12 +525,41 @@ Object.assign(globalThis, {
     learnFromSteps: async () => (calls.push("learnFromSteps"), learned),
   },
 });
-const talkContext = { ...context, goal, free };
+// talk() reads the real clock, so its free time sits years ahead: Tuesday Nov 5, 2030, 10 AM to noon in Los Angeles.
+const talkFree = [{ start: "2030-11-05T18:00:00Z", end: "2030-11-05T20:00:00Z" }];
+const talkContext = { ...context, goal, free: talkFree };
 const reset = () => {
   calls.length = 0;
   sent.length = 0;
   replies.length = 0;
 };
+
+// Import keeps every fact and deadline as a memory, calendar or not; with calendar access it also proposes
+// each deadline and the to-dos that fit, and a failed free-time read still proposes the deadlines.
+const imported = {
+  facts: [{ text: "Takes CS 146.", group: "routines" }],
+  todos: [{ title: "Buy poster board", minutes: 30, due: null }, { title: "Plan the whole term", minutes: 240, due: null }],
+  deadlines: [{ title: "Final project", date: "2026-12-09" }],
+};
+const keptRows = ['addMemory Takes CS 146. {"group":"routines","source":"you"}', 'addMemory Final project, due Wednesday, December 9. {"group":"projects","source":"you"}'];
+const deadlineBlock = { title: "Final project", kind: "deadline", date: "2026-12-09", stepId: null };
+reset();
+assert.deepEqual(await keepNotes("a@b.c", imported, null, zone), [], "no calendar, no proposal");
+assert.deepEqual(calls, keptRows);
+reset();
+assert.deepEqual(await keepNotes("a@b.c", imported, [{ start: "2026-11-02T18:00:00Z", end: "2026-11-02T19:00:00Z" }], zone, new Date("2026-11-02T15:00:00Z")), [
+  deadlineBlock,
+  { title: "Buy poster board", kind: "todo", start: "2026-11-02T18:00:00.000Z", end: "2026-11-02T18:30:00.000Z", stepId: null },
+]);
+assert.deepEqual(calls, keptRows, "the calendar branch keeps the deadline as a memory too");
+reset();
+assert.deepEqual(await keepNotes("a@b.c", imported, [], zone), [deadlineBlock]);
+
+// The import prompt holds every list, deadlines and to-dos included, to the never-list.
+reset();
+replies.push({ content: JSON.stringify({ facts: [], todos: [], deadlines: [] }) });
+await extractNotes("Immigration hearing Nov 20. Pay back Jake $1,200 by the 15th.", zone, new Date("2026-11-01T17:00:00Z"));
+assert.match(sent[0].messages[0].content ?? "", /For every list: Never keep sexual or reproductive health, religion, politics, immigration status, money they have or owe/);
 
 // start_step never runs in the same turn as set_goal, even listed in the same batch, so the plan card shows first.
 reset();
@@ -536,16 +602,32 @@ assert.deepEqual(turn.actions, [{ type: "remembered", label: "Ten-minute first s
 reset();
 replies.push(
   tools(
-    call("propose_block", { ref: "s3", title: "Outline three points", minutes: 10, start: localIso("2026-11-03T18:00:00Z", zone) }, "c1"),
-    call("propose_block", { title: "Email Prof Patel", minutes: 10, start: "2026-11-03T06:00-08:00" }, "c2"),
+    call("propose_block", { ref: "s3", title: "Outline three points", minutes: 10, start: localIso("2030-11-05T18:00:00Z", zone) }, "c1"),
+    call("propose_block", { title: "Email Prof Patel", minutes: 10, start: "2030-11-05T06:00-08:00" }, "c2"),
   ),
   say("Want me to book ten tomorrow?"),
 );
 turn = await talk(talkContext, null, [], "Can you find time tomorrow?");
 assert.deepEqual(calls, []);
-assert.deepEqual(turn.proposal, [{ title: "Outline three points", kind: "step", start: "2026-11-03T18:00:00.000Z", end: "2026-11-03T18:10:00.000Z", stepId: "c" }]);
+assert.deepEqual(turn.proposal, [{ title: "Outline three points", kind: "step", start: "2030-11-05T18:00:00.000Z", end: "2030-11-05T18:10:00.000Z", stepId: "c" }]);
 assert.ok(results()[1].error, "the block outside every slot is refused");
-assert.match(sent[0].messages.at(-1)!.content ?? "", /Free slots for propose_block, start to end: [\s\S]*2026-11-03T10:00-08:00 to 2026-11-03T12:00-08:00/);
+assert.match(sent[0].messages.at(-1)!.content ?? "", /Free slots for propose_block, start to end: 2030-11-05T10:00-08:00 to 2030-11-05T12:00-08:00\./);
+
+// One turn's blocks never overlap, and stop at the 12 one booking takes.
+reset();
+const at10 = (minutes: number, length: number, id: string) =>
+  call("propose_block", { title: `Block ${id}`, minutes: length, start: localIso(new Date(Date.parse("2030-11-05T18:00:00Z") + minutes * 60_000), zone) }, id);
+replies.push(tools(at10(0, 10, "a"), at10(5, 10, "b"), ...Array.from({ length: 12 }, (_, i) => at10(10 + 5 * i, 5, `n${i}`))), say("Want me to book these?"));
+turn = await talk(talkContext, null, [], "Fill my morning");
+assert.equal(turn.proposal.length, 12);
+assert.deepEqual(results().map((result: { error?: string }) => Boolean(result.error)), [false, true, ...Array(11).fill(false), true]);
+
+// A set_goal that fails its checks saves nothing, so it never holds back a start in the same batch.
+reset();
+replies.push(tools(call("set_goal", { title: "Stats set", steps: Array(8).fill({ title: "Do a problem", minutes: 5 }) }, "c1"), call("start_step", { ref: "s3" }, "c2")), say("Started."));
+turn = await talk(talkContext, null, [], "Start the outline and plan my stats set");
+assert.deepEqual(calls, ["setStepStatus c doing"]);
+assert.ok(results()[0].error && results()[1].ok);
 
 // finish_step asks what Zeno learned; a new pattern is a remembered action the Noted line can undo.
 reset();

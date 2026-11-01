@@ -1,23 +1,29 @@
 import type { UserContext } from "@/lib/context";
-import type { FirstPick } from "@/lib/day";
+import type { FirstPick, Goal } from "@/lib/day";
 import { localHour } from "@/lib/tz";
 
 // A deadline's days left the way people say it.
 export const dueIn = (daysLeft: number) => (daysLeft <= 0 ? "today" : daysLeft === 1 ? "tomorrow" : `in ${daysLeft} days`);
 
-// The first card when the model is unavailable: the next todo step (5 minutes into it when it is long or
-// unsized), else the nearest deadline. null when there is neither.
-export function rulePick(context: UserContext): FirstPick | null {
+// The one step the rule card, line and options all name: the started one, else the first todo.
+const nextStep = (goal: Goal | null) =>
+  goal?.steps.find((step) => step.status === "doing") ?? goal?.steps.find((step) => step.status === "todo");
+
+// The first card when the model is unavailable: the next step (5 minutes into it when it is long, unsized or
+// the streak is at risk), else the nearest deadline. null when there is neither, and before 5 AM, when the
+// line offers to set up tomorrow instead.
+export function rulePick(context: UserContext, now = new Date()): FirstPick | null {
+  if (localHour(context.timeZone, now) < 5) return null;
   const { goal } = context;
-  const step = goal?.steps.find((item) => item.status === "todo");
+  const step = nextStep(goal);
   if (goal && step) {
-    const minutes = step.minutes !== null && step.minutes <= 15 ? step.minutes : 5;
+    const minutes = !context.progress.atRisk && step.minutes !== null && step.minutes <= 15 ? step.minutes : 5;
     return {
       goal: goal.title,
       due: goal.due ?? null,
       stepId: step.id,
       steps: [{ title: step.title, minutes }],
-      why: minutes === step.minutes ? "It's next on your plan." : "It's next on your plan; 5 minutes gets it going.",
+      why: `${step.status === "doing" ? "You already started it" : "It's next on your plan"}${minutes === step.minutes ? "." : "; 5 minutes gets it going."}`,
     };
   }
   const deadline = context.deadlines[0];
@@ -38,7 +44,7 @@ function greetingAt(timeZone: string, now: Date, firstName: string | null) {
 // rulePick puts on the card) and never guesses the day.
 export function ruleOpening(context: UserContext, firstName: string | null, now = new Date()): string {
   const { goal } = context;
-  const next = goal?.steps.find((step) => step.status === "doing" || step.status === "todo");
+  const next = nextStep(goal);
   const deadline = context.deadlines[0];
   const late = localHour(context.timeZone, now) < 5;
   const unread = [context.calendarState !== "ok" && "calendar", context.emailState !== "ok" && "inbox"].filter(Boolean);
@@ -80,8 +86,7 @@ export function senderName(from: string): string {
 export function ruleOptions(context: UserContext, now = new Date()): string[] {
   // Before 5 AM the day's picks can wait.
   if (localHour(context.timeZone, now) < 5) return ["Set up tomorrow"];
-  const steps = context.goal?.steps ?? [];
-  const step = steps.find((item) => item.status === "doing") ?? steps.find((item) => item.status === "todo");
+  const step = nextStep(context.goal);
   const email = context.emails.find((item) => item.unread && item.personal);
   const event = context.events.find(
     (item) => !item.allDay && new Date(item.start).getTime() > now.getTime() && !ROUTINE.test(item.title),

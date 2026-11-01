@@ -24,7 +24,13 @@ export async function POST(request: Request) {
   const email = session.user.email;
   try {
     const goal = await setGoal(email, plan.title, plan.steps, plan.due);
-    const started = body?.start ? await setStepStatus(email, goal.steps[0].id, "doing") : null;
+    // The plan is saved by now, so a failed start returns it with step 1 still todo: a retry would save it twice.
+    const started = body?.start
+      ? await setStepStatus(email, goal.steps[0].id, "doing").catch((error) => {
+          console.error("Goal start failed:", error instanceof Error ? error.message.slice(0, 120) : "unknown");
+          return null;
+        })
+      : null;
     return NextResponse.json({ state: "ok", goal: started ?? goal } satisfies GoalResponse);
   } catch (error) {
     console.error("Goal save failed:", error instanceof Error ? error.message.slice(0, 120) : "unknown");
