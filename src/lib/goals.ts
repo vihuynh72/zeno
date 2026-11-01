@@ -185,16 +185,35 @@ function memoryFrom(row: Record<string, unknown>): Memory {
   return { id: String(row.id), text: String(row.text), createdAt: new Date(row.created_at as string).toISOString(), group, source };
 }
 
+// The grouped profile keeps about 120 facts; each group keeps its freshest (docs/PLAN-NOV.md).
+export const GROUP_CAPS: Record<MemoryGroup, number> = {
+  about: 15,
+  routines: 25,
+  projects: 25,
+  interests: 15,
+  people: 15,
+  "work-style": 15,
+  patterns: 10,
+};
+const TOTAL_CAP = 120;
+
+// Case, punctuation and spacing never make a new fact: "Bio lab Wednesdays at 2pm." is "bio lab wednesdays at 2 PM".
+export function factKey(text: string): string {
+  return text.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+// Grouped in the order Memory shows them, newest first within a group.
 export async function listMemories(email: string): Promise<Memory[]> {
   await ensureSchema();
   const rows = await getSql()`
-    SELECT id, text, created_at, memory_group, source FROM memories WHERE user_email = ${email} ORDER BY created_at DESC
+    SELECT id, text, created_at, memory_group, source FROM memories WHERE user_email = ${email}
+    ORDER BY array_position(${[...MEMORY_GROUPS]}::text[], memory_group), created_at DESC
   `;
   return rows.map(memoryFrom);
 }
 
-// Returns the saved memory, or null when the same sentence was already known (so callers never claim a save).
-// shortcut: exact-text dedupe and one cap of 50 for every group; the profile track refines both (docs/PLAN-NOV.md).
+// Returns the saved memory, or null when nothing new was saved (so callers never claim a save): the fact was
+// already known in any group, or its group is full of things the person said themselves.
 export async function addMemory(
   email: string,
   text: string,
@@ -202,22 +221,39 @@ export async function addMemory(
 ): Promise<Memory | null> {
   await ensureSchema();
   const sql = getSql();
-  const [inserted] = await sql.transaction([
-    // The unique index skips an exact duplicate.
+  const clean = [...text.trim()].slice(0, 200).join("");
+  const key = factKey(clean);
+  if (!key) return null;
+  // shortcut: read, then insert, so the same fact saved twice in one instant can land twice; add a unique key column if that shows up.
+  const known = await sql`SELECT text FROM memories WHERE user_email = ${email}`;
+  if (known.some((row) => factKey(String(row.text)) === key)) return null;
+  const [inserted, groupTrim, totalTrim] = await sql.transaction([
     sql`
       INSERT INTO memories (user_email, text, memory_group, source)
-      VALUES (${email}, ${[...text.trim()].slice(0, 200).join("")}, ${group}, ${source})
+      VALUES (${email}, ${clean}, ${group}, ${source})
       ON CONFLICT DO NOTHING
       RETURNING id, text, created_at, memory_group, source
     `,
-    // Only the 50 newest stay, so the prompt stays small.
+    // Over the group's cap, its oldest scanned and noticed facts go; what the person said stays.
     sql`
-      DELETE FROM memories WHERE user_email = ${email} AND id NOT IN (
-        SELECT id FROM memories WHERE user_email = ${email} ORDER BY created_at DESC LIMIT 50
-      )
+      DELETE FROM memories WHERE id IN (
+        SELECT id FROM (
+          SELECT id, source, row_number() OVER (ORDER BY source = 'you' DESC, created_at DESC) AS rank
+          FROM memories WHERE user_email = ${email} AND memory_group = ${group}
+        ) ranked WHERE rank > ${GROUP_CAPS[group]} AND source <> 'you'
+      ) RETURNING id
+    `,
+    // The whole profile stays small enough for every prompt; the person's own words go last.
+    sql`
+      DELETE FROM memories WHERE id IN (
+        SELECT id FROM memories WHERE user_email = ${email}
+        ORDER BY source = 'you' DESC, created_at DESC OFFSET ${TOTAL_CAP}
+      ) RETURNING id
     `,
   ]);
-  return inserted[0] ? memoryFrom(inserted[0]) : null;
+  const row = inserted[0];
+  const trimmed = [...groupTrim, ...totalTrim].some((gone) => row && gone.id === row.id);
+  return row && !trimmed ? memoryFrom(row) : null;
 }
 
 export async function forgetMemory(email: string, id: string): Promise<boolean> {
