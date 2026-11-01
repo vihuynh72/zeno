@@ -75,7 +75,9 @@ const REWORD = { say: "Just so you know, biology lab happens on Wednesday aftern
 const UPDATE = { say: "Heads up, my library shifts moved to Friday afternoons now.", old: "library-shifts", new: [["library", "shift"], ["friday"]] }; // case 6
 const FORGET = { say: "Can you forget what I told you about soccer? I don't want that saved.", fact: "soccer" }; // case 7
 
-// Case 9: a messy syllabus plus notes for a second user, with 6 lasting facts, 2 junk lines and 1 sensitive one.
+// Case 9: a messy syllabus plus notes for a second user, with 6 lasting facts, an errand, 1 junk line and 1 health
+// line. The bench users have no calendar, so every to-do can't be booked and is kept as a "To do:" memory (Vi,
+// 2026-11-01: nothing pasted is lost).
 const IMPORT_TEXT = `CS 146 Data Structures, Fall syllabus
 Lectures Mon/Wed 10:30-11:45 in DH 450
 Midterm 2: Nov 18, in class. Final project due Dec 9 by 11:59pm.
@@ -89,16 +91,18 @@ my notes
 - refill my insulin at the pharmacy friday before 6
 - capstone group meets thursdays 6pm on discord`;
 const IMPORT_FACTS = [
-  { id: "cs146-lectures", groups: ["routines", "about"], match: [["146", "data structures"], ["mon", "wed", "10:30"]] },
+  // Not "wed": the final project's deadline memory reads "CS 146 final project, due Wednesday, December 9."
+  { id: "cs146-lectures", groups: ["routines", "about"], match: [["146", "data structures"], ["mon", "10:30", "lecture"]] },
   { id: "midterm-nov-18", groups: ["projects"], match: [["midterm"], ["nov", "18"]] },
   { id: "final-project-dec-9", groups: ["projects"], match: [["final"], ["dec", "12/9"]] },
   { id: "bookstore-saturdays", groups: ["routines", "about"], match: [["bookstore"], ["sat"]] },
   { id: "studies-at-night", groups: ["work-style"], match: [["study", "studies", "work"], ["night", "after 9", "9 pm", "9pm"]] },
   { id: "capstone-group-thursdays", groups: ["routines", "projects"], match: [["capstone", "group"], ["thu"]] },
+  { id: "poster-board-todo", groups: ["projects"], match: [["to do"], ["poster"]] },
 ];
 const IMPORT_JUNK = [
   { id: "vending-machine", kind: "transient", match: [["vending", "dollar"]] },
-  { id: "poster-board-errand", kind: "one-off", match: [["poster", "jess", "ride"]] },
+  // Report only, like talk's: the refill is a to-do, so it is kept as one.
   { id: "insulin", kind: "health", match: [["insulin", "pharmacy", "diabet", "prescri", "refill"]] },
 ];
 
@@ -168,6 +172,10 @@ assert.ok(falseClaim("Got it, I'll remember that.", []) && !falseClaim("I've sav
 assert.ok(falseClaim("Done, I’ve forgotten it.", [{ type: "remembered" }]) && !falseClaim("Your lab is Wednesday at two.", []));
 assert.ok(falseClaim("Saved: capstone due December fifth.", []) && falseClaim("Okay, forgot it.", []) && falseClaim("Done, I forgot the soccer bit.", []));
 assert.ok(!falseClaim("That's saved, and I'm sorry you're wiped tonight Maya.", [{ type: "remembered" }]));
+const importFact = (id) => IMPORT_FACTS.find((item) => item.id === id);
+assert.ok(matches("To do: Buy poster board and tape", importFact("poster-board-todo").match) && !matches("Buy poster board", importFact("poster-board-todo").match));
+assert.ok(!matches("CS 146 final project, due Wednesday, December 9.", importFact("cs146-lectures").match), "a deadline memory is not the lectures");
+assert.ok(matches("Has CS 146 lectures Mon/Wed 10:30 to 11:45.", importFact("cs146-lectures").match));
 
 // ---- Talking to the server
 const { values: args } = parseArgs({
@@ -245,7 +253,7 @@ async function runOnce(index, detail) {
   const importFull = imported.data.state === "ok" ? imported.data.memories : [];
   const importRows = importFull.map((memory) => memory.text);
   const importFacts = IMPORT_FACTS.map((item) => ({ id: item.id, rows: found(importRows, item) }));
-  const importJunkRows = importRows.filter((row) => IMPORT_JUNK.some((item) => matches(row, item.match)));
+  const importJunkRows = importRows.filter((row) => IMPORT_JUNK.some((item) => item.kind !== "health" && matches(row, item.match)));
   const importFactRows = importRows.filter((row) => !importJunkRows.includes(row) && IMPORT_FACTS.some((item) => matches(row, item.match)));
   detail.import = { state: imported.data.state ?? `http ${imported.status}`, ms: imported.ms, rows: importRows, facts: importFacts };
 

@@ -11,9 +11,10 @@ import { timeZoneFrom } from "@/lib/tz";
 
 export const maxDuration = 30;
 
-// Body { text }: pasted notes, 1 to 8000 characters. Facts and deadlines become grouped memories; with calendar
-// access, deadlines and the to-dos that fit free time also come back as a proposal to book (nothing is written
-// to the calendar here). Without it the proposal is empty.
+// Body { text }: pasted notes, 1 to 8000 characters. Facts and deadlines become grouped memories (keepNotes saves
+// them one at a time, so addMemory's dedupe and group caps see each save); with calendar access, deadlines and the
+// to-dos that fit free time in the next 3 days come back as a proposal to book (nothing is written to the calendar
+// here). Without it the proposal is empty. Every to-do that can't be booked is kept as a "To do:" memory.
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.email) {

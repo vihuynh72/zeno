@@ -249,7 +249,7 @@ export function realDate(value: unknown): value is string {
 
 const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY);
 
-const nextDate = (date: string) => new Date(Date.parse(`${date}T00:00:00Z`) + DAY).toISOString().slice(0, 10);
+export const nextDate = (date: string) => new Date(Date.parse(`${date}T00:00:00Z`) + DAY).toISOString().slice(0, 10);
 
 export function isMonday(value: unknown): value is string {
   return realDate(value) && new Date(`${value}T00:00:00Z`).getUTCDay() === 1;

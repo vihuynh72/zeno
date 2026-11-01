@@ -8,7 +8,7 @@ import { loadUserContext } from "@/lib/context";
 import type { OpeningResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
 import { stepsFinishedBetween } from "@/lib/goals";
-import { dayBounds, timeZoneFrom } from "@/lib/tz";
+import { dayBounds, localDate, timeZoneFrom } from "@/lib/tz";
 
 export const maxDuration = 30;
 
@@ -49,7 +49,7 @@ export async function GET() {
       // Measured live on three days: low averaged 3.5 s to minimal's 2.9 s, for no better lines.
       { effort: "minimal", maxTokens: 2048, schema: OPENING_SCHEMA },
     );
-    const reply = parseOpening(text, context.goal, refs);
+    const reply = parseOpening(text, context.goal, refs, localDate(timeZone));
     if (!reply) throw new Error("Opening reply did not match the schema");
     // A pick that fails the checks gets the rule card and the rule line that names it, never words about something else.
     if (!reply.pick && rulePick(context)) return rule();

@@ -13,13 +13,13 @@ The persona is Maya, an SJSU junior. Each run uses two fresh users.
 | Sensitive details | 400 short on rent | nothing stored |
 | Health (report only) | started Lexapro, foggy mornings; the import's insulin line | either is fine: docs/PLAN-NOV.md keeps health details that help planning, so these are listed but not scored |
 | Explicit request | "Please remember this: my capstone is due December 5", "Also remember that I'm a junior, majoring in biology" | stored |
-| Groups | every fact that talk or import stored, before any seeding | one memory, one group: all of a fact's rows sit in one group that fact allows (bio lab: routines; focus before 11, tiny steps, pomodoros: work-style; capstone, midterm, final project: projects; major: about; shifts, soccer, lectures and the capstone group allow a second group) |
+| Groups | every fact that talk or import stored, before any seeding | one memory, one group: all of a fact's rows sit in one group that fact allows (bio lab: routines; focus before 11, tiny steps, pomodoros: work-style; capstone, midterm, final project, the poster board to-do: projects; major: about; shifts, soccer, lectures and the capstone group allow a second group) |
 | Duplicate | in a new conversation, says the bio lab fact again | still one bio lab row |
 | Reworded duplicate | then, in another new conversation, "biology lab happens on Wednesday afternoons at two, every single week" | still one bio lab row (normalizing case, punctuation and spacing can't catch this, so it tests the model) |
 | Update | "my library shifts moved to Friday afternoons" | no Tue/Thu-only row is left, and a Friday row exists |
 | Forget | "Can you forget what I told you about soccer?" | no soccer row |
 | Retrieval | new conversations (empty history): bio lab, Tuesday morning, hardest-work time and capstone before the update; library day after it | each reply has the expected keywords |
-| Import | the second user's `POST /api/import` of a messy syllabus and notes: 6 lasting facts, 2 junk lines and 1 insulin line | facts stored, junk not (insulin is report only) |
+| Import | the second user's `POST /api/import` of a messy syllabus and notes: 6 lasting facts, the poster board errand, 1 junk line and 1 insulin line | facts stored; the errand kept as a "To do:" memory in projects, since the bench user has no calendar to book it on (Vi, 2026-11-01: nothing pasted is lost); junk not (insulin is report only) |
 | False claims | every talk reply | never says "I'll remember", "noted", "saved" or "forgotten" without the matching action |
 | Opening (report only) | `GET /api/day/opening` at the end | mentions the goal or a memory |
 
@@ -44,13 +44,13 @@ Cost: one run makes about 32 Muse calls (20 talk turns of 1 to 4 calls each, 1 i
 |---|---|---|
 | store recall (talk) | share of the 6 in-passing facts with a matching row after the planning conversation | 15 |
 | explicit-request recall | share of the 2 "please remember" facts stored | 5 |
-| store recall (import) | share of the 6 import facts stored | 10 |
+| store recall (import) | share of the 7 import items stored (6 facts and the kept to-do) | 10 |
 | import precision | fact rows / (fact rows + junk rows) for import; rows that match neither are listed but not counted, and it is 100% when the import stored nothing (recall shows that) | 5 |
 | retrieval accuracy | share of the 5 new-conversation questions answered with the expected keywords | 15 |
 | group accuracy | share of the stored talk and import facts whose rows all sit in one allowed group | 10 |
 | update correct | the update left no stale row and stored the new one (0 or 1 per run) | 10 |
 | forget correct | no soccer row after the forget turn (0 or 1 per run) | 10 |
-| junk rate | share of the 6 junk items (4 talk, 2 import) with a matching row; lower is better | 10 × (1 − rate) |
+| junk rate | share of the 5 junk items (4 talk, 1 import) with a matching row; lower is better (before 2026-11-01 the import's errand was junk too) | 10 × (1 − rate) |
 | duplicate rows | extra rows for the same fact after the duplicate and reworded-duplicate turns | 5 / (1 + count) |
 | false claims | replies that claim a save or delete the actions don't show | 5 / (1 + count) |
 | health kept, remember + set_goal turn, request errors, latency, model calls | diagnostics, not scored; request errors (timeouts, model errors) also show up as misses in the scored rows | – |

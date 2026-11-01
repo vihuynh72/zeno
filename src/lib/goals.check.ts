@@ -149,6 +149,52 @@ try {
   await sql`DELETE FROM user_state WHERE user_email = ${memoryEmail}`;
 }
 
+// Deadline memories expire; patterns that stop holding go quietly, and one the person removed never comes back.
+const { dropMemories, forgottenMemories } = await import("./goals.ts");
+const { learnFromSteps } = await import("./patterns.ts");
+const { nextDate } = await import("./calendar.ts");
+const { dayBounds } = await import("./tz.ts");
+const laterEmail = `patterns-check-${crypto.randomUUID()}@zeno.local`;
+try {
+  // Hidden once the day after the due date has begun at UTC-12, the last place a day ends; deleted by the next save.
+  const lastDay = new Date(Date.now() - 12 * 3_600_000).toISOString().slice(0, 10);
+  const gone = await addMemory(laterEmail, "Quiz 4, due yesterday.", { group: "projects", expiresOn: lastDay });
+  const kept = await addMemory(laterEmail, "Quiz 5, due today.", { group: "projects", expiresOn: nextDate(lastDay) });
+  assert.ok(gone && kept);
+  assert.deepEqual((await listMemories(laterEmail)).map((memory) => memory.text), ["Quiz 5, due today."], "an expired deadline is hidden");
+  assert.ok(await addMemory(laterEmail, "Quiz 4, due yesterday.", { group: "projects" }), "an expired row never counts as known");
+  const [{ count }] = await sql`SELECT count(*)::int AS count FROM memories WHERE id = ${gone.id}`;
+  assert.equal(count, 0, "the next save deletes it");
+  await dropMemories(laterEmail, [kept.id]);
+  assert.ok(!(await listMemories(laterEmail)).some((memory) => memory.id === kept.id), "dropMemories deletes");
+  await sql`DELETE FROM memories WHERE user_email = ${laterEmail}`;
+
+  // Five steps finished late at night in Los Angeles over the last five days.
+  const zone = "America/Los_Angeles";
+  const owl = await setGoal(laterEmail, "Night owl", Array.from({ length: 5 }, (_, index) => ({ title: `Step ${index + 1}`, minutes: 5 })));
+  for (const [index, item] of owl.steps.entries()) {
+    await setStepStatus(laterEmail, item.id, "done");
+    const night = dayBounds(zone, new Date(Date.now() - (index + 1) * 86_400_000)).start.getTime() + 23 * 3_600_000;
+    await sql`UPDATE steps SET done_at = ${new Date(night).toISOString()} WHERE id = ${item.id}`;
+  }
+  const morning = "You finish most steps in the morning.";
+  assert.ok(await addMemory(laterEmail, morning, { group: "patterns", source: "pattern" }));
+  const learned = await learnFromSteps(laterEmail, zone);
+  assert.equal(learned?.text, "You finish most steps late at night.");
+  assert.deepEqual((await listMemories(laterEmail)).map((memory) => memory.text), [learned.text], "the morning pattern stopped holding");
+  assert.deepEqual(await forgottenMemories(laterEmail), [], "Zeno's own clean-up is not the person's removal");
+
+  // Undo on the Noted line (DELETE /api/memory/[id]) sticks: the same steps never save it again.
+  assert.ok(await forgetMemory(laterEmail, learned.id));
+  assert.equal(await learnFromSteps(laterEmail, zone), null, "quiet after Undo");
+  assert.deepEqual(await listMemories(laterEmail), []);
+  assert.ok(await addMemory(laterEmail, morning, { group: "patterns", source: "pattern" }), "a pattern Zeno dropped can be noticed again");
+} finally {
+  await sql`DELETE FROM goals WHERE user_email = ${laterEmail}`;
+  await sql`DELETE FROM memories WHERE user_email = ${laterEmail}`;
+  await sql`DELETE FROM user_state WHERE user_email = ${laterEmail}`;
+}
+
 // The daily profile scan, with Google and Muse stubbed and the real database: once a local day, the same facts
 // again on a repeat call, removed facts never relearned, and the day given back when the model or the mail fails.
 const { scanProfile } = await import("./profile.ts");

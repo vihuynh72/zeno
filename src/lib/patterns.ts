@@ -1,8 +1,8 @@
 import type { Memory } from "@/lib/day";
-import { addMemory, forgetMemory, listMemories, recentSteps, type StepRecord } from "@/lib/goals";
+import { addMemory, dropMemories, forgottenMemories, listMemories, recentSteps, type StepRecord } from "@/lib/goals";
 import { localHour } from "@/lib/tz";
 
-// The opening words of each kind of pattern, so a changed pattern replaces the old one of its kind.
+// The opening words of each kind of pattern, so a real-length multiple is only ever compared with its own kind.
 const KINDS = ["You finish most steps", "Steps take you", "You often skip", "Steps of 10 minutes"];
 export const kindOf = (text: string) => KINDS.find((kind) => text.startsWith(kind)) ?? null;
 
@@ -74,19 +74,27 @@ export function alreadySaid(text: string, known: { text: string }[]): boolean {
   );
 }
 
-// After a step is finished or skipped: a new pattern in the last 30 days, saved as a "patterns" memory and
-// returned, or null. One new pattern per call, so each one gets its own Noted line.
+// Squares the saved patterns with what holds now. stale: saved patterns no found one says any more (they stopped
+// holding, or changed, like a new time of day). fresh: found patterns not already said and not one the person
+// removed, so their Undo or Forget sticks, even when the multiple wobbles.
+export function reconcile<T extends { text: string }>(found: string[], saved: T[], removed: string[]): { stale: T[]; fresh: string[] } {
+  const stale = saved.filter((memory) => !found.some((text) => alreadySaid(text, [memory])));
+  const kept = saved.filter((memory) => !stale.includes(memory));
+  const gone = removed.map((text) => ({ text }));
+  return { stale, fresh: found.filter((text) => !alreadySaid(text, kept) && !alreadySaid(text, gone)) };
+}
+
+// After a step is finished or skipped: patterns that stopped holding are removed, and a new pattern in the last
+// 30 days is saved as a "patterns" memory and returned, or null. One new pattern per call, so each one gets its
+// own Noted line.
 export async function learnFromSteps(email: string, timeZone: string): Promise<Memory | null> {
-  const [steps, memories] = await Promise.all([recentSteps(email), listMemories(email)]);
-  const known = memories.filter((memory) => memory.source === "pattern");
-  for (const text of patternsIn(steps, timeZone)) {
-    if (alreadySaid(text, known)) continue;
-    // A changed pattern (say, a new time of day) replaces the old one of its kind.
-    await Promise.all(
-      known.filter((memory) => kindOf(memory.text) === kindOf(text)).map((memory) => forgetMemory(email, memory.id)),
-    );
-    const saved = await addMemory(email, text, { group: "patterns", source: "pattern" });
-    if (saved) return saved;
+  const [steps, memories, removed] = await Promise.all([recentSteps(email), listMemories(email), forgottenMemories(email)]);
+  const saved = memories.filter((memory) => memory.source === "pattern");
+  const { stale, fresh } = reconcile(patternsIn(steps, timeZone), saved, removed);
+  await dropMemories(email, stale.map((memory) => memory.id));
+  for (const text of fresh) {
+    const learned = await addMemory(email, text, { group: "patterns", source: "pattern" });
+    if (learned) return learned;
   }
   return null;
 }

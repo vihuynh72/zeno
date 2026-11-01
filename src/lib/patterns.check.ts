@@ -7,7 +7,7 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { alreadySaid, kindOf, patternsIn } = await import("./patterns.ts");
+const { alreadySaid, kindOf, patternsIn, reconcile } = await import("./patterns.ts");
 
 const LA = "America/Los_Angeles";
 // A local time in Los Angeles in October (PDT, UTC-7); Date.UTC rolls a late hour into the next day.
@@ -133,5 +133,23 @@ for (let count = 4; count <= wobble.length; count++) {
   }
 }
 assert.equal(rewrites, 1, "said once, then kept");
+
+// reconcile: a saved pattern that no longer holds is removed (Vi, 2026-11-01), a changed one is replaced, and one
+// the person removed (Undo or Forget) is never saved again, even a wobble away.
+const night = all[0];
+const morning = "You finish most steps in the morning.";
+const skips = all[2];
+const rows = (...texts: string[]) => texts.map((text, index) => ({ id: `p${index}`, text }));
+assert.deepEqual(reconcile([night, skips], rows(night, skips), []), { stale: [], fresh: [] }, "still holds and already said");
+assert.deepEqual(reconcile([night], rows(night, skips), []).stale, [{ id: "p1", text: skips }], "stopped holding: removed");
+assert.deepEqual(reconcile([], rows(night), []).stale.length, 1, "no steps left in the 30 days, nothing holds");
+assert.deepEqual(reconcile([morning], rows(night), []), { stale: rows(night), fresh: [morning] }, "a new time of day replaces the old one");
+assert.deepEqual(reconcile([times(2.5)], rows(times(2)), []), { stale: [], fresh: [] }, "a wobble keeps what was said");
+const thrice = "Steps take you 3x as long as you plan, or more.";
+assert.deepEqual(reconcile([thrice], rows(times(2)), []), { stale: rows(times(2)), fresh: [thrice] }, "a whole 1x is news");
+assert.deepEqual(reconcile([night, skips], [], [night]).fresh, [skips], "removed by the person: never saved again");
+assert.deepEqual(reconcile([times(2.5)], [], [times(2)]).fresh, [], "not even a wobble away");
+assert.deepEqual(reconcile([morning], [], [night]).fresh, [morning], "another finding of the same kind is news");
+assert.deepEqual(reconcile([night], [], ["Has bio lab on Tuesdays."]).fresh, [night], "other removed facts never block a pattern");
 
 console.log("patterns self-check passed");

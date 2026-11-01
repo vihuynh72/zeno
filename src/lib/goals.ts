@@ -236,11 +236,14 @@ export function factKey(text: string): string {
     .trim();
 }
 
-// Grouped in the order Memory shows them, newest first within a group.
+// Grouped in the order Memory shows them, newest first within a group. A deadline memory is hidden once its
+// expires_on (the day after the due date) has begun at UTC-12, the last place a day ends, so it never vanishes on
+// its due day in any zone.
 export async function listMemories(email: string): Promise<Memory[]> {
   await ensureSchema();
   const rows = await getSql()`
-    SELECT id, text, created_at, memory_group, source FROM memories WHERE user_email = ${email}
+    SELECT id, text, created_at, memory_group, source FROM memories
+    WHERE user_email = ${email} AND (expires_on IS NULL OR expires_on > (now() AT TIME ZONE 'UTC' - interval '12 hours')::date)
     ORDER BY array_position(${[...MEMORY_GROUPS]}::text[], memory_group), created_at DESC
   `;
   return rows.map(memoryFrom);
@@ -248,10 +251,11 @@ export async function listMemories(email: string): Promise<Memory[]> {
 
 // Returns the saved memory, or null when nothing new was saved (so callers never claim a save): the fact is
 // already known in any group, or Zeno found it itself (not "you") and the person once removed it.
+// expiresOn (YYYY-MM-DD, checked by the caller) hides it from that day on, as listMemories says.
 export async function addMemory(
   email: string,
   text: string,
-  { group = "about", source = "you" }: { group?: MemoryGroup; source?: MemorySource } = {},
+  { group = "about", source = "you", expiresOn = null }: { group?: MemoryGroup; source?: MemorySource; expiresOn?: string | null } = {},
 ): Promise<Memory | null> {
   await ensureSchema();
   const sql = getSql();
@@ -259,16 +263,22 @@ export async function addMemory(
   const key = factKey(clean);
   if (!key) return null;
   // shortcut: read, then insert, so the same fact saved twice in one instant can land twice; add a unique key column if that shows up.
+  // Expired rows are deleted here, on the way, so they never count as known or take a cap's slot.
   const known = await sql`
-    SELECT text FROM memories WHERE user_email = ${email}
+    WITH expired AS (
+      DELETE FROM memories
+      WHERE user_email = ${email} AND expires_on <= (now() AT TIME ZONE 'UTC' - interval '12 hours')::date
+      RETURNING id
+    )
+    SELECT text FROM memories WHERE user_email = ${email} AND id NOT IN (SELECT id FROM expired)
     UNION ALL
     SELECT jsonb_array_elements_text(forgotten) FROM user_state WHERE user_email = ${email} AND ${source} <> 'you'
   `;
   if (known.some((row) => factKey(String(row.text)) === key)) return null;
   const [inserted, groupTrim, totalTrim] = await sql.transaction([
     sql`
-      INSERT INTO memories (user_email, text, memory_group, source)
-      VALUES (${email}, ${clean}, ${group}, ${source})
+      INSERT INTO memories (user_email, text, memory_group, source, expires_on)
+      VALUES (${email}, ${clean}, ${group}, ${source}, ${expiresOn})
       ON CONFLICT DO NOTHING
       RETURNING id, text, created_at, memory_group, source
     `,
@@ -304,6 +314,21 @@ export async function forgetMemory(email: string, id: string): Promise<boolean> 
     RETURNING user_email
   `;
   return rows.length > 0;
+}
+
+// What the person removed, oldest first: the sentences forgetMemory kept in user_state.forgotten.
+export async function forgottenMemories(email: string): Promise<string[]> {
+  await ensureSchema();
+  const [row] = await getSql()`SELECT forgotten FROM user_state WHERE user_email = ${email}`;
+  return Array.isArray(row?.forgotten) ? row.forgotten.map(String) : [];
+}
+
+// Zeno's own clean-up (a pattern that changed or stopped holding): deleted without joining the forgotten list,
+// so Zeno can notice it again later. Only the person's removals go through forgetMemory.
+export async function dropMemories(email: string, ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await ensureSchema();
+  await getSql()`DELETE FROM memories WHERE user_email = ${email} AND id = ANY(${ids}::uuid[])`;
 }
 
 // What the profile scan saved since `since`, in the order it saved them, so a repeat call that day sees them too.

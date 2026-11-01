@@ -48,7 +48,9 @@ Zeno knows Maya right after sign-in, and day 2 is visibly smarter because of day
   notes, **one tap adds the whole batch**. Nothing is ever written without a tap (Meta's rules for Muse
   require confirming calendar writes). Booked blocks can be undone.
 - **To-dos and deadlines go straight onto the calendar**: deadlines become all-day "Due: …" events, to-dos
-  become short timed blocks at free times.
+  become short timed blocks at free times. A to-do that can't be booked (no free slot within 3 days, or no calendar
+  access) is kept as a "projects" memory reading "To do: <title>", so nothing pasted is lost (Vi, Nov 1).
+- **Deadline memories expire** the day after the due date; past due dates are refused for new plans (Vi, Nov 1).
 - **Week view: a grid like Google Calendar**, opened from the Today button.
 - **Warnings before events** (see flow).
 
@@ -67,7 +69,8 @@ Zeno knows Maya right after sign-in, and day 2 is visibly smarter because of day
 - **Re-scan once a day, quietly** (first open of the day); new facts show as a Noted line.
 - **Learn from behavior**: finished or skipped steps, real duration versus estimate, time of day.
   A new pattern becomes a "Patterns Zeno noticed" memory, said in one line ("You finish 5-minute starts at
-  night"), and plans adapt to it.
+  night"), and plans adapt to it. A pattern that stops holding is removed automatically; one the person removed
+  (Undo or Forget) is never saved again (Vi, Nov 1).
 - The memory benchmark (`scripts/memory-bench.mjs`) must keep passing; extend it for groups.
 
 ### Streaks (all four mechanics)
@@ -88,9 +91,9 @@ Routes, all `{ state: ... }` JSON:
 |---|---|---|
 | GET /api/day | contract | adds `free`, `deadlines`, `calendarWrite`, `progress` to the existing day |
 | GET /api/day/opening | brain | adds `pick: FirstPick \| null` (the one thing, ready to start) |
-| POST /api/talk | brain | adds `proposal: CalendarBlock[]` (suggested bookings, nothing written) |
+| POST /api/talk | brain | adds `proposal: CalendarBlock[]` (suggested bookings, nothing written), and `progress` when the turn finishes a step |
 | POST /api/goal | brain (new) | saves a plan deterministically; `start: true` also starts step 1 (instant taps) |
-| POST /api/import | brain | returns grouped `memories` plus a `proposal` of deadlines and to-dos to book |
+| POST /api/import | brain | returns grouped `memories` plus a `proposal` of deadlines and to-dos to book; to-dos it can't book become "To do:" memories |
 | GET /api/calendar/week?start=YYYY-MM-DD | calendar (new) | 7 days of events from all calendars, Zeno blocks marked |
 | POST /api/calendar/free | calendar (new) | `{ minutes, days? }` → free slots that fit |
 | POST /api/calendar/book | calendar (new) | `{ blocks: CalendarBlock[] }` → books on the Zeno calendar, links steps |
@@ -104,11 +107,12 @@ Library functions the tracks share (stubs land with the contract; owners fill th
   `src/lib/calendar.ts` (calendar track).
 - `progressFor(email, timeZone)` in `src/lib/progress.ts` (streak track).
 - `learnFromSteps(email, timeZone)` in `src/lib/patterns.ts` (streak track): returns a new pattern memory or null.
-- `addMemory(email, text, { group, source })` in `src/lib/goals.ts` returns the saved memory, or null when it was
-  already known (profile track refines dedupe and caps).
+- `addMemory(email, text, { group, source, expiresOn? })` in `src/lib/goals.ts` returns the saved memory, or null
+  when it was already known or the person removed it (for anything Zeno found itself).
 
 Database (all additive, `ensureSchema`): `memories.memory_group`, `memories.source`, `steps.event_id`,
-`steps.scheduled_at`, `goals.due`, and a `user_state` table (`zeno_calendar_id`, `profile_scanned_at`).
+`steps.scheduled_at`, `goals.due`, `memories.expires_on`, and a `user_state` table (`zeno_calendar_id`,
+`profile_scanned_at`, `forgotten`).
 
 ## Tracks and file ownership
 

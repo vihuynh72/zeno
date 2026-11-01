@@ -90,6 +90,8 @@ export async function ensureSchema() {
         `,
         // Memories the person removed, so a later profile scan never learns them again.
         sql`ALTER TABLE user_state ADD COLUMN IF NOT EXISTS forgotten jsonb`,
+        // A deadline memory's last day plus one: listMemories hides it from then on, addMemory deletes it.
+        sql`ALTER TABLE memories ADD COLUMN IF NOT EXISTS expires_on DATE`,
       ])
       .then(() => undefined)
       .catch((error) => {

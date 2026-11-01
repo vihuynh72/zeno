@@ -143,6 +143,8 @@ export type TalkResponse =
       options: string[];
       // Blocks Zeno suggests booking; nothing is written until the person taps.
       proposal: CalendarBlock[];
+      // Set when the turn finished or skipped a step, as PATCH /api/steps/[id] returns it, milestone included.
+      progress?: Progress;
     }
   | { state: "signed-out" | "no-key" | "bad-request" | "model-error" };
 
@@ -173,7 +175,8 @@ export type SaveMemoryResponse =
   | { state: "signed-out" | "bad-request" | "error" };
 
 // POST /api/import body { text }: pasted notes become grouped memories plus a proposal to book their
-// deadlines (all-day) and to-dos (timed, at free times). Nothing is booked until the person taps.
+// deadlines (all-day) and to-dos (timed, at free times). Nothing is booked until the person taps. A to-do that
+// can't be booked (no free time in 3 days, or no calendar access) is kept as a "To do: …" memory instead.
 export type ImportResponse =
   | { state: "ok"; memories: Memory[]; proposal: CalendarBlock[] }
   | { state: "signed-out" | "bad-request" | "error" };
