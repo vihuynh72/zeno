@@ -9,12 +9,23 @@ import type { OpeningResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
 import { stepsFinishedBetween } from "@/lib/goals";
 import { dayBounds, localDate, timeZoneFrom } from "@/lib/tz";
+import { cleanPrivate } from "@/lib/vault";
 
 export const maxDuration = 30;
 
 // The model-written opening, options and first-card pick in one call; the screens show the rule line until it
 // lands. When the model fails, the rule line and rule pick answer instead, so the first card always has one thing.
+// POST sends the device's private facts in the body (never the URL); GET is the same without them.
 export async function GET() {
+  return opening([]);
+}
+
+export async function POST(request: Request) {
+  const body = (await request.json().catch(() => null)) as { private?: unknown } | null;
+  return opening(cleanPrivate(body?.private));
+}
+
+async function opening(privateFacts: string[]) {
   const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ state: "signed-out" } satisfies OpeningResponse, { status: 401 });
@@ -43,7 +54,7 @@ export async function GET() {
     const refs: Refs = new Map();
     const text = await askModel(
       [
-        { role: "system", content: systemPrompt(firstName, context.memories, refs) },
+        { role: "system", content: systemPrompt(firstName, context.memories, refs, privateFacts) },
         { role: "user", content: openingPrompt(context, firstName, finished, refs) },
       ],
       // Measured live on three days: low averaged 3.5 s to minimal's 2.9 s, for no better lines.

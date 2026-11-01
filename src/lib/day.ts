@@ -34,6 +34,11 @@ export type MemorySource = "you" | "calendar" | "email" | "pattern";
 
 export type Memory = { id: string; text: string; createdAt: string; group: MemoryGroup; source: MemorySource };
 
+// A private fact: overall health, sexual orientation, religion, politics, immigration status, balances or debts
+// (Vi, Nov 1). Zeno's servers never save these. Routes return them in `private`; the browser keeps them
+// (src/lib/vault.ts) and sends their texts back as `private: string[]` with talk, the opening and the scan.
+export type PrivateFact = { text: string; group: MemoryGroup };
+
 export type Turn = { role: "user" | "assistant"; content: string };
 
 export type SourceState = "ok" | "no-access" | "error" | "not-configured";
@@ -122,13 +127,15 @@ export type FirstPick = {
 };
 
 // The model-written opening, fetched after /api/day so the first screen never waits on the model.
+// POST /api/day/opening body { private?: string[] } uses the device's private facts; GET is the same without them.
 export type OpeningResponse =
   | { state: "ok"; opening: string; options: string[]; pick: FirstPick | null }
   | { state: "signed-out" | "error" };
 
-// POST /api/talk body: { message: string; history: Turn[] }
+// POST /api/talk body: { message: string; history: Turn[]; proposals?: boolean; private?: string[] }
 export type TalkAction = {
-  type: "goal-set" | "roadmap-changed" | "step-started" | "step-finished" | "remembered" | "forgot";
+  // "kept-private": a private fact went to the device (it is in the response's `private`), never to Zeno's servers.
+  type: "goal-set" | "roadmap-changed" | "step-started" | "step-finished" | "remembered" | "kept-private" | "forgot";
   label: string;
   // For "remembered": the saved memory, so the Noted line can undo it.
   memoryId?: string;
@@ -146,6 +153,8 @@ export type TalkResponse =
       proposal: CalendarBlock[];
       // Set when the turn finished or skipped a step, as PATCH /api/steps/[id] returns it, milestone included.
       progress?: Progress;
+      // Private facts from this turn, for the device only (see PrivateFact).
+      private?: PrivateFact[];
     }
   | { state: "signed-out" | "no-key" | "bad-request" | "model-error" };
 
@@ -179,7 +188,7 @@ export type SaveMemoryResponse =
 // once it is booked), plus, when calendarWrite is "ok", a proposal to book their deadlines (all-day) and the to-dos
 // that fit free time in 3 days (timed). Nothing is booked until the person taps; an unbooked proposal loses nothing.
 export type ImportResponse =
-  | { state: "ok"; memories: Memory[]; proposal: CalendarBlock[] }
+  | { state: "ok"; memories: Memory[]; proposal: CalendarBlock[]; private?: PrivateFact[] }
   | { state: "signed-out" | "bad-request" | "error" };
 
 // GET /api/calendar/week?start=YYYY-MM-DD (a Monday; defaults to this week).
@@ -208,8 +217,8 @@ export type BookResponse =
   | { state: "ok"; booked: CalendarBlock[] }
   | { state: "needs-permission" | "signed-out" | "no-access" | "bad-request" | "error" };
 
-// POST /api/profile/scan body: { first?: boolean }. Reads calendar and email at most once a day and returns
+// POST /api/profile/scan body: { first?: boolean; private?: string[] } (the device's facts, so they are known). Reads calendar and email at most once a day and returns
 // only what it newly learned.
 export type ProfileResponse =
-  | { state: "ok"; learned: Memory[]; scannedAt: string }
+  | { state: "ok"; learned: Memory[]; scannedAt: string; private?: PrivateFact[] }
   | { state: "signed-out" | "no-access" | "error" };
