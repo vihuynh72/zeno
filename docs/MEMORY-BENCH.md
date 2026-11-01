@@ -59,6 +59,23 @@ The weights changed on 2026-11-01: group accuracy came in at 10, retrieval went 
 
 The overall score is out of 100. Compare runs on it, then read the per-run "failures" list. It shows the user turn, Zeno's reply, the actions and the stored rows for every miss. A keyword miss can be a phrasing the matcher doesn't know rather than a real failure, so check the evidence before you change the prompt. Model calls are a lower bound (one call per turn, plus one when a tool saved something). The exact number is the count of `Model call` lines in the server log.
 
+## Integrated backend (2026-11-01)
+
+Branch `integrate/backend` (calendar, brain, profile and streak merged, then wired), `--runs 1` twice against a local production build on port 3231. From here the import expects the poster board errand kept as a "To do:" memory (7 import items, 1 import junk item), so earlier import scores are not directly comparable.
+
+| metric | run 1 | run 2 |
+|---|---|---|
+| store recall (talk, import) | 100%, 100% | 100%, 100% |
+| import precision, explicit recall, group accuracy | 100% | 100% |
+| junk rate, duplicate rows, request errors | 0 | 0 |
+| update, forget, retrieval | 100% | 100% |
+| health kept (report only) | 2 | 1 |
+| false claims | 1 | 2 |
+| talk p50 / p95 ms | 2152 / 5615 | 2107 / 4194 |
+| **overall** | **97.5** | **96.7** |
+
+Every false claim was a duplicate turn answered with a true "already" ("I've already got Wednesday bio lab at two saved") and no action: the bio lab row did exist, but the matcher counts "noted" and "saved" without a `remembered` action. The profile-only baseline below had none, so the brain prompt could say known facts without those words. Health kept: "Lexapro makes mornings foggy lately." from talk (run 1) and the insulin refill to-do from import.
+
 ## Baseline with groups (2026-11-01)
 
 Branch `feat/profile` (the profile track alone, before the brain track's changes), `--runs 1` against a local production build on port 3223, with the new weights.
