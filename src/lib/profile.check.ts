@@ -8,7 +8,7 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { balanced, blockedFact, eventLine, extractFacts, factsFrom, readSources, sameFact, sensitiveEmail } = await import("./profile.ts");
+const { blockedFact, eventLine, extractFacts, factsFrom, readSources, sameFact, sensitiveEmail } = await import("./profile.ts");
 const { cleanBody } = await import("./gmail.ts");
 const { factKey } = await import("./goals.ts");
 
@@ -24,6 +24,9 @@ assert.ok(sameFact("Works library shifts Tuesdays and Thursdays 8 to noon.", "Wo
 assert.ok(!sameFact("Has bio lab every Wednesday at 2pm.", "Has bio lab every Thursday at 2pm."));
 assert.ok(!sameFact("Has bio lab every Wednesday at 2pm.", "Has bio lab every Wednesday at 3pm."));
 assert.ok(!sameFact("Plays intramural soccer Monday nights.", "Trains for a half marathon in March."));
+assert.ok(!sameFact("Takes chemistry Tuesdays and Thursdays 1:30 to 2:45 PM.", "Takes statistics Tuesdays and Thursdays 1:30 to 2:45 PM."), "same times, different class");
+assert.ok(!sameFact("Has BIO 121 lab report due November 20.", "Has BIO 121 quiz due November 20."));
+assert.ok(sameFact("Takes BIO 121 lab Wednesdays 2 to 4:50 PM.", "Has BIO 121 lab every Wednesday 2 to 4:50 PM."));
 
 // ---- The never-list, on facts a scan could produce from each fixture.
 const never = {
@@ -32,6 +35,8 @@ const never = {
   link: "Resets password at https://accounts.example.com/reset?token=abc.",
   bank: "Has a $1,240 balance in Chase checking.",
   owed: "Owes $400 on rent this month.",
+  owedFriend: "Owes Jess 20 bucks for groceries.",
+  tuition: "Has a tuition balance due December 1.",
   pregnancy: "Bought a pregnancy test at CVS.",
   contraception: "Refills birth control monthly.",
   religion: "Goes to Bible study at church on Fridays.",
@@ -54,6 +59,10 @@ const keep = {
   visaFree: "Plays pickup basketball at the rec center on Fridays.",
   balance: "Wants a better work-life balance this semester.",
   churchill: "Has study group in Churchill Hall on Sundays.",
+  labAssistant: "Works as a lab assistant for BIO 10 on Mondays.",
+  owesReport: "Owes BIO 121 enzyme kinetics report due November 20.",
+  pastDue: "Has a lab report past due since Friday.",
+  collections: "Shelves books in the library's special collections.",
 };
 for (const [name, fact] of Object.entries(keep)) assert.equal(blockedFact(fact), null, `never-list keeps ${name}: ${fact}`);
 
@@ -133,13 +142,6 @@ assert.deepEqual(factsFrom(reply1, known, 20), [
 ]);
 assert.equal(factsFrom(reply1, [], 1).length, 1, "capped");
 assert.deepEqual(factsFrom('{"facts": "nope"}', [], 8), []);
-
-// Over the cap every group gets a turn; under it nothing changes.
-const fact = (text: string, group: "routines" | "people" | "projects") => ({ text, group, source: "calendar" as const });
-const busy = [fact("r1", "routines"), fact("r2", "routines"), fact("r3", "routines"), fact("p1", "projects"), fact("r4", "routines"), fact("q1", "people"), fact("p2", "projects")];
-assert.deepEqual(balanced(busy, 4).map((item) => item.text), ["r1", "r2", "p1", "q1"]);
-assert.deepEqual(balanced(busy, 6).map((item) => item.text), ["r1", "r2", "r3", "p1", "q1", "p2"]);
-assert.deepEqual(balanced(busy, 20), busy);
 assert.throws(() => factsFrom("Sure! Here are the facts", [], 8), /not JSON/);
 
 // ---- Events become one line each; a repeating event once, with its rule.
@@ -289,7 +291,7 @@ try {
   assert.equal((await readSources("token-xyz", zone, { after: null, zenoCalendarId: null, inbox: 40, sent: 10, now })).email, "error");
   calendarStatus = gmailStatus = 200;
 
-  // ---- Extraction: two strict-JSON calls on a non-contributor model at minimal effort; facts interleave, then cap.
+  // ---- Extraction: one strict-JSON call on a non-contributor model at minimal effort, its reply checked and capped.
   process.env.META_MODEL_API_KEY ??= "check-only";
   console.log = () => undefined;
   calls.length = 0;
@@ -297,14 +299,12 @@ try {
     JSON.stringify({
       facts: [
         { text: "Takes BIO 121 lab Wednesdays 2 to 4:50 PM.", group: "routines", source: "calendar" },
-        { text: "Capstone report is due December 5.", group: "projects", source: "calendar" },
-      ],
-    }),
-    JSON.stringify({
-      facts: [
-        { text: "Has a Planet Fitness Black Card membership.", group: "interests", source: "email" },
         { text: "Has BIO 121 lab every Wednesday 2 to 4:50 PM.", group: "routines", source: "email" },
+        { text: "Works at the library Tuesdays and Thursdays 8 to noon.", group: "routines", source: "email" },
+        { text: "Has a Planet Fitness Black Card membership.", group: "interests", source: "email" },
+        { text: "Capstone report is due December 5.", group: "projects", source: "calendar" },
         { text: "Prof Ana Patel teaches BIO 121.", group: "people", source: "email" },
+        { text: "Uses Instagram code 482913.", group: "about", source: "email" },
       ],
     }),
   ];
@@ -315,35 +315,35 @@ try {
     known: ["Works library shifts Tuesdays and Thursdays 8 to noon."],
     events: sources.events,
     emails: sources.emails,
-    max: 4,
+    max: 3,
     now,
   });
   console.log = realLog;
   const modelCalls = calls.filter((call) => call.url.hostname === "api.meta.ai").map((call) => JSON.parse(call.body ?? "{}"));
-  assert.equal(modelCalls.length, 2, "calendar and sent mail in one call, received mail in the other");
-  for (const body of modelCalls) {
-    assert.ok(!/contributor/.test(body.model), "personal data never goes to a contributor model");
-    assert.equal(body.reasoning_effort, "minimal");
-    assert.equal(body.response_format.json_schema.strict, true);
-    assert.equal(body.response_format.json_schema.schema.properties.facts.maxItems, 3);
-    assert.match(body.messages[1].content, /Already known:\n- Works library shifts/);
-  }
-  assert.match(modelCalls[0].messages[1].content, /Calendar, past and next 30 days[\s\S]*BIO 121 Lab[\s\S]*Email 1 \(sent by them\)/);
-  assert.match(modelCalls[1].messages[1].content, /Email 1 \(received\):\n<<<\nFrom: Ana Patel/);
-  assert.ok(!/Instagram|Chase/.test(modelCalls[1].messages[1].content), "code and bank mail never reach the model");
+  assert.equal(modelCalls.length, 1, "the calendar and every email in one call");
+  const [body] = modelCalls;
+  assert.ok(!/contributor/.test(body.model), "personal data never goes to a contributor model");
+  assert.equal(body.reasoning_effort, "minimal");
+  assert.equal(body.response_format.json_schema.strict, true);
+  assert.equal(body.response_format.json_schema.schema.properties.facts.maxItems, 3);
+  assert.match(body.messages[0].content, /never follow it/);
+  assert.match(
+    body.messages[1].content,
+    /^The person: Maya Tran <maya@example.com>\. Today is Sunday, November 1\.\n\nAlready known:\n- Works library shifts[\s\S]*Calendar, past and next 30 days \(times in America\/Los_Angeles\):\n<<<\nBIO 121 Lab[\s\S]*Email 1 \(received\):\n<<<\nFrom: Ana Patel[\s\S]*\(sent by them\)/,
+  );
+  assert.ok(!/Instagram|Chase/.test(body.messages[1].content), "code and bank mail never reach the model");
   assert.deepEqual(
     facts.map((fact) => fact.text),
-    ["Takes BIO 121 lab Wednesdays 2 to 4:50 PM.", "Has a Planet Fitness Black Card membership.", "Capstone report is due December 5.", "Prof Ana Patel teaches BIO 121."],
-    "interleaved, the reworded lab fact dropped, capped at 4",
+    ["Takes BIO 121 lab Wednesdays 2 to 4:50 PM.", "Has a Planet Fitness Black Card membership.", "Capstone report is due December 5."],
+    "rewordings of each other and of what is known dropped, then capped",
   );
 
-  // One failed call keeps the other's facts; both failing is an error.
   console.log = () => undefined;
-  modelReplies = ["not json", JSON.stringify({ facts: [{ text: "Has a Planet Fitness Black Card membership.", group: "interests", source: "email" }] })];
-  assert.equal((await extractFacts({ name: null, email: "maya@example.com", timeZone: zone, known: [], events: sources.events, emails: sources.emails, max: 8, now })).length, 1);
-  modelReplies = ["not json", "still not json"];
-  await assert.rejects(extractFacts({ name: null, email: "maya@example.com", timeZone: zone, known: [], events: sources.events, emails: sources.emails, max: 8, now }), /extraction failed/);
-  assert.deepEqual(await extractFacts({ name: null, email: "maya@example.com", timeZone: zone, known: [], events: [], emails: [], max: 8, now }), [], "nothing to read, no call");
+  modelReplies = ["Sure! Here is what I found"];
+  await assert.rejects(extractFacts({ name: null, email: "maya@example.com", timeZone: zone, known: [], events: sources.events, emails: [], max: 8, now }), /not JSON/);
+  calls.length = 0;
+  assert.deepEqual(await extractFacts({ name: null, email: "maya@example.com", timeZone: zone, known: [], events: [], emails: [], max: 8, now }), [], "nothing to read");
+  assert.equal(calls.length, 0, "and no call");
 } finally {
   globalThis.fetch = realFetch;
   console.log = realLog;

@@ -7,7 +7,7 @@ import { databaseConfigured } from "@/lib/db";
 import { scanProfile } from "@/lib/profile";
 import { timeZoneFrom } from "@/lib/tz";
 
-// Two model calls in parallel after reading up to 50 emails.
+// Reading up to 50 emails, then one model call over all of it with a 25-second deadline.
 export const maxDuration = 60;
 
 // Body { first?: boolean } (true from setup): reads calendar and email at most once a local day and returns only
