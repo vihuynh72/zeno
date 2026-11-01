@@ -46,7 +46,7 @@ export async function GET() {
     if (!reply) throw new Error("Opening reply did not match the schema");
     // Measured live: the model can ask a question and still offer nothing to tap.
     const options = reply.options.length > 0 ? reply.options : ruleOptions(context);
-    return NextResponse.json({ state: "ok", opening: reply.say, options } satisfies OpeningResponse);
+    return NextResponse.json({ state: "ok", opening: reply.say, options, pick: null } satisfies OpeningResponse);
   } catch (error) {
     // Never log the reply itself: it quotes the person's calendar and email.
     console.error("Opening model call failed:", error instanceof Error ? error.message.slice(0, 120) : "unknown");

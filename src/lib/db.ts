@@ -74,6 +74,20 @@ export async function ensureSchema() {
         `,
         // Unique, so saving the same sentence twice keeps one copy.
         sql`CREATE UNIQUE INDEX IF NOT EXISTS memories_user_text_idx ON memories (user_email, text)`,
+        // docs/PLAN-NOV.md: grouped memory, calendar blocks on steps, goal due dates, per-person state.
+        sql`ALTER TABLE memories ADD COLUMN IF NOT EXISTS memory_group TEXT NOT NULL DEFAULT 'about'`,
+        sql`ALTER TABLE memories ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'you'`,
+        sql`ALTER TABLE steps ADD COLUMN IF NOT EXISTS event_id TEXT`,
+        sql`ALTER TABLE steps ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ`,
+        sql`ALTER TABLE goals ADD COLUMN IF NOT EXISTS due DATE`,
+        sql`
+          CREATE TABLE IF NOT EXISTS user_state (
+            user_email TEXT PRIMARY KEY,
+            zeno_calendar_id TEXT,
+            profile_scanned_at TIMESTAMPTZ,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+          )
+        `,
       ])
       .then(() => undefined)
       .catch((error) => {

@@ -1,4 +1,4 @@
-import type { Goal, Memory, PrepSource, StepStatus } from "@/lib/day";
+import { MEMORY_GROUPS, type Goal, type Memory, type MemoryGroup, type MemorySource, type PrepSource, type StepStatus } from "@/lib/day";
 import { ensureSchema, getSql } from "@/lib/db";
 
 // A step for a new or edited roadmap; `id` keeps an existing todo step.
@@ -177,26 +177,38 @@ export async function savePrep(email: string, stepId: string, sources: PrepSourc
   await getSql()`UPDATE steps SET prep = ${JSON.stringify(sources)}::jsonb WHERE id = ${stepId} AND user_email = ${email}`;
 }
 
+const SOURCES: readonly MemorySource[] = ["you", "calendar", "email", "pattern"];
+
+function memoryFrom(row: Record<string, unknown>): Memory {
+  const group = MEMORY_GROUPS.find((known) => known === row.memory_group) ?? "about";
+  const source = SOURCES.find((known) => known === row.source) ?? "you";
+  return { id: String(row.id), text: String(row.text), createdAt: new Date(row.created_at as string).toISOString(), group, source };
+}
+
 export async function listMemories(email: string): Promise<Memory[]> {
   await ensureSchema();
   const rows = await getSql()`
-    SELECT id, text, created_at FROM memories WHERE user_email = ${email} ORDER BY created_at DESC
+    SELECT id, text, created_at, memory_group, source FROM memories WHERE user_email = ${email} ORDER BY created_at DESC
   `;
-  return rows.map((row) => ({
-    id: String(row.id),
-    text: String(row.text),
-    createdAt: new Date(row.created_at).toISOString(),
-  }));
+  return rows.map(memoryFrom);
 }
 
-export async function addMemory(email: string, text: string) {
+// Returns the saved memory, or null when the same sentence was already known (so callers never claim a save).
+// shortcut: exact-text dedupe and one cap of 50 for every group; the profile track refines both (docs/PLAN-NOV.md).
+export async function addMemory(
+  email: string,
+  text: string,
+  { group = "about", source = "you" }: { group?: MemoryGroup; source?: MemorySource } = {},
+): Promise<Memory | null> {
   await ensureSchema();
   const sql = getSql();
-  await sql.transaction([
+  const [inserted] = await sql.transaction([
     // The unique index skips an exact duplicate.
     sql`
-      INSERT INTO memories (user_email, text) VALUES (${email}, ${[...text.trim()].slice(0, 200).join("")})
+      INSERT INTO memories (user_email, text, memory_group, source)
+      VALUES (${email}, ${[...text.trim()].slice(0, 200).join("")}, ${group}, ${source})
       ON CONFLICT DO NOTHING
+      RETURNING id, text, created_at, memory_group, source
     `,
     // Only the 50 newest stay, so the prompt stays small.
     sql`
@@ -205,6 +217,7 @@ export async function addMemory(email: string, text: string) {
       )
     `,
   ]);
+  return inserted[0] ? memoryFrom(inserted[0]) : null;
 }
 
 export async function forgetMemory(email: string, id: string): Promise<boolean> {

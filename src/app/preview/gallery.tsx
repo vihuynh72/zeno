@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import type { Goal, Step } from "@/lib/day";
+import type { Goal, Memory, Step } from "@/lib/day";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
 import { SETUP } from "@/components/day-flow";
 import DayView, { type Chip, type DayViewProps, type Today } from "@/components/day-view";
@@ -71,9 +71,9 @@ const TODAY: Today = {
   sources: { calendar: "ok", email: "ok", goals: "ok" },
 };
 
-const MEMORIES = [
-  { id: "m1", text: "Likes 25-minute work blocks with a short break after.", createdAt: "2026-10-27T18:00:00Z" },
-  { id: "m2", text: "Thinks best in the morning, before classes.", createdAt: "2026-10-28T16:00:00Z" },
+const MEMORIES: Memory[] = [
+  { id: "m1", text: "Likes 25-minute work blocks with a short break after.", createdAt: "2026-10-27T18:00:00Z", group: "work-style", source: "you" },
+  { id: "m2", text: "Thinks best in the morning, before classes.", createdAt: "2026-10-28T16:00:00Z", group: "work-style", source: "you" },
 ];
 
 const ASK = "What's the one thing you keep putting off?";

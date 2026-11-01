@@ -30,7 +30,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await talk(context, firstName, cleanHistory(body?.history), message);
-    return NextResponse.json({ state: "ok", ...result } satisfies TalkResponse);
+    return NextResponse.json({ state: "ok", ...result, proposal: [] } satisfies TalkResponse);
   } catch (error) {
     console.error("Talk model call failed:", error);
     return NextResponse.json({ state: "model-error" } satisfies TalkResponse, { status: 502 });

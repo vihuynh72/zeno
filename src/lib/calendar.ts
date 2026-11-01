@@ -1,3 +1,5 @@
+import type { Session } from "next-auth";
+import type { CalendarWrite, Deadline, FreeSlot } from "@/lib/day";
 import { dayBounds } from "@/lib/tz";
 
 export type CalendarEvent = {
@@ -48,4 +50,24 @@ export async function getTodayEvents(accessToken: string, timeZone: string): Pro
     end: item.end?.dateTime ?? item.end?.date ?? "",
     allDay: Boolean(item.start?.date && !item.start?.dateTime),
   }));
+}
+
+// Contract stubs (docs/PLAN-NOV.md); the calendar track fills them in.
+
+// Free gaps across all of the person's calendars that fit `minutes`, soonest first, over the next `days` days
+// (1 means the rest of today).
+export async function freeSlots(accessToken: string, timeZone: string, opts: { minutes: number; days?: number }): Promise<FreeSlot[]> {
+  void [accessToken, timeZone, opts];
+  return [];
+}
+
+// All-day "Due:" events on the Zeno calendar in the next 14 days, soonest first.
+export async function upcomingDeadlines(accessToken: string, timeZone: string): Promise<Deadline[]> {
+  void [accessToken, timeZone];
+  return [];
+}
+
+// Whether Zeno may write to its own calendar in this session.
+export function calendarWriteFor(session: Pick<Session, "accessToken" | "error">): CalendarWrite {
+  return session.accessToken && !session.error ? "needs-permission" : "no-access";
 }

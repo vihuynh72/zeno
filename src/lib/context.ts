@@ -1,9 +1,10 @@
 import type { Session } from "next-auth";
-import { getTodayEvents, type CalendarEvent } from "@/lib/calendar";
-import type { Goal, Memory } from "@/lib/day";
+import { calendarWriteFor, freeSlots, getTodayEvents, upcomingDeadlines, type CalendarEvent } from "@/lib/calendar";
+import type { CalendarWrite, Deadline, FreeSlot, Goal, Memory, Progress } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
 import { getRecentEmail, type EmailSummary } from "@/lib/gmail";
 import { currentGoal, listMemories } from "@/lib/goals";
+import { NO_PROGRESS, progressFor } from "@/lib/progress";
 import { formatDate, formatTime } from "@/lib/tz";
 
 export type UserContext = {
@@ -17,6 +18,12 @@ export type UserContext = {
   tasksState: "ok" | "not-configured" | "error";
   emails: EmailSummary[];
   emailState: "ok" | "no-access" | "error";
+  // The rest of today's free time, deadlines in the next 14 days, and whether Zeno may write to its calendar.
+  free: FreeSlot[];
+  deadlines: Deadline[];
+  calendarWrite: CalendarWrite;
+  // Streak and this week; NO_PROGRESS when it couldn't be read.
+  progress: Progress;
 };
 
 // shortcut: per-instance cache, move to a shared store if staleness matters
@@ -44,6 +51,9 @@ export async function loadUserContext(
   let tasksState: UserContext["tasksState"] = "not-configured";
   let emails: EmailSummary[] = [];
   let emailState: UserContext["emailState"] = "no-access";
+  let free: FreeSlot[] = [];
+  let deadlines: Deadline[] = [];
+  let progress: Progress = NO_PROGRESS;
 
   await Promise.all([
     (async () => {
@@ -76,9 +86,24 @@ export async function loadUserContext(
         emailState = "error";
       }
     })(),
+    // Free time and deadlines are extras: a failure leaves them empty and the day still loads.
+    (async () => {
+      if (!accessToken) return;
+      [free, deadlines] = await Promise.all([
+        freeSlots(accessToken, timeZone, { minutes: 5, days: 1 }).catch(() => []),
+        upcomingDeadlines(accessToken, timeZone).catch(() => []),
+      ]);
+    })(),
+    (async () => {
+      if (!databaseConfigured()) return;
+      progress = await progressFor(email, timeZone).catch(() => NO_PROGRESS);
+    })(),
   ]);
 
-  return { email, timeZone, events, calendarState, goal, memories, tasksState, emails, emailState };
+  return {
+    email, timeZone, events, calendarState, goal, memories, tasksState, emails, emailState,
+    free, deadlines, calendarWrite: calendarWriteFor(session), progress,
+  };
 }
 
 // Time, calendar and email. The Guided day leaves out the old tasks list, which its screens never show.
