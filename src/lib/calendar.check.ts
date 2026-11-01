@@ -11,8 +11,8 @@ registerHooks({
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
 const {
-  CALENDAR_WRITE, bookBlocks, bucketWeek, calendarFailure, calendarWriteFor, createZenoCalendar, deleteBlock, eventFor,
-  freeSlots, gapsBetween, getTodayEvents, insertBlock, instantOn, isMonday, localDays, thisMonday, unbookBlock,
+  CALENDAR_WRITE, bookBlocks, bucketWeek, calendarFailure, calendarWriteFor, createZenoCalendar, deleteBlock, ensureZenoCalendar,
+  eventFor, freeSlots, gapsBetween, getTodayEvents, insertBlock, instantOn, isMonday, localDays, thisMonday, unbookBlock,
   upcomingDeadlines, validBlocks, wakingWindows, weekEvents,
 } = await import("./calendar.ts");
 
@@ -24,7 +24,7 @@ const isoOf = (ms: number) => new Date(ms).toISOString();
 type Call = { method: string; url: string; auth: string | null; type: string | null; body: unknown };
 const realFetch = globalThis.fetch;
 let calls: Call[] = [];
-let reply: (call: Call) => Response = () => Response.json({});
+let reply: (call: Call) => Response | Promise<Response> = () => Response.json({});
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = input instanceof Request ? input.url : String(input);
   if (!url.startsWith("https://www.googleapis.com/")) return realFetch(input, init);
@@ -39,7 +39,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   calls.push(call);
   return reply(call);
 }) as typeof fetch;
-const stub = (handler: (call: Call) => Response) => {
+const stub = (handler: (call: Call) => Response | Promise<Response>) => {
   calls = [];
   reply = handler;
 };
@@ -127,7 +127,8 @@ assert.equal(calendarFailure(new Error("network down")), "error");
             { id: "me@example.com", primary: true, selected: true, backgroundColor: "#9fe1e7" },
             { id: "hidden@example.com", selected: false },
             { id: "club@group.calendar.google.com", selected: true },
-            { id: "zeno-cal@group.calendar.google.com", selected: false, description: "Added by Zeno" },
+            { id: "zeno-cal@group.calendar.google.com", selected: false, description: "Added by Zeno", accessRole: "owner" },
+            { id: "friends-zeno@group.calendar.google.com", selected: false, description: "Added by Zeno", accessRole: "reader" },
           ],
         })
       : Response.json({
@@ -163,6 +164,19 @@ assert.equal(calendarFailure(new Error("network down")), "error");
   stub(() => Response.json({}));
   assert.deepEqual(await freeSlots("tok", LA, { minutes: 5 }, new Date("2026-11-04T07:30:00Z")), []);
   assert.equal(calls.length, 0, "no waking time left: Google is not asked");
+
+  // The primary calendar unread would make classes look free, so it fails the read; a shared one is skipped.
+  stub((call) =>
+    call.url.includes("/calendarList")
+      ? Response.json({ items: [{ id: "me@example.com", primary: true, selected: true }, { id: "club@group.calendar.google.com", selected: true }] })
+      : Response.json({
+          calendars: {
+            "me@example.com": { errors: [{ domain: "global", reason: "backendError" }], busy: [] },
+            "club@group.calendar.google.com": { busy: [] },
+          },
+        }),
+  );
+  await assert.rejects(freeSlots("tok", LA, { minutes: 15 }, new Date("2026-11-03T15:58:00Z")), /primary calendar/);
 }
 
 // ---- Blocks from a request are validated ----
@@ -187,6 +201,7 @@ assert.equal(calendarFailure(new Error("network down")), "error");
   assert.ok(one({ title: "Essay", kind: "deadline", date: "2027-03-02" }), "120 days out");
   assert.ok(one(step("2026-11-02T08:50:00-08:00", "2026-11-02T09:20:00-08:00")), "started 10 minutes ago");
   assert.ok(one(step("2026-11-02T10:00:00-08:00", "2026-11-02T14:00:00-08:00")), "240 minutes");
+  assert.ok(one(step("2026-11-02T09:30:00-08:00", "2026-11-02T09:31:00-08:00")), "1 minute, as a step or to-do may be");
   assert.ok(one(step("2026-12-02T08:00:00-08:00", "2026-12-02T08:30:00-08:00")), "ends inside 30 days");
 
   const bad: [unknown, string][] = [
@@ -203,7 +218,8 @@ assert.equal(calendarFailure(new Error("network down")), "error");
     [step("2026-11-02T09:30:00-08:00", "2026-11-02T09:40:00-08:00", { stepId: "step-1" }), "stepId not a uuid"],
     [step("2026-11-02T09:30:00", "2026-11-02T09:40:00"), "no offset"],
     [step("2026-11-02T09:40:00-08:00", "2026-11-02T09:30:00-08:00"), "start after end"],
-    [step("2026-11-02T09:30:00-08:00", "2026-11-02T09:34:00-08:00"), "4 minutes"],
+    [step("2026-11-02T09:30:00-08:00", "2026-11-02T09:30:30-08:00"), "30 seconds"],
+    [step("2026-11-02T09:30:00-08:00", "2026-11-02T09:30:00-08:00"), "no length"],
     [step("2026-11-02T10:00:00-08:00", "2026-11-02T14:01:00-08:00"), "241 minutes"],
     [step("2026-11-02T08:40:00-08:00", "2026-11-02T09:20:00-08:00"), "started 20 minutes ago"],
     [step("2026-11-02T08:46:00-08:00", "2026-11-02T08:55:00-08:00"), "already over"],
@@ -217,7 +233,15 @@ assert.equal(calendarFailure(new Error("network down")), "error");
   const twelve = Array.from({ length: 12 }, () => ({ title: "Essay", kind: "deadline", date: "2026-11-06" }));
   assert.equal(validBlocks(twelve, LA, now)?.length, 12);
   assert.equal(validBlocks([...twelve, twelve[0]], LA, now), null, "13 is too many");
-  assert.equal(validBlocks([twelve[0], { title: "", kind: "todo" }], LA, now), null, "one bad block fails the batch");
+  // A pasted batch: a deadline past 120 days and a to-do tapped 16 minutes late are left out, the rest is kept.
+  const batch = [
+    { title: "Lab report", kind: "deadline", date: "2026-11-06" },
+    { title: "Thesis", kind: "deadline", date: "2027-03-05" },
+    { title: "Buy stamps", kind: "todo", start: "2026-11-02T16:44:00Z", end: "2026-11-02T16:54:00Z" },
+    { title: "Email Prof Patel", kind: "todo", start: "2026-11-02T17:10:00Z", end: "2026-11-02T17:12:00Z" },
+  ];
+  assert.deepEqual(validBlocks(batch, LA, now)?.map((block) => block.title), ["Lab report", "Email Prof Patel"], "one bad block is left out");
+  assert.equal(validBlocks([{ title: "", kind: "todo" }, null], LA, now), null, "none valid");
 }
 
 // ---- Weeks: Monday to Sunday in local days, DST weeks included ----
@@ -327,6 +351,9 @@ assert.equal(calendarFailure(new Error("network down")), "error");
 
   stub((call) => (call.url.includes("/calendarList") ? calendarList.clone() : googleError(500, "backendError")));
   await assert.rejects(getTodayEvents("tok", LA), /500/, "every calendar failing is an error");
+  // A holiday calendar answering alone is no day: the primary failing fails the read.
+  stub((call) => (call.url.includes("/calendars/me%40example.com/") ? googleError(503, "backendError") : reader(call)));
+  await assert.rejects(getTodayEvents("tok", LA), /503/, "the primary failing is an error");
 }
 
 // ---- Writing to the Zeno calendar ----
@@ -375,20 +402,16 @@ assert.equal(calendarFailure(new Error("network down")), "error");
     private: { zenoKind: "todo" },
   });
 
-  // Undo reads the event for its step, then deletes it, both on the Zeno calendar only.
+  // Undo deletes on the Zeno calendar only; an event already gone counts as deleted.
   const path = `${API}/calendars/zeno-cal%40group.calendar.google.com/events/evt1`;
-  stub((call) => (call.method === "DELETE" ? new Response(null, { status: 204 }) : Response.json({ extendedProperties: { private: { zenoKind: "step", zenoStepId: stepId } } })));
-  assert.equal(await deleteBlock("tok", "zeno-cal@group.calendar.google.com", "evt1"), stepId);
-  assert.deepEqual(calls.map((call) => [call.method, call.url, call.auth, call.body]), [
-    ["GET", `${path}?fields=extendedProperties`, "Bearer tok", undefined],
-    ["DELETE", path, "Bearer tok", undefined],
-  ]);
-  stub(() => googleError(410, "deleted"));
-  assert.equal(await deleteBlock("tok", "zeno-cal@group.calendar.google.com", "evt1"), null, "already gone is undone");
-  assert.equal(calls.length, 1, "nothing to delete");
-  stub((call) => (call.method === "DELETE" ? googleError(410, "deleted") : Response.json({ extendedProperties: { private: { zenoStepId: stepId } } })));
-  assert.equal(await deleteBlock("tok", "zeno-cal@group.calendar.google.com", "evt1"), stepId, "deleted in between still unlinks");
-  stub((call) => (call.method === "DELETE" ? googleError(500, "backendError") : Response.json({})));
+  stub(() => new Response(null, { status: 204 }));
+  await deleteBlock("tok", "zeno-cal@group.calendar.google.com", "evt1");
+  assert.deepEqual(calls.map((call) => [call.method, call.url, call.auth, call.body]), [["DELETE", path, "Bearer tok", undefined]]);
+  for (const status of [404, 410]) {
+    stub(() => googleError(status, "deleted"));
+    await deleteBlock("tok", "zeno-cal@group.calendar.google.com", "evt1");
+  }
+  stub(() => googleError(500, "backendError"));
   await assert.rejects(deleteBlock("tok", "zeno-cal@group.calendar.google.com", "evt1"), /500/);
 }
 
@@ -397,6 +420,9 @@ if (process.env.DATABASE_URL) {
   const { currentGoal, setGoal } = await import("./goals.ts");
   const { getSql } = await import("./db.ts");
   const email = `calendar-check-${crypto.randomUUID()}@zeno.local`;
+  const racer = `calendar-check-${crypto.randomUUID()}@zeno.local`;
+  const savedId = async (who: string) =>
+    (await getSql()`SELECT zeno_calendar_id FROM user_state WHERE user_email = ${who}`)[0]?.zeno_calendar_id ?? null;
   try {
     const goal = await setGoal(email, "Lab report", [{ title: "Email Prof Patel", minutes: 5 }, { title: "Draft results", minutes: 25 }]);
     const stepId = goal.steps[0].id;
@@ -404,13 +430,30 @@ if (process.env.DATABASE_URL) {
       { title: "Email Prof Patel", kind: "step" as const, stepId, start: "2026-11-02T17:30:00.000Z", end: "2026-11-02T17:40:00.000Z" },
       { title: "Lab report", kind: "deadline" as const, date: "2026-11-06" },
     ];
+    // A fake Google: the Zeno calendars this person owns, next to a friend's shared one that is never Zeno's to use.
+    const owned: string[] = [];
     let calendars = 0;
     let events = 0;
-    let deletedCalendar = false;
     const google = (call: Call) => {
-      if (call.method === "POST" && call.url === `${API}/calendars`) return Response.json({ id: `zeno-${++calendars}@group.calendar.google.com` });
-      if (call.method === "GET" && /\/calendars\/[^/]+\?fields=id$/.test(call.url)) {
-        return deletedCalendar ? googleError(404, "notFound") : Response.json({ id: "ok" });
+      const id = decodeURIComponent(call.url.replace(`${API}/calendars/`, "").split(/[/?]/)[0]);
+      if (call.url.includes("/calendarList")) {
+        return Response.json({
+          items: [
+            { id: "me@example.com", primary: true, selected: true, accessRole: "owner" },
+            { id: "friends-zeno@group.calendar.google.com", selected: true, description: "Added by Zeno", accessRole: "writer" },
+            ...owned.map((own) => ({ id: own, selected: true, description: "Added by Zeno", accessRole: "owner" })),
+          ],
+        });
+      }
+      if (call.method === "POST" && call.url === `${API}/calendars`) {
+        owned.push(`zeno-${++calendars}@group.calendar.google.com`);
+        return Response.json({ id: owned.at(-1) });
+      }
+      if (!owned.includes(id)) return googleError(404, "notFound");
+      if (call.method === "GET" && call.url.endsWith("?fields=id")) return Response.json({ id });
+      if (call.method === "DELETE" && !call.url.includes("/events/")) {
+        owned.splice(owned.indexOf(id), 1);
+        return new Response(null, { status: 204 });
       }
       if (call.method === "POST" && call.url.endsWith("/events")) return Response.json({ id: `evt${++events}` });
       return googleError(500, "unexpected");
@@ -419,13 +462,13 @@ if (process.env.DATABASE_URL) {
     stub(google);
     const booked = await bookBlocks("tok", email, LA, blocks);
     assert.deepEqual(booked.map((block) => block.eventId), ["evt1", "evt2"]);
-    assert.deepEqual(calls.map((call) => `${call.method} ${call.url.replace(API, "")}`), [
+    assert.deepEqual(calls.map((call) => `${call.method} ${call.url.replace(API, "").split("?")[0]}`), [
+      "GET /users/me/calendarList",
       "POST /calendars",
       "POST /calendars/zeno-1%40group.calendar.google.com/events",
       "POST /calendars/zeno-1%40group.calendar.google.com/events",
-    ], "the first booking makes the calendar");
-    const [state] = await getSql()`SELECT zeno_calendar_id FROM user_state WHERE user_email = ${email}`;
-    assert.equal(state.zeno_calendar_id, "zeno-1@group.calendar.google.com");
+    ], "the first booking makes the calendar; a friend's shared Zeno calendar is never used");
+    assert.equal(await savedId(email), "zeno-1@group.calendar.google.com");
     const linked = (await currentGoal(email))!.steps;
     assert.equal(linked[0].eventId, "evt1");
     assert.equal(linked[0].scheduledAt, "2026-11-02T17:30:00.000Z");
@@ -435,12 +478,18 @@ if (process.env.DATABASE_URL) {
     await bookBlocks("tok", email, LA, [blocks[1]]);
     assert.deepEqual(calls.map((call) => call.method), ["GET", "POST"], "later bookings reuse the calendar");
 
-    deletedCalendar = true;
+    // A cleared user_state (or a save lost after the create) finds the calendar Zeno made before.
+    await getSql()`DELETE FROM user_state WHERE user_email = ${email}`;
     stub(google);
     await bookBlocks("tok", email, LA, [blocks[1]]);
-    deletedCalendar = false;
-    assert.ok(calls[1].url === `${API}/calendars` && calls[2].url.includes("zeno-2%40"), "a deleted calendar is made again");
-    assert.equal((await getSql()`SELECT zeno_calendar_id FROM user_state WHERE user_email = ${email}`)[0].zeno_calendar_id, "zeno-2@group.calendar.google.com");
+    assert.ok(!calls.some((call) => call.url === `${API}/calendars`), "no second calendar");
+    assert.equal(await savedId(email), "zeno-1@group.calendar.google.com");
+
+    owned.length = 0; // the person deleted it
+    stub(google);
+    await bookBlocks("tok", email, LA, [blocks[1]]);
+    assert.ok(calls.at(-1)!.url.includes("zeno-2%40"), "a deleted calendar is made again");
+    assert.equal(await savedId(email), "zeno-2@group.calendar.google.com");
 
     // One insert failing keeps the rest; all failing on scope says needs-permission.
     stub((call) => (call.url.endsWith("/events") && call.body && (call.body as { summary: string }).summary.startsWith("Due") ? googleError(500, "backendError") : google(call)));
@@ -467,14 +516,23 @@ if (process.env.DATABASE_URL) {
     assert.ok(deadlineRange.pathname.endsWith("/calendars/zeno-2%40group.calendar.google.com/events"), "only the Zeno calendar");
     assert.equal(deadlineRange.searchParams.get("timeMin"), "2026-11-01T07:00:00.000Z");
     assert.equal(deadlineRange.searchParams.get("timeMax"), "2026-11-16T08:00:00.000Z", "through the 14th day after today");
+    stub(() => googleError(404, "notFound"));
+    assert.deepEqual(await upcomingDeadlines("tok", email, LA), [], "a deleted Zeno calendar holds no deadlines");
+    stub(() => googleError(500, "backendError"));
+    await assert.rejects(upcomingDeadlines("tok", email, LA), /500/, "an outage is not 'no deadlines'");
 
-    // Undo deletes from the Zeno calendar and clears the step's link.
-    stub((call) => (call.method === "DELETE" ? new Response(null, { status: 204 }) : Response.json({ extendedProperties: { private: { zenoKind: "step", zenoStepId: stepId } } })));
+    // Undo deletes on the Zeno calendar and unlinks by event id: undoing an older booking of a re-booked step keeps
+    // the newer link, and a block already gone still unlinks.
+    const latest = (await currentGoal(email))!.steps[0].eventId!;
+    assert.notEqual(latest, "evt1", "the step was booked again since evt1");
+    stub(() => new Response(null, { status: 204 }));
     await unbookBlock("tok", email, "evt1");
     assert.deepEqual(calls.map((call) => `${call.method} ${call.url.replace(API, "")}`), [
-      "GET /calendars/zeno-2%40group.calendar.google.com/events/evt1?fields=extendedProperties",
       "DELETE /calendars/zeno-2%40group.calendar.google.com/events/evt1",
     ]);
+    assert.equal((await currentGoal(email))!.steps[0].eventId, latest);
+    stub(() => googleError(410, "deleted"));
+    await unbookBlock("tok", email, latest);
     const unlinked = (await currentGoal(email))!.steps[0];
     assert.equal(unlinked.eventId, null);
     assert.equal(unlinked.scheduledAt, null);
@@ -482,9 +540,26 @@ if (process.env.DATABASE_URL) {
     stub(google);
     await unbookBlock("tok", `calendar-check-nobody-${crypto.randomUUID()}@zeno.local`, "evt1");
     assert.equal(calls.length, 0, "no Zeno calendar: nothing to undo, nothing asked");
+
+    // Two first bookings at once, both past the calendar list before either saves: both make a calendar, the first
+    // save wins, both use it, and the other one is removed.
+    owned.length = 0;
+    let listed = 0;
+    let release = () => {};
+    const bothListed = new Promise<void>((resolve) => (release = resolve));
+    stub((call) => {
+      if (!call.url.includes("/calendarList")) return google(call);
+      if (++listed === 2) release();
+      return bothListed.then(() => google(call));
+    });
+    const [first, second] = await Promise.all([ensureZenoCalendar("tok", racer, LA), ensureZenoCalendar("tok", racer, LA)]);
+    assert.equal(calls.filter((call) => call.url === `${API}/calendars`).length, 2, "both made one");
+    assert.equal(first, second, "one calendar");
+    assert.equal(await savedId(racer), first);
+    assert.deepEqual(owned, [first], "no duplicate left behind");
   } finally {
     await getSql()`DELETE FROM goals WHERE user_email = ${email}`;
-    await getSql()`DELETE FROM user_state WHERE user_email = ${email}`;
+    await getSql()`DELETE FROM user_state WHERE user_email IN (${email}, ${racer})`;
   }
   console.log("calendar self-check passed (with the database)");
 } else {

@@ -19,8 +19,11 @@ export type UserContext = {
   emails: EmailSummary[];
   emailState: "ok" | "no-access" | "error";
   // The rest of today's free time, deadlines in the next 14 days, and whether Zeno may write to its calendar.
+  // An unread list is empty with state "error": say it could not be read, never "none".
   free: FreeSlot[];
+  freeState: "ok" | "no-access" | "error";
   deadlines: Deadline[];
+  deadlinesState: "ok" | "no-access" | "error";
   calendarWrite: CalendarWrite;
   // Streak and this week; NO_PROGRESS when it couldn't be read.
   progress: Progress;
@@ -57,7 +60,9 @@ export async function loadUserContext(
   let emails: EmailSummary[] = [];
   let emailState: UserContext["emailState"] = "no-access";
   let free: FreeSlot[] = [];
+  let freeState: UserContext["freeState"] = "no-access";
   let deadlines: Deadline[] = [];
+  let deadlinesState: UserContext["deadlinesState"] = "no-access";
   let progress: Progress = NO_PROGRESS;
 
   await Promise.all([
@@ -91,13 +96,24 @@ export async function loadUserContext(
         emailState = "error";
       }
     })(),
-    // Free time and deadlines are extras: a failure leaves them empty and the day still loads.
+    // Free time and deadlines are extras: a failure marks them unread and the day still loads.
     (async () => {
       if (!accessToken) return;
-      [free, deadlines] = await Promise.all([
-        cached(`free:${email}`, () => freeSlots(accessToken, timeZone, { minutes: 5, days: 1 })).catch(() => []),
-        cached(`deadlines:${email}`, () => upcomingDeadlines(accessToken, email, timeZone)).catch(() => []),
-      ]);
+      try {
+        free = await cached(`free:${email}`, () => freeSlots(accessToken, timeZone, { minutes: 5, days: 1 }));
+        freeState = "ok";
+      } catch {
+        freeState = "error";
+      }
+    })(),
+    (async () => {
+      if (!accessToken) return;
+      try {
+        deadlines = await cached(`deadlines:${email}`, () => upcomingDeadlines(accessToken, email, timeZone));
+        deadlinesState = "ok";
+      } catch {
+        deadlinesState = "error";
+      }
     })(),
     (async () => {
       if (!databaseConfigured()) return;
@@ -107,7 +123,7 @@ export async function loadUserContext(
 
   return {
     email, timeZone, events, calendarState, goal, memories, tasksState, emails, emailState,
-    free, deadlines, calendarWrite: calendarWriteFor(session), progress,
+    free, freeState, deadlines, deadlinesState, calendarWrite: calendarWriteFor(session), progress,
   };
 }
 

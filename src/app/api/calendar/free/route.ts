@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as { minutes?: unknown; days?: unknown } | null;
   const minutes = body?.minutes;
   const days = body?.days ?? 1;
-  if (!whole(minutes, 5, 240) || !whole(days, 1, 14)) {
+  if (!whole(minutes, 1, 240) || !whole(days, 1, 14)) {
     return NextResponse.json({ state: "bad-request" } satisfies FreeResponse, { status: 400 });
   }
   const accessToken = session.error ? undefined : session.accessToken;

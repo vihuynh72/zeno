@@ -10,7 +10,8 @@ import { timeZoneFrom } from "@/lib/tz";
 export const maxDuration = 30;
 
 // POST /api/calendar/book body { blocks: CalendarBlock[] } (1 to 12), sent only after the person's tap.
-// `booked` holds only the blocks Google confirmed, each with its eventId.
+// An invalid block is left out (400 only when none is valid), so `booked` holds only the blocks Google confirmed,
+// each with its eventId.
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.email) {
