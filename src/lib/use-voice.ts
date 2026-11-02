@@ -7,6 +7,8 @@ export type VoiceError = "blocked" | "unsupported" | "network" | null;
 
 type Listen = typeof listenWeb;
 type UserTurn = (text: string, how: "voice" | "typed") => Promise<string | null>;
+// Whether to listen after Zeno says this line, for a tapped or typed turn and for speak(); a spoken turn always does.
+type ListenAfter = (said: string) => boolean;
 
 const LISTEN_LIMIT_MS = 30_000;
 const subscribeNever = () => () => {};
@@ -26,16 +28,16 @@ function say(text: string) {
 }
 
 // Half duplex: the mic is released before Zeno speaks and opened again only after.
-export function useVoice(options: { onUserTurn: UserTurn }, adapter?: { listen?: Listen }) {
+export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAfter }, adapter?: { listen?: Listen }) {
   const listen = adapter?.listen ?? listenWeb;
   const [phase, setPhase] = useState<VoicePhase>("idle");
   const [partial, setPartial] = useState("");
   const [muted, setMutedState] = useState(false);
   const [error, setError] = useState<VoiceError>(null);
   const levelRef = useRef(0);
-  const latest = useRef({ onUserTurn: options.onUserTurn, listen });
+  const latest = useRef({ onUserTurn: options.onUserTurn, listenAfter: options.listenAfter, listen });
   useEffect(() => {
-    latest.current = { onUserTurn: options.onUserTurn, listen };
+    latest.current = { onUserTurn: options.onUserTurn, listenAfter: options.listenAfter, listen };
   });
   const supported = useSyncExternalStore(subscribeNever, () => canListen(listen), () => false);
 
@@ -122,7 +124,7 @@ export function useVoice(options: { onUserTurn: UserTurn }, adapter?: { listen?:
       } catch {
         // The UI shows its own message for a failed turn; Zeno just stays quiet.
       }
-      if (mine === gen) await answer(reply, how === "voice");
+      if (mine === gen) await answer(reply, how === "voice" || Boolean(reply && latest.current.listenAfter?.(reply)));
     }
 
     // Called from a click or key press, so unlockAudio() still runs inside the gesture.
@@ -139,7 +141,7 @@ export function useVoice(options: { onUserTurn: UserTurn }, adapter?: { listen?:
       async speak(text: string) {
         halt();
         unlockAudio();
-        await answer(text, true);
+        await answer(text, latest.current.listenAfter?.(text) ?? true);
       },
       async submit(text: string) {
         if (!text.trim()) return;
