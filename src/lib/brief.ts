@@ -1,5 +1,6 @@
 import type { UserContext } from "@/lib/context";
 import type { FirstPick, Goal } from "@/lib/day";
+import { sensitiveEmail } from "@/lib/profile";
 import { localHour } from "@/lib/tz";
 
 // A deadline's days left the way people say it.
@@ -100,7 +101,8 @@ export function ruleOptions(context: UserContext, now = new Date()): string[] {
   // Before 5 AM the day's picks can wait.
   if (localHour(context.timeZone, now) < 5) return ["Set up tomorrow"];
   const step = nextStep(context.goal);
-  const email = context.emails.find((item) => item.unread && item.personal);
+  // A tapped option goes to the model, which never sees private mail (dayToText).
+  const email = context.emails.find((item) => item.unread && item.personal && !sensitiveEmail(item));
   const event = context.events.find(
     (item) => !item.allDay && new Date(item.start).getTime() > now.getTime() && !ROUTINE.test(item.title),
   );

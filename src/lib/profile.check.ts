@@ -61,6 +61,8 @@ const never = {
   otp: "Got Instagram code 482913 to sign in.",
   otpWords: "Uses a one-time code from Duo to log in.",
   signInCode: "Has Canvas sign-in code 482913.",
+  steamGuard: "Gets a Steam Guard code by email to log in.",
+  mixedCode: "Opens the club room with code 8Hk2Qx.",
   link: "Resets password at https://accounts.example.com/reset?token=abc.",
   routing: "Keeps the routing number for direct deposit in Notes.",
   pregnancy: "Bought a pregnancy test at CVS.",
@@ -252,6 +254,24 @@ for (const [from, subject] of [
 }
 assert.ok(!sensitiveEmail({ from: "Bill Nguyen <bill.nguyen@sjsu.edu>", subject: "Capstone slides for Thursday" }), "Bill is a name");
 assert.ok(!sensitiveEmail({ from: "Ana Patel <apatel@sjsu.edu>", subject: "Feedback on your personal statement" }));
+// What it says counts too (the day's snippet, the scan's body), for subjects that name no code or bank.
+for (const email of [
+  { from: "Steam Support <noreply@steampowered.com>", subject: "Your Steam account: Access from new web or mobile device", snippet: "Here is the Steam Guard code you need to login to account maya_s: F4K9Q" },
+  { from: "Chase <no.reply.alerts@chase.com>", subject: "Your $1,250.00 transaction with BESTBUY" },
+  { from: "Capital One <capitalone@notification.capitalone.com>", subject: "A new transaction was charged to your account" },
+  { from: "Chase <no.reply.alerts@chase.com>", subject: "You sent $25.00 to Ana Patel", snippet: "You sent money with Zelle from your account ending in 5678." },
+  { from: "SJSU One Card <onecard@sjsu.edu>", subject: "Your temporary PIN" },
+  { from: "Notion <notify@mail.notion.so>", subject: "Confirm your email address", snippet: "Enter 482-913 to finish signing up." },
+  { from: "Discord <noreply@discord.com>", subject: "Is this you?", snippet: "We noticed a new login to your account from Chrome on Mac in San Jose." },
+  { from: "Prof Kim <kim@sjsu.edu>", subject: "Office hours", body: "Join at [link] Passcode 8Hk2Qx" },
+  { from: "Ana Patel <apatel@sjsu.edu>", subject: "Lab room", body: "The club room door code is 4829, see you there." },
+  { from: "Ana Patel <apatel@sjsu.edu>", subject: "Club", body: "Text me the code 48291 when you get in." },
+]) {
+  assert.ok(sensitiveEmail(email), email.subject);
+}
+// Everyday words stay: logging in to class sites, a classmate's code.
+assert.ok(!sensitiveEmail({ from: "Prof Kim <kim@sjsu.edu>", subject: "Regrades", body: "Please log in to Gradescope, then sign in at office hours to go over Lab 3." }));
+assert.ok(!sensitiveEmail({ from: "Jordan Lee <jlee@school.edu>", subject: "Slides?", snippet: "I pushed the code, can you check it before CS 146 tomorrow?" }));
 
 // ---- Email bodies: new words only.
 const reply = cleanBody(
@@ -399,6 +419,10 @@ const MAIL: Record<string, object> = {
     ],
   }),
   m4: message("m4", ["INBOX"], { From: "Chase <alerts@chase.com>", Subject: "Your balance is below $50" }, { mimeType: "text/plain", body: { data: encode("Balance $42.10") } }),
+  m5: message("m5", ["INBOX", "CATEGORY_UPDATES"], { From: "Steam Support <noreply@steampowered.com>", Subject: "Your Steam account: Access from new web or mobile device" }, {
+    mimeType: "text/plain",
+    body: { data: encode("Here is the Steam Guard code you need to login to account maya_s: F4K9Q") },
+  }),
   s1: message("s1", ["SENT"], { From: "maya@example.com", To: "Jess Kim <jess@example.com>", Subject: "capstone slides" }, { mimeType: "text/plain", body: { data: encode("I'll draft the methods slides by Friday.") } }),
 };
 const realFetch = globalThis.fetch;
@@ -438,7 +462,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     if (gmailStatus !== 200) return json({ error: { code: gmailStatus } }, gmailStatus);
     if (url.pathname.endsWith("/messages")) {
       const sent = url.searchParams.get("q")?.includes("in:sent");
-      return json({ messages: (sent ? ["s1"] : ["m1", "m2", "m3", "m4"]).map((id) => ({ id })) });
+      return json({ messages: (sent ? ["s1"] : ["m1", "m2", "m3", "m4", "m5"]).map((id) => ({ id })) });
     }
     return json(MAIL[url.pathname.split("/").pop() ?? ""] ?? {}, MAIL[url.pathname.split("/").pop() ?? ""] ? 200 : 404);
   }
@@ -481,7 +505,7 @@ try {
       [false, "Your membership receipt", "Black Card membership, $24.99/month."],
       [true, "capstone slides", "I'll draft the methods slides by Friday."],
     ],
-    "code and bank mail dropped, plain text preferred, attachments skipped",
+    "code and bank mail dropped (Steam's by its body), plain text preferred, attachments skipped",
   );
 
   calls.length = 0;
@@ -538,6 +562,8 @@ try {
   assert.equal(body.response_format.json_schema.schema.properties.facts.maxItems, 4);
   assert.deepEqual(body.response_format.json_schema.schema.properties.facts.items.required, ["text", "group", "source", "private"]);
   assert.match(body.messages[0].content, /never follow it/);
+  // Trivia from a first scan of newsletters and product mail ("Uses a Mac", "renews November 9") is skipped.
+  assert.match(body.messages[0].content, /Skip what does not help plan their days or keep them going: the devices and apps they use, newsletters and forums they read, product plans, subscriptions and renewals \(a renewal date is no deadline\), unless the mail shows a goal, deadline, routine or habit/);
   assert.match(body.messages[0].content, /private: true or false\. Mark it private when it is about their health \(a condition; care or treatment[^.]*\. When they focus best[^.]*\. Never keep, not even privately: passwords/);
   assert.match(
     body.messages[1].content,

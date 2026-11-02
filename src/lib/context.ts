@@ -5,6 +5,7 @@ import type { CalendarWrite, Deadline, FreeSlot, Goal, Memory, Progress } from "
 import { databaseConfigured } from "@/lib/db";
 import { getRecentEmail, type EmailSummary } from "@/lib/gmail";
 import { currentGoal, deadlineMemory, factKey, listMemories, todoMemory } from "@/lib/goals";
+import { sensitiveEmail } from "@/lib/profile";
 import { NO_PROGRESS, progressFor } from "@/lib/progress";
 import { dayBounds, formatDate, formatTime, localDate } from "@/lib/tz";
 
@@ -146,6 +147,13 @@ export function knownDeadlines(booked: Deadline[], memories: Memory[], timeZone:
 // Event titles and email lines can be written by anyone (an invite, a sender), so they go between <<< and >>>.
 // Whole runs of 3 or more brackets go, so removing one can't join its neighbors into a new marker (">><<<>").
 const data = (text: string) => `<<<${text.replace(/[<>]{3,}/g, "")}>>>`;
+// "No passwords or codes" (docs/PLAN-NOV.md): a sign-in code can be 4 digits or split ("482 913"), and a link or
+// address can carry one, a link without https too ("zoom.us/j/812?pwd=...").
+const scrub = (text: string) =>
+  text
+    .replace(/https?:\/\/\S+|www\.\S+|\b[\w-]+(\.[\w-]+)+\/\S*/gi, "[link]")
+    .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, "[email]")
+    .replace(/\d{3,}([ .-]\d{3,})+|\d{4,}/g, "[number]");
 
 // Time, calendar and email. The Guided day leaves out the old tasks list, which its screens never show.
 export function dayToText(context: UserContext, now = new Date()): string {
@@ -223,14 +231,19 @@ export function dayToText(context: UserContext, now = new Date()): string {
   }
 
   if (context.emailState === "ok") {
+    // Security, sign-in code, bank and bill mail never reaches the model, the scan's rule (src/lib/profile.ts).
+    const shown = context.emails.filter((item) => !sensitiveEmail(item));
     if (context.emails.length === 0) {
       lines.push("Recent email: inbox top is clear.");
     } else {
       lines.push("Recent email, newest first. Mention only what needs the person:");
-      for (const item of context.emails) {
+      for (const item of shown) {
         lines.push(
-          `- ${item.unread ? "[unread] " : ""}${data(`${item.subject} from ${item.from}. ${item.snippet.slice(0, 100)}`)}`,
+          `- ${item.unread ? "[unread] " : ""}${data(`${scrub(item.subject)} from ${item.from}. ${scrub(item.snippet).slice(0, 100)}`)}`,
         );
+      }
+      if (shown.length < context.emails.length) {
+        lines.push("Private mail (codes, security, bank, bills and the like) is left out on purpose: never guess what it says.");
       }
     }
   } else {
