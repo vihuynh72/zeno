@@ -674,14 +674,15 @@ export default function GuidedDay() {
     void voice.submit(text);
   }
 
-  // A question from Zeno that wants an answer: said aloud, then listened for if the person is talking, else typed.
-  function ask(question: string) {
+  // A question from Zeno that wants an answer: said aloud with answers to tap, then listened for if the person is
+  // talking; the type box opens only when there is nothing to tap.
+  function ask(question: string, answers: string[]) {
     remember([{ role: "assistant", content: question }]);
     setNote(null);
-    setOptions([]);
+    setOptions(answers);
     setLine(question);
     if (!voice.muted) void voice.speak(question);
-    if (!talking.current || !voice.supported || voice.muted) setTyping(true);
+    if (answers.length === 0 && (!talking.current || !voice.supported || voice.muted)) setTyping(true);
   }
 
   // "Stop for now": a short wrap-up, and the next step offered for tomorrow with one tap.
@@ -737,14 +738,14 @@ export default function GuidedDay() {
     else if (screen === "checkin") {
       setScreen("talk");
       setCelebrate(false);
-      ask("What's the next thing you want to start?");
+      ask("What's the next thing you want to start?", ["Something small", "Plan tomorrow"]);
     }
   }
 
   function secondary() {
     if (performance.now() - cardAt.current < 400) return;
     const step = openSteps(goal)[0];
-    if (screen === "plan") ask("What should change?");
+    if (screen === "plan") ask("What should change?", ["Make step one smaller", "Fewer steps", "Different order"]);
     else if (screen === "focus" && step) tap(`I'm stuck on: ${step.title}.`);
     else if (screen === "checkin") stopForNow();
   }

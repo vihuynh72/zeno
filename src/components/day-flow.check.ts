@@ -94,6 +94,8 @@ assert.equal(withStatus(goal(step("1", "doing")), "1", "done", now).steps[0].don
 assert.equal(dueLabel("2026-11-02", "2026-11-02"), "Due today");
 assert.equal(dueLabel("2026-11-03", "2026-11-02"), "Due tomorrow");
 assert.equal(dueLabel("2026-11-06", "2026-11-02"), "Due Friday");
+assert.equal(dueLabel("2026-11-06", "2026-11-02", true), "Due Fri");
+assert.equal(dueLabel("2026-11-06", ""), "", "no date before the browser's clock");
 assert.equal(dueLabel("2026-11-20", "2026-11-02"), "Due Nov 20");
 assert.equal(dueLabel("2026-10-30", "2026-11-02"), "Was due Oct 30");
 

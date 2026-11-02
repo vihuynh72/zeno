@@ -170,12 +170,13 @@ export function withStatus(goal: Goal, stepId: string, status: StepStatus, now: 
   };
 }
 
-// "Due Friday" style, from YYYY-MM-DD dates.
-export function dueLabel(due: string, today: string): string {
+// "Due Friday" style (short: "Due Fri"), from YYYY-MM-DD dates.
+export function dueLabel(due: string, today: string, short = false): string {
   const days = Math.round((Date.parse(due) - Date.parse(today)) / 86_400_000);
   if (Number.isNaN(days)) return "";
   const date = new Date(`${due}T12:00:00Z`);
-  const named = date.toLocaleDateString("en-US", { timeZone: "UTC", ...(days > 0 && days < 7 ? { weekday: "long" } : { month: "short", day: "numeric" }) });
+  const weekday = short ? "short" : "long";
+  const named = date.toLocaleDateString("en-US", { timeZone: "UTC", ...(days > 0 && days < 7 ? { weekday } : { month: "short", day: "numeric" }) });
   if (days < 0) return `Was due ${named}`;
   return days === 0 ? "Due today" : days === 1 ? "Due tomorrow" : `Due ${named}`;
 }

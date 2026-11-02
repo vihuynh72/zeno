@@ -145,6 +145,7 @@ export default function DayView(props: DayViewProps) {
       : "";
   const today = useToday();
   const streak = progress?.streak ?? 0;
+  const atRisk = Boolean(progress?.atRisk && streak > 0);
 
   const pillsRef = useRef<HTMLDivElement>(null);
   const typeRef = useRef<HTMLButtonElement>(null);
@@ -183,26 +184,19 @@ export default function DayView(props: DayViewProps) {
     </p>
   ) : null;
 
-  // A step's booking: its time once booked, else the chip that books it.
-  const slot = (step: Step, inCard: boolean) => {
+  // A step's booking chip (Booked · Undo right after it books), shown until the step is on the calendar.
+  const chipFor = (step: Step) => {
     const booking = bookings[step.id];
-    if (booking && booking.state !== "booked" && step.scheduledAt) return null;
-    if (booking) {
-      return (
-        <div className={inCard ? "slot" : "shrink-0 max-sm:basis-full"}>
-          <BookingChip booking={booking} onBook={() => on.book(booking.key)} onUndo={() => on.unbook(booking.key)} />
-        </div>
-      );
-    }
-    if (!step.scheduledAt) return null;
-    const when = whenLabel(step.scheduledAt, zone());
-    return inCard ? (
-      <p>
-        <span className="hand text-ink-2">On your calendar, {when}</span>
-      </p>
-    ) : (
-      <span className="shrink-0 font-mono text-ink-2">{when}</span>
-    );
+    return booking && (booking.state === "booked" || !step.scheduledAt) ? (
+      <BookingChip booking={booking} onBook={() => on.book(booking.key)} onUndo={() => on.unbook(booking.key)} />
+    ) : null;
+  };
+  // On a roadmap strip: the chip, else the step's time once booked.
+  const slot = (step: Step) => {
+    const chip = chipFor(step);
+    // shortcut: phones hide later steps' chips so Start stays near the card; Stop for now still offers the next one.
+    if (chip) return <div className="shrink-0 max-sm:hidden">{chip}</div>;
+    return step.scheduledAt ? <span className="shrink-0 font-mono text-ink-2">{whenLabel(step.scheduledAt, zone())}</span> : null;
   };
 
   const answerChips = props.chips.map((chip, i) => (
@@ -216,7 +210,7 @@ export default function DayView(props: DayViewProps) {
         pressed.current = true;
         on.chip(i);
       }}
-      className={`pill ${chip.tone === "ink" ? "pill-ink" : chip.tone === "quiet" ? "pill-quiet" : ""}`}
+      className={`pill ${chip.tone === "ink" ? "pill-ink" : chip.tone === "quiet" ? "pill-quiet" : ""} ${pick && i === 0 ? "col-span-2" : ""}`}
     >
       {chip.label}
     </button>
@@ -281,7 +275,8 @@ export default function DayView(props: DayViewProps) {
             // The shell and the ready card are one card, so the first paint never jumps; each setup card is a new one.
             key={
               top
-                ? `${screen}:${top.id}:${top.title}`
+                ? // By title, not id: a plan saved behind its draft swaps ids, and the card must not rise twice.
+                  `${screen}:${top.title}`
                 : finished
                   ? "finished"
                   : pick
@@ -293,16 +288,29 @@ export default function DayView(props: DayViewProps) {
                         : screen ?? "ready"
             }
             className="card rise z-10"
-            data-size={cardSize(props.list ? [cardText, ...props.list.map((fact) => fact.text)].join(" ") : cardText)}
+            // The pick card holds four lines, so all of them set its size and Start stays above the dock.
+            // A plan's long first step steps down a size: its deadline sits beside it and the roadmap and Start sit under it.
+            data-size={
+              props.list
+                ? cardSize([cardText, ...props.list.map((fact) => fact.text)].join(" "))
+                : pick
+                  ? cardSize([pick.steps[0].title, pick.goal, atRisk ? "Keep your streak going" : pick.why].join(" "))
+                  : screen === "plan" && cardText.length > 32
+                    ? "m"
+                    : cardSize(cardText)
+            }
             // A step card only needs room for its title (and the timer, or a blank row for the stamp), so the roadmap fits under it.
             style={top ? ({ "--rows": screen === "focus" ? (top.minutes ? 3 : 4) : 2 } as CSSProperties) : pick ? ({ "--rows": 3 } as CSSProperties) : undefined}
           >
             <div className="lines">
               {pick ? (
                 <>
-                  {progress?.atRisk && streak > 0 && (
+                  {/* An at-risk evening leads with the streak, in place of the why (Zeno's line says the rest). */}
+                  {atRisk && (
                     <p>
-                      <span className="hand font-bold">One 5-minute step keeps your {streak}-day streak going.</span>
+                      <span className="hand" style={{ fontWeight: 700 }}>
+                        Keep your {streak}-day streak going
+                      </span>
                     </p>
                   )}
                   <p>
@@ -312,10 +320,10 @@ export default function DayView(props: DayViewProps) {
                   <p>
                     <span className="hand text-ink-2">
                       {pick.goal}
-                      {pick.due ? ` · ${dueLabel(pick.due, today)}` : ""}
+                      {pick.due && today ? <span className="whitespace-nowrap"> · {dueLabel(pick.due, today)}</span> : null}
                     </span>
                   </p>
-                  {!(pick.due && pick.why.replace(/\.$/, "") === dueLabel(pick.due, today)) && (
+                  {!atRisk && !(pick.due && pick.why.replace(/\.$/, "") === dueLabel(pick.due, today)) && (
                     <p>
                       <span className="hand">{pick.why}</span>
                     </p>
@@ -324,15 +332,19 @@ export default function DayView(props: DayViewProps) {
               ) : top ? (
                 <>
                   <p>
-                    {screen !== "focus" && top.minutes ? <span className="mins">{top.minutes} min</span> : null}
+                    {/* The plan's deadline rides where the minutes would (Start says the minutes), so Start stays above the dock. */}
+                    {screen === "plan" && goal?.due && today ? (
+                      <span className="mins due">{dueLabel(goal.due, today, true)}</span>
+                    ) : screen !== "focus" && top.minutes ? (
+                      <span className="mins">{top.minutes} min</span>
+                    ) : null}
                     {top.title}
                   </p>
-                  {screen === "plan" && goal?.due ? (
+                  {screen === "plan" && top.scheduledAt && bookings[top.id]?.state !== "booked" ? (
                     <p>
-                      <span className="hand text-ink-2">{dueLabel(goal.due, today)}</span>
+                      <span className="hand text-ink-2">On your calendar, {whenLabel(top.scheduledAt, zone())}</span>
                     </p>
                   ) : null}
-                  {screen === "plan" && slot(top, true)}
                   {screen === "focus" && top.minutes ? (
                     <p className="mt-(--lh)">
                       <Countdown minutes={props.timer ?? top.minutes} startedAt={top.startedAt} />
@@ -404,7 +416,7 @@ export default function DayView(props: DayViewProps) {
                   <>
                     <span className="min-w-0 flex-1 truncate max-sm:line-clamp-2 max-sm:whitespace-normal">{s.title}</span>
                     {s.minutes ? <span className="shrink-0 font-mono text-ink-2">{s.minutes} min</span> : null}
-                    {slot(s, false)}
+                    {slot(s)}
                   </>
                 )}
               </div>
@@ -479,7 +491,10 @@ export default function DayView(props: DayViewProps) {
           ref={pillsRef}
           // Phones stack the answers one per row, so every label stays on one line.
           className={`mt-4 w-full max-w-[760px] empty:mt-0 sm:mt-6 short:mt-4 ${
-            tapFirst ? "flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-center sm:gap-4" : "flex flex-wrap justify-center gap-4 sm:gap-6"
+            tapFirst
+              ? // Phones stack the answers; the first card's two short ones share a row under a full-width Start.
+                `${pick ? "grid grid-cols-2" : "flex flex-col"} gap-2 sm:flex sm:flex-row sm:flex-wrap sm:justify-center sm:gap-4`
+              : "flex flex-wrap justify-center gap-4 sm:gap-6"
           }`}
         >
           {tapFirst ? (
@@ -507,6 +522,8 @@ export default function DayView(props: DayViewProps) {
               </button>
             ))
           )}
+          {/* The plan's first step can go on the calendar instead of starting now. */}
+          {screen === "plan" && top && chipFor(top)}
         </div>
 
         {props.calendarAsk && (screen === "plan" || screen === "wrap") && (

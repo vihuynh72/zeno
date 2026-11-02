@@ -511,6 +511,10 @@ button:active .tap {
 /* Pasted notes scroll inside the card instead of stretching it. The box draws its own rules on card stock (hiding the
    card's fixed ones) and scrolls them with the text (local), so a scrolled note sits on its rules, never struck through. */
 .paste {
+  /* Card-wide, so its rules meet the card's at both edges; the margin line still paints over it. */
+  width: calc(100% + var(--pad-l) + var(--pad-r));
+  margin-inline: calc(var(--pad-l) * -1) calc(var(--pad-r) * -1);
+  padding-inline: var(--pad-l) var(--pad-r);
   min-height: calc(var(--lh) * 2);
   max-height: calc(var(--lh) * 5);
   overflow-y: auto;
@@ -541,19 +545,9 @@ button:active .tap {
   text-indent: 0;
 }
 
-/* A booking chip on a step card takes whole rules (two on phones, where the chip is taller than one). */
-.lines .slot {
-  display: flex;
-  align-items: center;
-  min-height: var(--lh);
-  font-size: 18px;
-  line-height: 24px;
-  font-weight: 400;
-}
-@media (max-width: 639px) {
-  .lines .slot {
-    min-height: calc(var(--lh) * 2);
-  }
+/* A plan's deadline in the minutes' place: words, so not the Mono. */
+.mins.due {
+  font-family: var(--font-atkinson), system-ui, sans-serif;
 }
 .booked {
   display: inline-flex;
