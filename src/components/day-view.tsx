@@ -423,7 +423,7 @@ export default function DayView(props: DayViewProps) {
             steps.slice(1, 4).map((s, i) => (
               <div
                 key={`${s.id}:${s.title}:${s.minutes}`}
-                className="strip rise"
+                className={`strip rise ${i === 2 ? "third" : ""}`}
                 style={{ "--n": i + 1, zIndex: 3 - i, animationDelay: `${(i + 1) * 60}ms` } as CSSProperties}
               >
                 {i === 2 && steps.length > 4 ? (
@@ -571,7 +571,7 @@ export default function DayView(props: DayViewProps) {
       {/* Setup is one tap per card, so the dock waits until it's done. */}
       {screen && screen !== "signed-out" && screen !== "setup" && (
         // Sticky on the desk ground, so a tall plan or prep pack scrolls under the dock instead of pushing it off screen.
-        <nav aria-label="Zeno" className="sticky bottom-0 z-20 flex justify-center gap-2 bg-desk pb-4 sm:gap-4 sm:pt-2 short:pt-0 short:pb-2">
+        <nav aria-label="Zeno" className="dock sticky bottom-0 z-20 flex justify-center gap-2 bg-desk pb-4 sm:gap-4 sm:pt-2 short:pt-0 short:pb-2">
           {/* A blocked mic hands the fill to Type, the way that still works. */}
           <VoiceRing phase={voice.phase} levelRef={voice.levelRef} blocked={blocked} onClick={on.talk} />
           <DockButton ref={typeRef} label="Type" icon="type" filled={blocked} onClick={on.type} />
