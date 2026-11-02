@@ -28,7 +28,7 @@ import { listenAuto, type ListenHandlers } from "@/lib/listen";
 import { audioContext } from "@/lib/speak";
 import { formatTime, localDate } from "@/lib/tz";
 import { useVoice } from "@/lib/use-voice";
-import { addToVault, readVault, removeFromVault, vaultRemoved, vaultTexts, type VaultFact } from "@/lib/vault";
+import { addToVault, readVault, removeFromVault, sameFact, vaultRemoved, vaultTexts, type VaultFact } from "@/lib/vault";
 import {
   asks,
   CHECKINS,
@@ -226,6 +226,8 @@ export default function GuidedDay() {
   const [unsaved, setUnsaved] = useState(0); // setup answers and pasted notes that failed to save
   const [reading, setReading] = useState(0);
   const history = useRef<Turn[]>([]);
+  // Noted facts the person undid while this history still holds the turn that asked for them.
+  const undone = useRef<string[]>([]);
   const cache = useRef<Saved | null>(null);
   const tapped = useRef(false); // the turn in flight came from a chip, not the type box
   const moved = useRef(false); // the person has taken a turn since the opening was shown
@@ -310,6 +312,7 @@ export default function GuidedDay() {
       text: `Noted: ${memory.text}`,
       undo() {
         dropQuiet(key);
+        undone.current.push(memory.text);
         void forgetMemory(memory.id);
       },
     });
@@ -512,8 +515,13 @@ export default function GuidedDay() {
       { role: "assistant", content: res.reply },
     ]);
     keep(res.private);
+    // The model reads an undone request in the history and saves it again: it goes again, unannounced, unless this
+    // message asks to remember something (then it shows as Noted, with Undo).
+    const asked = /\b(remember|save|keep|note)\b/i.test(text);
     for (const action of res.actions ?? []) {
-      if (action.type === "remembered" && action.memoryId) noted({ id: action.memoryId, text: action.label });
+      if (action.type !== "remembered" || !action.memoryId) continue;
+      if (!asked && undone.current.some((one) => sameFact(one, action.label))) void forgetMemory(action.memoryId);
+      else noted({ id: action.memoryId, text: action.label });
     }
     // shortcut: a step already on the calendar is not offered again (booking it would double-book); add "Move to …?" if people ask.
     const proposal = (Array.isArray(res.proposal) ? res.proposal : []).filter(
