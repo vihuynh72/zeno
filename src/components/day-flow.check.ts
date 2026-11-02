@@ -1,15 +1,24 @@
-// Self-check for day-flow.ts: node src/components/day-flow.check.ts
+// Self-check for day-flow.ts, run like Vercel does, in UTC: TZ=UTC node src/components/day-flow.check.ts
 import assert from "node:assert/strict";
-import type { Goal, Step, TalkAction } from "@/lib/day";
-import { cardSize, clock, dayPart, greeting, nextScreen, openSteps, quickReplies, sayMode, SETUP } from "./day-flow.ts";
+import { registerHooks } from "node:module";
+import type { FirstPick, Goal, Progress, Step, TalkAction } from "@/lib/day";
 
-const step = (id: string, status: Step["status"]): Step => ({
+registerHooks({
+  resolve: (specifier, context, nextResolve) =>
+    nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
+});
+const flow = await import("./day-flow.ts");
+const { asks, cardSize, clock, dayPart, doneLine, draftGoal, dueLabel, greeting, groupFacts, laterBlock, nextScreen, openSteps } = flow;
+const { pickFits, planBlocks, quickReplies, SETUP, slotLabel, soonEvent, streakLine, withStatus } = flow;
+
+const step = (id: string, status: Step["status"], extra: Partial<Step> = {}): Step => ({
   id,
   title: `Step ${id}`,
   minutes: 10,
   status,
   startedAt: null,
   doneAt: null,
+  ...extra,
 });
 const goal = (...steps: Step[]): Goal => ({ id: "g", title: "Essay", steps });
 const acts = (...types: TalkAction["type"][]) => types.map((type) => ({ type, label: type }));
@@ -32,10 +41,9 @@ assert.equal(nextScreen("focus", acts("roadmap-changed"), fresh), "plan");
 assert.equal(nextScreen("plan", acts("step-started"), goal(step("1", "doing"))), "focus");
 assert.equal(nextScreen("focus", acts("step-finished"), goal(step("1", "done"))), "checkin");
 assert.equal(nextScreen("ready", [], null), "talk");
+assert.equal(nextScreen("wrap", [], null), "talk");
 assert.equal(nextScreen("focus", acts("remembered"), fresh), "focus");
-// A roadmap with nothing left to do is not a plan to show.
 assert.equal(nextScreen("talk", acts("goal-set"), goal(step("1", "done"))), "talk");
-// A step screen whose goal went away goes back to talking, not to dead pills.
 assert.equal(nextScreen("plan", [], null), "talk");
 assert.equal(nextScreen("focus", acts("forgot"), goal(step("1", "done"))), "talk");
 
@@ -45,33 +53,121 @@ assert.notEqual(dayPart(new Date(2026, 9, 31, 11)), dayPart(new Date(2026, 9, 31
 assert.notEqual(dayPart(new Date(2026, 9, 30, 9)), dayPart(new Date(2026, 9, 31, 9)));
 assert.notEqual(dayPart(new Date(2026, 9, 31, 4)), dayPart(new Date(2026, 9, 31, 5)));
 
-// Only non-empty strings, trimmed and capped, at most three.
 assert.deepEqual(quickReplies(["Start the essay", " ", 3, " Plan my day ", "a", "b"]), ["Start the essay", "Plan my day", "a"]);
 assert.deepEqual(quickReplies(undefined), []);
 assert.equal(quickReplies(["x".repeat(200)])[0].length, 80);
-
-// Every setup card can be answered with one tap, from at most four choices.
 assert.ok(SETUP.every((card) => card.answers.length >= 2 && card.answers.length <= 4));
 
-// The first line shows at once and a later one fades in; a reply waits for the voice, then comes word by word.
-assert.equal(sayMode({ line: "", mode: "all" }, "Good morning.", false, false), "all");
-assert.equal(sayMode({ line: "Good morning.", mode: "all" }, "Morning, Vi.", false, false), "fade");
-assert.equal(sayMode({ line: "", mode: "wait" }, "Reply.", false, true), "wait");
-assert.equal(sayMode({ line: "Reply.", mode: "wait" }, "Reply.", true, false), "pace");
-assert.equal(sayMode({ line: "Morning, Vi.", mode: "fade" }, "What should change?", true, false), "pace");
-// No blink when Zeno stops, and a line already showing (Hear Zeno) is not typed again.
-assert.equal(sayMode({ line: "Reply.", mode: "pace" }, "Reply.", false, false), "all");
-assert.equal(sayMode({ line: "Morning, Vi.", mode: "fade" }, "Morning, Vi.", true, false), "fade");
-assert.equal(sayMode({ line: "Morning, Vi.", mode: "all" }, "Morning, Vi.", true, false), "all");
-// A hidden reply that is never said (muted, or the turn was dropped) still shows.
-assert.equal(sayMode({ line: "Reply.", mode: "wait" }, "Reply.", false, false), "fade");
+// Hands-free listens only after a question.
+assert.equal(asks("Want to start the outline?"), true);
+assert.equal(asks('Ready for "the next one?"'), true);
+assert.equal(asks("Timer's on. Just five minutes."), false);
+// A shorter timer says its real length.
+assert.equal(flow.CHECKINS.start(5), "Timer's on. Just five minutes.");
+assert.equal(flow.CHECKINS.start(3), "Timer's on. 3 minutes, one thing.");
+assert.equal(flow.CHECKINS.start(1), "Timer's on. 1 minute, one thing.");
+assert.equal(asks("Done? Nice work."), false);
 
 assert.equal(cardSize("Good afternoon, Vi."), "l");
 assert.equal(cardSize("x".repeat(120)), "m");
 assert.equal(cardSize("x".repeat(200)), "s");
-
 assert.equal(clock(600), "10:00");
 assert.equal(clock(65.2), "1:06");
 assert.equal(clock(-3), "0:00");
+
+// A saved first card is shown again only while it still fits the day's plan.
+const pickStep: FirstPick = { goal: "Essay", due: null, stepId: "2", steps: [{ title: "Step 2", minutes: 5 }], why: "Next." };
+const pickNew: FirstPick = { goal: "Lab report", due: "2026-11-04", stepId: null, steps: [{ title: "Open it", minutes: 5 }, { title: "Draft", minutes: 15 }], why: "Due Wednesday." };
+assert.equal(pickFits(pickStep, goal(step("1", "done"), step("2", "todo"))), true);
+assert.equal(pickFits(pickStep, goal(step("2", "done"))), false, "its step is finished");
+assert.equal(pickFits(pickNew, null), true);
+assert.equal(pickFits(pickNew, goal(step("1", "todo"))), false, "a plan is open now");
+assert.equal(pickFits(null, null), false);
+
+// A new plan shows at once, step 1 running when the tap was Start.
+const now = new Date("2026-11-02T17:00:00Z");
+const draft = draftGoal(pickNew, true, now);
+assert.deepEqual(draft.steps.map((s) => [s.status, s.startedAt]), [["doing", now.toISOString()], ["todo", null]]);
+assert.equal(draftGoal(pickNew, false, now).steps[0].status, "todo");
+// Starting one step puts any other running one back to todo, as the server does.
+const started = withStatus(goal(step("1", "doing", { startedAt: "x" }), step("2", "todo")), "2", "doing", now);
+assert.deepEqual(started.steps.map((s) => s.status), ["todo", "doing"]);
+assert.equal(started.steps[1].startedAt, now.toISOString());
+assert.equal(withStatus(goal(step("1", "doing")), "1", "done", now).steps[0].doneAt, now.toISOString());
+
+assert.equal(dueLabel("2026-11-02", "2026-11-02"), "Due today");
+assert.equal(dueLabel("2026-11-03", "2026-11-02"), "Due tomorrow");
+assert.equal(dueLabel("2026-11-06", "2026-11-02"), "Due Friday");
+assert.equal(dueLabel("2026-11-06", "2026-11-02", true), "Due Fri");
+assert.equal(dueLabel("2026-11-06", ""), "", "no date before the browser's clock");
+assert.equal(dueLabel("2026-11-20", "2026-11-02"), "Due Nov 20");
+assert.equal(dueLabel("2026-10-30", "2026-11-02"), "Was due Oct 30");
+
+// Booking offers: never overlapping, at least half an hour out, 5-minute starts, booked steps skipped.
+const LA = "America/Los_Angeles";
+const slots = [
+  { start: "2026-11-02T17:10:00Z", end: "2026-11-02T17:50:00Z" },
+  { start: "2026-11-02T19:00:00Z", end: "2026-11-02T19:20:00Z" },
+  { start: "2026-11-03T16:00:00Z", end: "2026-11-03T18:00:00Z" },
+];
+const blocks = planBlocks([step("a", "todo"), step("b", "todo", { scheduledAt: "2026-11-02T20:00:00Z" }), step("c", "todo", { minutes: 15 }), step("d", "todo", { minutes: 15 })], slots, now);
+assert.deepEqual(
+  blocks.map((b) => [b.stepId, b.start, b.end]),
+  [
+    ["a", "2026-11-02T17:30:00.000Z", "2026-11-02T17:40:00.000Z"],
+    ["c", "2026-11-02T19:00:00.000Z", "2026-11-02T19:15:00.000Z"],
+    ["d", "2026-11-03T16:00:00.000Z", "2026-11-03T16:15:00.000Z"],
+  ],
+);
+assert.deepEqual(planBlocks([step("x", "todo", { minutes: 240 })], slots, now), [], "fits nowhere");
+assert.equal(planBlocks([step("x", "done")], slots, now).length, 0);
+// "Stop for now" offers tomorrow when tomorrow has room, else the earliest.
+assert.equal(laterBlock(step("n", "todo"), slots, LA, now)?.start, "2026-11-03T16:00:00.000Z");
+assert.equal(laterBlock(step("n", "todo"), slots.slice(0, 2), LA, now)?.start, "2026-11-02T17:30:00.000Z");
+// 9 AM PST Nov 2 is 17:00Z.
+assert.equal(slotLabel("2026-11-02T17:30:00.000Z", "2026-11-02T17:40:00.000Z", LA, now), "9:30–9:40 AM");
+assert.equal(slotLabel("2026-11-03T19:55:00.000Z", "2026-11-03T20:05:00.000Z", LA, now), "tomorrow 11:55 AM–12:05 PM");
+assert.equal(slotLabel("2026-11-05T17:30:00.000Z", "2026-11-05T17:40:00.000Z", LA, now), "Thu 9:30–9:40 AM");
+
+// Warnings: a timed event starting within 10 minutes, never one already on or all day.
+const at = (minutes: number) => new Date(now.getTime() + minutes * 60_000).toISOString();
+const events = [
+  { title: "Birthday", start: "2026-11-02", end: "2026-11-03", allDay: true },
+  { title: "Standup", start: at(-5), end: at(10), allDay: false },
+  { title: "Bio lab", start: at(9), end: at(60), allDay: false },
+];
+assert.equal(soonEvent(events, now.getTime())?.title, "Bio lab");
+assert.equal(soonEvent(events.slice(0, 2), now.getTime()), null);
+assert.equal(soonEvent([{ ...events[2], start: at(11) }], now.getTime()), null);
+
+// Streak words: milestones, a restart after a break without shame, the day's first and later Dones.
+const progress = (over: Partial<Progress>): Progress => ({
+  streak: 4,
+  best: 9,
+  week: ["done", "done", "today", "future", "future", "future", "future"],
+  stepsThisWeek: 3,
+  restDaysLeft: 1,
+  atRisk: false,
+  milestone: null,
+  ...over,
+});
+const doneToday = progress({ week: ["done", "done", "done", "future", "future", "future", "future"] });
+assert.equal(streakLine(progress({ stepsThisWeek: 1, streak: 1 })), "Day 1 · 1 step this week");
+assert.equal(streakLine(doneToday), "Day 4 · 3 steps this week");
+assert.equal(doneLine(progress({}), progress({ milestone: 7, streak: 7 }), true), "7 days in a row. That's a real habit now.");
+assert.equal(doneLine(progress({ streak: 0 }), progress({ streak: 1, best: 9 }), true), "Day 1 again. Your best is 9.");
+assert.equal(doneLine(progress({}), doneToday, true), "Nice. That's day 4. Next one's ready.");
+assert.equal(doneLine(doneToday, doneToday, false), "Nice, another one down.");
+assert.equal(doneLine(null, undefined, true), "Nice. Next one's ready.");
+assert.equal(doneLine(null, progress({ streak: 1, best: 1 }), false), "Day 1. That's how it starts.");
+
+// Memory groups in their order with plain names; device facts sit in their group; empty groups are left out.
+const grouped = groupFacts([
+  { id: "1", text: "Works at the library.", group: "routines", device: false },
+  { id: "2", text: "Mornings feel foggy lately.", group: "about", device: true },
+  { id: "3", text: "Likes 5-minute starts.", group: "work-style", device: false },
+]);
+assert.deepEqual(grouped.map((g) => g.name), ["About you", "Routines", "How you work best"]);
+assert.equal(grouped[0].facts[0].device, true);
 
 console.log("day-flow self-check passed");

@@ -264,6 +264,16 @@ body {
   animation: blink 1.1s steps(1) infinite;
 }
 
+/* Whatever scrolls under the dock fades into the desk, so nothing above it reads as cut off at its edge. */
+.dock::before {
+  content: "";
+  position: absolute;
+  inset: -16px 0 auto;
+  height: 16px;
+  background: linear-gradient(transparent, var(--desk));
+  pointer-events: none;
+}
+
 /* The cards waiting underneath. */
 .edge {
   position: absolute;
@@ -287,6 +297,7 @@ body {
 .strip {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 16px;
   margin: -24px calc(var(--n) * 16px) 0;
@@ -302,6 +313,10 @@ body {
   .strip {
     margin-inline: calc(var(--n) * 8px);
     padding-inline: 16px;
+  }
+  /* Phones peek at two steps, so Start clears the dock under wrapped titles. */
+  .strip.third {
+    display: none;
   }
 }
 
@@ -507,11 +522,257 @@ button:active .tap {
   text-indent: 0;
   color: var(--ink-2);
 }
-/* Pasted notes scroll inside the card instead of stretching it. */
+/* Pasted notes scroll inside the card instead of stretching it. The box draws its own rules on card stock (hiding the
+   card's fixed ones) and scrolls them with the text (local), so a scrolled note sits on its rules, never struck through. */
 .paste {
+  /* Card-wide, so its rules meet the card's at both edges; the margin line still paints over it. */
+  width: calc(100% + var(--pad-l) + var(--pad-r));
+  margin-inline: calc(var(--pad-l) * -1) calc(var(--pad-r) * -1);
+  padding-inline: var(--pad-l) var(--pad-r);
   min-height: calc(var(--lh) * 2);
   max-height: calc(var(--lh) * 5);
   overflow-y: auto;
+  border-radius: 0;
+  background: var(--card) linear-gradient(var(--rule) 1px, transparent 1px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100%
+    var(--lh) local;
+}
+/* Scrolled, the top line fades out under the heading instead of showing cut in half; the scrollbar is card stock. */
+.paste {
+  scrollbar-width: thin;
+  scrollbar-color: var(--track) var(--card);
+}
+.paste[data-scrolled] {
+  mask-image: linear-gradient(transparent, #000 var(--lh));
+}
+.paste:focus-visible {
+  background: var(--card) linear-gradient(var(--red) 2px, transparent 2px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100%
+    var(--lh) local;
+}
+
+/* What setup learned: a quiet x at the end of each fact's first line, outside the line boxes so the rules hold. */
+.facts li {
+  position: relative;
+  padding-right: 48px;
+}
+.facts .x {
+  position: absolute;
+  top: 0;
+  right: -12px;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: var(--lh);
+  border-radius: 8px;
+  color: var(--ink-2);
+  text-indent: 0;
+}
+
+/* A plan's deadline in the minutes' place: words, so not the Mono. */
+.mins.due {
+  font-family: var(--font-atkinson), system-ui, sans-serif;
+}
+/* Booked · Undo and Booked · tomorrow 7:00 PM: the offer's chip shape, held still (one family with "Book …?"). */
+.booked {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 52px;
+  padding: 0 24px;
+  border: 2px solid var(--track);
+  border-radius: 999px;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+/* On a step's own row (the card or a strip) the chip sits within the line, so the rows keep their height. */
+.strip :is(.pill-small, .booked),
+.lines .slot > :is(.pill-small, .booked) {
+  min-height: 40px;
+  padding-inline: 16px;
+}
+.strip .booked .quiet-x,
+.lines .slot .quiet-x {
+  min-height: 36px;
+}
+/* The plan card's booking chip: under the deadline, at the right end of the title's second line. */
+.lines .slot {
+  float: right;
+  clear: right;
+  margin: calc((var(--lh) - 40px) / 2) 0 0 16px;
+  font-size: 18px;
+  line-height: 24px;
+}
+
+/* Undo and the like: a quiet underlined word, still a full-height tap target. */
+.quiet-x {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 8px;
+  margin: 0 -8px;
+  border-radius: 8px;
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.forget {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: -6px -12px -6px 0;
+  border-radius: 999px;
+  color: var(--ink-2);
+}
+@media (hover: hover) {
+  .forget:hover,
+  .facts .x:hover {
+    background: var(--desk);
+    color: var(--ink);
+  }
+}
+
+/* Memory's "Add something": typing on a line that turns red, no box. */
+.mini .add {
+  min-height: 44px;
+  border: 0;
+  border-bottom: 2px solid var(--rule);
+  background: transparent;
+  color: var(--ink);
+  caret-color: var(--red);
+  font-size: 20px;
+}
+.mini .add::placeholder {
+  color: var(--ink-2);
+  opacity: 1;
+}
+.mini .add:focus-visible {
+  outline: none;
+  border-color: var(--red);
+}
+
+/* The week under a Done: done in ink, a rest day as an ink ring with a dash, a missed day as a quiet empty ring, days before the first
+   step as a plain small dot (never styled as missed), today ringed in margin red, days to come dashed. */
+.week {
+  display: flex;
+  gap: 12px;
+}
+.week li {
+  display: flex;
+  min-width: 32px;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-2);
+}
+.week i {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--track);
+  border-radius: 50%;
+}
+.week [data-day="done"] i {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+.week [data-day="rest"] i {
+  border-color: var(--ink);
+}
+/* A rest day is a ring with a dash, so it never reads as a missed (empty) ring. */
+.week [data-day="rest"] i::after {
+  content: "";
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--ink);
+}
+.week [data-day="none"] i {
+  border: 0;
+}
+.week [data-day="none"] i::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--track);
+}
+.week [data-day="today"] i {
+  border-color: var(--red);
+}
+.week [data-day="today"] {
+  color: var(--ink);
+  font-weight: 700;
+}
+.week [data-day="future"] i {
+  border-style: dashed;
+}
+
+/* A milestone's stamp: the DONE stamp, bigger. */
+.milestone {
+  display: inline-block;
+  padding: 0 20px;
+  border: 5px double var(--red);
+  border-radius: 10px;
+  color: var(--red);
+  font-size: 48px;
+  line-height: 64px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  rotate: -6deg;
+  animation: stamp 0.24s cubic-bezier(0.55, 0, 1, 0.45) both;
+}
+@media (max-width: 639px) {
+  .milestone {
+    padding: 0 14px;
+    border-width: 4px;
+    font-size: 34px;
+    line-height: 48px;
+  }
+}
+
+/* The account: the person's initial, and a small card under it with Privacy and Sign out. */
+.account {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  font-size: 20px;
+  font-weight: 700;
+  anchor-name: --account;
+}
+.menu {
+  position: fixed;
+  inset: 72px 16px auto auto;
+  width: 220px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--rim);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--paper);
+}
+.menu:popover-open {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+@supports (anchor-name: --a) {
+  .menu {
+    position-anchor: --account;
+    inset: auto;
+    top: calc(anchor(bottom) + 8px);
+    right: anchor(right);
+  }
 }
 
 .dots circle {
@@ -585,23 +846,10 @@ button:active .tap {
 .fade {
   animation: swap 0.2s ease-out both;
 }
-.pace > span {
-  animation: word 0.32s ease-out both;
-  animation-delay: calc(var(--i) * 280ms);
-}
-.wait > span {
-  opacity: 0;
-}
 
 @keyframes rise {
   from {
     transform: translateY(24px) scale(0.97);
-  }
-}
-@keyframes word {
-  from {
-    opacity: 0;
-    filter: blur(4px);
   }
 }
 @keyframes swap {
@@ -639,9 +887,9 @@ button:active .tap {
 }
 
 /* The /preview gallery shows still frames for screenshots. */
-.still .pace > span,
 .still .rise,
 .still .fade,
+.still .milestone,
 .still .sheet[open] {
   animation: none;
 }
@@ -650,13 +898,10 @@ button:active .tap {
   .rise,
   .fade,
   .stamp,
+  .milestone,
   .sheet[open],
-  .pace > span,
   .pen::after {
     animation: none;
-  }
-  .wait > span {
-    opacity: 1;
   }
   .leaving {
     animation: fade 0.2s forwards;

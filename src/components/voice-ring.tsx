@@ -92,6 +92,8 @@ export default function VoiceRing({
   return (
     <button
       type="button"
+      // Hands-free stops on any other tap; this one decides for itself.
+      data-talk
       onClick={onClick}
       className="flex w-[120px] flex-col items-center gap-2 rounded-2xl font-bold"
     >
