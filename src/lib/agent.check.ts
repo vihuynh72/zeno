@@ -9,7 +9,7 @@ const real = (name: string) => new URL(`./${name}.ts`, import.meta.url).href;
 const FAKES: Record<string, string> = {
   "fake:goals": [
     `export * from "${real("goals")}";`,
-    ...["addMemory", "forgetMemory", "setGoal", "replaceRemainingSteps", "changeStepStatus"].map(
+    ...["addMemory", "forgetMemory", "listMemories", "setGoal", "replaceRemainingSteps", "changeStepStatus"].map(
       (name) => `export const ${name} = (...args) => globalThis.fake.${name}(...args);`,
     ),
   ].join("\n"),
@@ -24,11 +24,13 @@ registerHooks({
   load: (url, context, nextLoad) => (url in FAKES ? { format: "module", source: FAKES[url], shortCircuit: true } : nextLoad(url, context)),
 });
 const {
-  checkCall, checkPick, checkPlan, cleanHistory, deadlineMemory, extractNotes, goalText, isDate, keepNotes, notesFrom, openingPrompt,
-  parseOpening, parseReply, placeTodos, roundSlots, slotsText, systemPrompt, talk,
+  checkCall, checkPick, checkPlan, cleanHistory, extractNotes, focusPart, goalText, isDate, keepNotes, notesFrom,
+  openingPrompt, parseOpening, parseReply, placeTodos, roundSlots, slotsText, systemPrompt, talk,
 } = await import("./agent.ts");
+const { SETUP } = await import("../components/day-flow.ts");
 const { rulePick, ruleOpening, ruleOptions, senderName } = await import("./brief.ts");
-const { dayToText } = await import("./context.ts");
+const { dayToText, knownDeadlines } = await import("./context.ts");
+const { deadlineMemory } = await import("./goals.ts");
 const { NO_PROGRESS } = await import("./progress.ts");
 const { askWithTools } = await import("./ai.ts");
 const { localIso } = await import("./tz.ts");
@@ -495,7 +497,8 @@ assert.deepEqual(routed, {
 });
 assert.equal(deadlineMemory({ title: "CS 146 final project", date: "2026-12-09" }), "CS 146 final project, due Wednesday, December 9.");
 
-// To-dos go into the earliest free time that fits, due soonest first, each ending by its due day.
+// To-dos become short blocks spread over the free time (live test, Nov 1: five landed back to back on a Sunday night):
+// due soonest first, at most 30 minutes, 8 AM to 9 PM, two a local day, 10 free minutes after each, by the due day.
 const todoSlots = [
   { start: "2026-11-02T16:03:00Z", end: "2026-11-02T16:30:00Z" }, // Mon 8:03 to 8:30
   { start: "2026-11-02T18:00:00Z", end: "2026-11-02T19:00:00Z" }, // Mon 10:00 to 11:00
@@ -513,17 +516,107 @@ assert.deepEqual(
     ],
     todoSlots,
     zone,
+    null,
     new Date("2026-11-02T15:00:00Z"),
   ).map((block) => [block.title, block.kind, block.start, block.end]),
   [
     ["Email Prof Patel", "todo", "2026-11-02T16:05:00.000Z", "2026-11-02T16:15:00.000Z"],
+    // 8:25 to 8:30 is left after Email Prof Patel's 10 free minutes: too short.
     ["Refill prescription", "todo", "2026-11-02T18:00:00.000Z", "2026-11-02T18:20:00.000Z"],
-    // Read chapter 3 (45 minutes) no longer fits Monday's gaps before its due day ends, so it is left out.
-    ["Buy poster board", "todo", "2026-11-02T18:20:00.000Z", "2026-11-02T18:50:00.000Z"],
-    ["Plan the week", "todo", "2026-11-04T01:00:00.000Z", "2026-11-04T02:30:00.000Z"],
+    // Read chapter 3 (30 of its 45 minutes) no longer fits Monday before its due day ends, so it is left out.
+    ["Buy poster board", "todo", "2026-11-04T01:00:00.000Z", "2026-11-04T01:30:00.000Z"],
+    ["Plan the week", "todo", "2026-11-04T01:40:00.000Z", "2026-11-04T02:10:00.000Z"],
+    // Deep clean would fit Tuesday at 6:20, but Tuesday has its two.
   ],
 );
-assert.deepEqual(placeTodos([{ title: "Read", minutes: 30, due: null }], [], zone), []);
+assert.deepEqual(placeTodos([{ title: "Read", minutes: 30, due: null }], [], zone, null), []);
+// Each rule on its own, in local time (Los Angeles, standard time from Nov 1).
+const slot = (from: string, to: string) => ({ start: new Date(from).toISOString(), end: new Date(to).toISOString() });
+const placed = (...args: Parameters<typeof placeTodos>) =>
+  placeTodos(...args).map((block) => `${block.title} ${localIso(block.start!, zone)} to ${localIso(block.end!, zone).slice(11)}`);
+const mondayAt5 = new Date("2026-11-02T05:00:00-08:00");
+const task = (title: string, minutes: number, due: string | null = null) => ({ title, minutes, due });
+assert.deepEqual(
+  placed([task("Read chapter 4", 60), task("Email Prof Patel", 12)], [slot("2026-11-02T08:00-08:00", "2026-11-02T12:00-08:00")], zone, null, mondayAt5),
+  ["Read chapter 4 2026-11-02T08:00-08:00 to 08:30-08:00", "Email Prof Patel 2026-11-02T08:40-08:00 to 08:52-08:00"],
+  "at most 30 minutes, a shorter estimate as it is, and 10 free minutes after each",
+);
+assert.deepEqual(
+  placed([task("Read chapter 4", 30)], [slot("2026-11-02T08:00-08:00", "2026-11-02T08:35-08:00"), slot("2026-11-02T09:00-08:00", "2026-11-02T09:40-08:00")], zone, null, mondayAt5),
+  ["Read chapter 4 2026-11-02T09:00-08:00 to 09:30-08:00"],
+  "never back to back with what comes next either: 8:35 leaves no 10 free minutes after 8:30",
+);
+const twoDays = [slot("2026-11-02T08:00-08:00", "2026-11-02T21:00-08:00"), slot("2026-11-03T08:00-08:00", "2026-11-03T21:00-08:00")];
+assert.deepEqual(
+  placed([task("A", 10), task("B", 10), task("C", 10), task("D", 10), task("E", 10)], twoDays, zone, null, mondayAt5),
+  ["A 2026-11-02T08:00-08:00 to 08:10-08:00", "B 2026-11-02T08:20-08:00 to 08:30-08:00", "C 2026-11-03T08:00-08:00 to 08:10-08:00", "D 2026-11-03T08:20-08:00 to 08:30-08:00"],
+  "at most two a day; the fifth fits nowhere and is left out",
+);
+assert.deepEqual(
+  placed([task("A", 10), task("B", 30), task("C", 15)], [slot("2026-11-02T06:00-08:00", "2026-11-02T08:20-08:00"), slot("2026-11-02T20:45-08:00", "2026-11-02T23:00-08:00")], zone, null, mondayAt5),
+  ["A 2026-11-02T08:00-08:00 to 08:10-08:00", "C 2026-11-02T20:45-08:00 to 21:00-08:00"],
+  "from 8 AM, ending by 9 PM: B would end at 9:15 PM",
+);
+// The live test: Sunday Nov 1 at 6:33 PM, five pasted to-dos, and "Focuses best in the morning." from setup.
+const liveAt = new Date("2026-11-01T18:33:00-08:00");
+const liveSlots = [
+  slot("2026-11-01T18:35-08:00", "2026-11-01T23:00-08:00"),
+  slot("2026-11-02T08:00-08:00", "2026-11-02T09:00-08:00"),
+  slot("2026-11-02T13:30-08:00", "2026-11-02T23:00-08:00"),
+  slot("2026-11-03T08:00-08:00", "2026-11-03T09:30-08:00"),
+  slot("2026-11-03T10:45-08:00", "2026-11-03T23:00-08:00"),
+];
+const pasted = [
+  task("Read chapter 4 for HIST 110", 60),
+  task("Email Prof Patel project group", 10),
+  task("Make two graphs for lab report 3", 60),
+  task("Swap Saturday library shift", 15),
+  task("Buy running shoes before Turkey Trot", 30),
+];
+assert.deepEqual(placed(pasted, liveSlots, zone, "morning", liveAt), [
+  "Read chapter 4 for HIST 110 2026-11-02T08:00-08:00 to 08:30-08:00",
+  "Email Prof Patel project group 2026-11-02T08:40-08:00 to 08:50-08:00",
+  "Make two graphs for lab report 3 2026-11-03T08:00-08:00 to 08:30-08:00",
+  "Swap Saturday library shift 2026-11-03T08:40-08:00 to 08:55-08:00",
+  // No morning is left in the 3 days read, so the last takes the earliest time.
+  "Buy running shoes before Turkey Trot 2026-11-01T18:35-08:00 to 19:05-08:00",
+]);
+assert.deepEqual(placed(pasted.slice(0, 1), liveSlots, zone, "afternoon", liveAt), ["Read chapter 4 for HIST 110 2026-11-02T13:30-08:00 to 14:00-08:00"]);
+assert.deepEqual(placed(pasted.slice(0, 1), liveSlots, zone, "evening", liveAt), ["Read chapter 4 for HIST 110 2026-11-01T18:35-08:00 to 19:05-08:00"]);
+assert.deepEqual(
+  placed([task("Email Prof Patel", 10, "2026-11-01")], liveSlots, zone, "morning", liveAt),
+  ["Email Prof Patel 2026-11-01T18:35-08:00 to 18:45-08:00"],
+  "a morning would miss its due day, so it takes the earliest time",
+);
+assert.deepEqual(placed(pasted.slice(0, 1), liveSlots, zone, null, liveAt), ["Read chapter 4 for HIST 110 2026-11-01T18:35-08:00 to 19:05-08:00"]);
+
+// When they focus best: setup's own sentences, a scan's or talk's wording, their own words over a scan's, newest first.
+const focusCard = SETUP.find((card) => card.ask === "When do you focus best?")!;
+assert.deepEqual(
+  focusCard.answers.map(([, text]) => focusPart([memory("f", text!, "about")])),
+  ["morning", "afternoon", "evening", null],
+  "Mornings, Afternoons, Evenings; late at night is no preference",
+);
+const scanned = (text: string, createdAt = "2026-11-01T10:00:00.000Z") => ({ ...memory("s", text, "work-style"), source: "email", createdAt });
+const own = (text: string, createdAt: string) => ({ ...memory("o", text, "about"), createdAt });
+assert.equal(focusPart([scanned("Focuses best in mornings before 11 AM.")]), "morning");
+assert.equal(focusPart([scanned("Focuses best before 11 AM.")]), "morning");
+assert.equal(focusPart([scanned("Focuses best before lunch and fades after.")]), "morning");
+assert.equal(focusPart([scanned("Works best in the evenings.")]), "evening");
+assert.equal(focusPart([scanned("Focuses best in the evening.", "2026-11-01T12:00:00.000Z"), own("Focuses best in the morning.", "2026-11-01T09:00:00.000Z")]), "morning", "their own words win");
+assert.equal(focusPart([own("Focuses best in the morning.", "2026-11-01T09:00:00.000Z"), own("Focuses best in the afternoon.", "2026-11-01T11:00:00.000Z")]), "afternoon", "the newest of theirs");
+assert.equal(focusPart([own("Focuses best in the morning.", "2026-11-01T09:00:00.000Z"), own("Focuses best late at night.", "2026-11-01T11:00:00.000Z")]), null);
+assert.equal(focusPart([memory("m", "Takes CS 146.", "routines"), memory("n", "Starting is hard when energy is low.", "about")]), null);
+assert.equal(focusPart([]), null);
+// Only what says when: a night owl's "before 2 AM", a "never" and a stray "night" say nothing, so setup's answer stands.
+assert.equal(focusPart([scanned("Focuses best before 2 AM.")]), null);
+assert.equal(focusPart([scanned("Focuses best before 12 AM.")]), null);
+assert.equal(focusPart([scanned("Focuses best before 9:30 a.m.")]), "morning");
+assert.equal(focusPart([scanned("Focuses best with music, never in the morning.")]), null);
+assert.equal(focusPart([own("Focuses best in the morning.", "2026-11-01T09:00:00.000Z"), own("Works best when the night before is planned.", "2026-11-01T11:00:00.000Z")]), "morning");
+assert.equal(focusPart([scanned("Studies best in the evening.")]), "evening");
+assert.equal(focusPart([scanned("Most productive early in the morning.")]), "morning");
+assert.equal(focusPart([scanned("Works best in the late afternoon.")]), "afternoon");
 
 // dayToText: free time today and tomorrow, deadlines with days left and progress, honest when unread.
 const at = new Date("2026-11-02T16:00:00Z"); // Monday 8 AM in Los Angeles
@@ -567,6 +660,38 @@ assert.doesNotMatch(unread, /Free time today/);
 // The calendar read, but free time or the Zeno calendar's deadlines failed on their own: said as unread, never "none".
 const partly = dayToText({ ...context, freeState: "error", deadlinesState: "error" }, at);
 assert.match(partly, /\nFree time: could not be read\. Do not invent free time\.\nDeadlines on their Zeno calendar: could not be read\. Do not say they have none\.\n/);
+assert.match(
+  dayToText({ ...context, deadlines: [{ title: "Lab report 3", date: "2026-11-06", daysLeft: 4 }], deadlinesState: "error" }, at),
+  /\nDeadlines: Lab report 3, due in 4 days \(2026-11-06\)\.\nDeadlines on their Zeno calendar: could not be read\. Do not say they have none\.\n/,
+  "a remembered one still lists, and the unread calendar is said, as the list may be short",
+);
+// The deadlines Zeno knows: its calendar's and the remembered ones in the same 14 days, soonest first, each once
+// (live test, Nov 1: "Lab report 3", not proposed because their own calendar showed it, had dropped out of all three).
+const said = (title: string, date: string) => memory(title, deadlineMemory({ title, date }), "projects");
+assert.deepEqual(
+  knownDeadlines(
+    [{ title: "CS 146 final project", date: "2026-11-03", daysLeft: 1 }],
+    [
+      said("Lab report 3", "2026-11-06"),
+      said("cs 146 Final Project", "2026-11-03"), // booked too
+      said("Quiz 2", "2026-11-02"), // today
+      said("Bio quiz", "2026-11-16"), // the 14th day
+      said("Midterm 2", "2026-11-18"), // past the 14 days
+      memory("t", "To do: Read chapter 4, due Tuesday, November 3.", "projects"),
+      memory("f", "Focuses best in the morning.", "about"),
+    ],
+    zone,
+    at,
+  ),
+  [
+    { title: "Quiz 2", date: "2026-11-02", daysLeft: 0 },
+    { title: "CS 146 final project", date: "2026-11-03", daysLeft: 1 },
+    { title: "Lab report 3", date: "2026-11-06", daysLeft: 4 },
+    { title: "Bio quiz", date: "2026-11-16", daysLeft: 14 },
+  ],
+);
+assert.deepEqual(knownDeadlines([], [said("Lab report 3", "2026-11-06")], "Asia/Tokyo", new Date("2026-11-06T16:00:00Z")), [], "Tokyo's Nov 7: past due");
+assert.equal(rulePick({ ...context, deadlines: knownDeadlines([], [said("Lab report 3", "2026-11-06")], zone, at) }, at)?.why, "Due in 4 days.");
 assert.doesNotMatch(dayToText({ ...context, freeState: "error", free: [{ start: "2026-11-02T17:30:00Z", end: "2026-11-02T19:00:00Z" }] }, at), /could not be read/, "talk's own read of free time stands");
 
 // The model opening follows the person's clock and names one pick; an at-risk evening leads with the streak.
@@ -641,6 +766,7 @@ const results = () => sent.at(-1)!.messages.filter((message) => message.role ===
 const calls: string[] = [];
 let saved: object | null = null;
 let learned: object | null = null;
+let remembered: object[] = []; // what listMemories answers
 // What progressFor answers: a 7-day milestone only for a Done that just finished a step, as progressFrom gives it.
 const week7 = { ...progress, streak: 7, best: 7, stepsThisWeek: 3 };
 const planGoal = (steps: Step[]) => ({ id: "goal-2", title: "Stats set", due: null, steps });
@@ -648,6 +774,7 @@ Object.assign(globalThis, {
   fake: {
     addMemory: async (email: string, text: string, opts: object) => (calls.push(`addMemory ${text} ${JSON.stringify(opts)}`), saved),
     forgetMemory: async () => true,
+    listMemories: async () => remembered,
     setGoal: async (email: string, title: string) => (calls.push(`setGoal ${title}`), planGoal([step("n1", "Open problem 1", 5, "todo"), step("n2", "Do problems 1 to 3", 25, "todo")])),
     replaceRemainingSteps: async () => (calls.push("replaceRemainingSteps"), { ...goal, steps: [...goal.steps.slice(0, 2), step("c", "Outline two points", 5, "todo")] }),
     changeStepStatus: async (email: string, id: string, status: string) => (
@@ -696,6 +823,19 @@ assert.deepEqual(importProposal, [
 ]);
 assert.deepEqual(calls, [...keptRows, toDo("Buy poster board"), toDo("Plan the whole term")], "a proposed to-do is kept too, booked or not");
 assert.equal(validBlocks(importProposal, zone, importedAt)?.length, importProposal.length, "an import proposal books as produced");
+// The part of the day they focus best comes from their memories (read after this import's own facts are saved).
+reset();
+remembered = [memory("f", "Focuses best in the afternoon.", "about")];
+assert.deepEqual(
+  await keepNotes("a@b.c", imported, [{ start: "2026-11-02T18:00:00Z", end: "2026-11-02T19:00:00Z" }, { start: "2026-11-02T21:00:00Z", end: "2026-11-02T22:00:00Z" }], zone, importedAt),
+  [
+    deadlineBlock,
+    { title: "Buy poster board", kind: "todo", start: "2026-11-02T21:00:00.000Z", end: "2026-11-02T21:30:00.000Z" },
+    { title: "Plan the whole term", kind: "todo", start: "2026-11-02T18:00:00.000Z", end: "2026-11-02T18:30:00.000Z" },
+  ],
+  "the afternoon slot (1 PM) before the earlier morning one, which takes what has no afternoon room left",
+);
+remembered = [];
 reset();
 assert.deepEqual(await keepNotes("a@b.c", imported, [], zone, importedAt), [deadlineBlock]);
 reset();

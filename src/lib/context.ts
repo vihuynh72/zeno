@@ -1,10 +1,10 @@
 import type { Session } from "next-auth";
 import { dueIn } from "@/lib/brief";
-import { calendarWriteFor, freeSlots, getTodayEvents, upcomingDeadlines, type CalendarEvent } from "@/lib/calendar";
+import { calendarWriteFor, freeSlots, getTodayEvents, localDays, upcomingDeadlines, type CalendarEvent } from "@/lib/calendar";
 import type { CalendarWrite, Deadline, FreeSlot, Goal, Memory, Progress } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
 import { getRecentEmail, type EmailSummary } from "@/lib/gmail";
-import { currentGoal, listMemories } from "@/lib/goals";
+import { currentGoal, deadlineMemory, factKey, listMemories, todoMemory } from "@/lib/goals";
 import { NO_PROGRESS, progressFor } from "@/lib/progress";
 import { dayBounds, formatDate, formatTime, localDate } from "@/lib/tz";
 
@@ -19,8 +19,9 @@ export type UserContext = {
   tasksState: "ok" | "not-configured" | "error";
   emails: EmailSummary[];
   emailState: "ok" | "no-access" | "error";
-  // The rest of today's free time, deadlines in the next 14 days, and whether Zeno may write to its calendar.
-  // An unread list is empty with state "error": say it could not be read, never "none".
+  // The rest of today's free time, deadlines in the next 14 days (knownDeadlines), and whether Zeno may write to its
+  // calendar. An unread list is empty with state "error" (deadlines still hold the remembered ones): say it could not
+  // be read, never "none".
   free: FreeSlot[];
   freeState: "ok" | "no-access" | "error";
   deadlines: Deadline[];
@@ -124,8 +125,22 @@ export async function loadUserContext(
 
   return {
     email, timeZone, events, calendarState, goal, memories, tasksState, emails, emailState,
-    free, freeState, deadlines, deadlinesState, calendarWrite: calendarWriteFor(session), progress,
+    free, freeState, deadlines: knownDeadlines(deadlines, memories, timeZone), deadlinesState, calendarWrite: calendarWriteFor(session), progress,
   };
+}
+
+// The deadlines Zeno knows in the next 14 days: its calendar's "Due:" events and the deadline memories ("Lab report 3,
+// due Friday, November 6."), so one never booked, or not proposed because their own calendar showed it, still counts
+// (live test, Nov 1). Soonest first, each once.
+export function knownDeadlines(booked: Deadline[], memories: Memory[], timeZone: string, now = new Date()): Deadline[] {
+  const remembered = localDays(timeZone, now, 15).flatMap(({ date }, daysLeft) => {
+    const due = deadlineMemory({ title: "", date });
+    return memories.flatMap(({ text }) =>
+      text.length > due.length && text.endsWith(due) && !text.startsWith(todoMemory("")) ? [{ title: text.slice(0, -due.length), date, daysLeft }] : [],
+    );
+  });
+  const key = (deadline: Deadline) => `${deadline.date} ${factKey(deadline.title)}`;
+  return [...new Map([...remembered, ...booked].map((deadline) => [key(deadline), deadline])).values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 // Event titles and email lines can be written by anyone (an invite, a sender), so they go between <<< and >>>.
@@ -182,7 +197,9 @@ export function dayToText(context: UserContext, now = new Date()): string {
     if (context.free.length === 0 && context.freeState === "error") lines.push("Free time: could not be read. Do not invent free time.");
     if (context.deadlines.length > 0) {
       lines.push(`Deadlines: ${context.deadlines.map((item) => `${item.title}, due ${dueIn(item.daysLeft)} (${item.date})`).join("; ")}.`);
-    } else if (context.deadlinesState === "error") {
+    }
+    // The remembered ones still list when the calendar's failed, so the list may be short.
+    if (context.deadlinesState === "error") {
       lines.push("Deadlines on their Zeno calendar: could not be read. Do not say they have none.");
     }
   } else {
