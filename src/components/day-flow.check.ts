@@ -62,6 +62,10 @@ assert.ok(SETUP.every((card) => card.answers.length >= 2 && card.answers.length 
 assert.equal(asks("Want to start the outline?"), true);
 assert.equal(asks('Ready for "the next one?"'), true);
 assert.equal(asks("Timer's on. Just five minutes."), false);
+// A shorter timer says its real length.
+assert.equal(flow.CHECKINS.start(5), "Timer's on. Just five minutes.");
+assert.equal(flow.CHECKINS.start(3), "Timer's on. 3 minutes, one thing.");
+assert.equal(flow.CHECKINS.start(1), "Timer's on. 1 minute, one thing.");
 assert.equal(asks("Done? Nice work."), false);
 
 assert.equal(cardSize("Good afternoon, Vi."), "l");

@@ -522,6 +522,14 @@ button:active .tap {
   background: var(--card) linear-gradient(var(--rule) 1px, transparent 1px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100%
     var(--lh) local;
 }
+/* Scrolled, the top line fades out under the heading instead of showing cut in half; the scrollbar is card stock. */
+.paste {
+  scrollbar-width: thin;
+  scrollbar-color: var(--track) var(--card);
+}
+.paste[data-scrolled] {
+  mask-image: linear-gradient(transparent, #000 var(--lh));
+}
 .paste:focus-visible {
   background: var(--card) linear-gradient(var(--red) 2px, transparent 2px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100%
     var(--lh) local;
@@ -549,13 +557,37 @@ button:active .tap {
 .mins.due {
   font-family: var(--font-atkinson), system-ui, sans-serif;
 }
+/* Booked · Undo and Booked · tomorrow 7:00 PM: the offer's chip shape, held still (one family with "Book …?"). */
 .booked {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-height: 52px;
+  padding: 0 24px;
+  border: 2px solid var(--track);
+  border-radius: 999px;
   font-size: 18px;
   line-height: 24px;
   font-weight: 700;
+  white-space: nowrap;
+}
+/* On a step's own row (the card or a strip) the chip sits within the line, so the rows keep their height. */
+.strip :is(.pill-small, .booked),
+.lines .slot > :is(.pill-small, .booked) {
+  min-height: 40px;
+  padding-inline: 16px;
+}
+.strip .booked .quiet-x,
+.lines .slot .quiet-x {
+  min-height: 36px;
+}
+/* The plan card's booking chip: under the deadline, at the right end of the title's second line. */
+.lines .slot {
+  float: right;
+  clear: right;
+  margin: calc((var(--lh) - 40px) / 2) 0 0 16px;
+  font-size: 18px;
+  line-height: 24px;
 }
 
 /* Undo and the like: a quiet underlined word, still a full-height tap target. */
@@ -608,7 +640,7 @@ button:active .tap {
   border-color: var(--red);
 }
 
-/* The week under a Done: done in ink, a rest day as an ink ring, a missed day as a quiet ring, days before the first
+/* The week under a Done: done in ink, a rest day as an ink ring with a dash, a missed day as a quiet empty ring, days before the first
    step as a plain small dot (never styled as missed), today ringed in margin red, days to come dashed. */
 .week {
   display: flex;
@@ -636,6 +668,14 @@ button:active .tap {
 }
 .week [data-day="rest"] i {
   border-color: var(--ink);
+}
+/* A rest day is a ring with a dash, so it never reads as a missed (empty) ring. */
+.week [data-day="rest"] i::after {
+  content: "";
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--ink);
 }
 .week [data-day="none"] i {
   border: 0;

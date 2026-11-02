@@ -1,7 +1,8 @@
 "use client";
 
 // Quiet lines under the card: what Zeno just noted or kept on this device (each with Undo), and heads-ups.
-export type Quiet = { key: string; text: string; undo?: () => void };
+// until: when the line stops being true (a heads-up's event start), in ms.
+export type Quiet = { key: string; text: string; undo?: () => void; until?: number };
 
 export default function NotedLines({ lines }: { lines: Quiet[] }) {
   return (

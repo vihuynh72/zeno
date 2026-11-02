@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useRef } from "react";
 
 // The person's initial in the top bar opens Privacy and Sign out.
@@ -21,9 +20,10 @@ export default function AccountMenu({ initial, onSignOut, open }: { initial: str
         )}
       </button>
       <div ref={menu} id="account-menu" popover="auto" className="menu">
-        <Link href="/privacy" className="pill pill-small pill-quiet w-full">
+        {/* A full load, not a client navigation: Back must not repaint the page from this load's saved day. */}
+        <a href="/privacy" className="pill pill-small pill-quiet w-full">
           Privacy
-        </Link>
+        </a>
         <button type="button" onClick={onSignOut} className="pill pill-small w-full">
           Sign out
         </button>

@@ -55,6 +55,7 @@ export type DayViewProps = {
   offers?: Booking[]; // booking chips that answer Zeno's line
   calendarAsk?: boolean; // Zeno may not write to the calendar yet
   timer?: number | null; // the focus timer's minutes when the tap said so ("Start · 5 min")
+  lead?: { stepId: string; minutes: number } | null; // "See the plan" for a picked step: that step leads, at the pick's minutes
   device?: VaultFact[]; // this device's private facts, for Memory
   account?: string | null; // the person's initial
   menuOpen?: boolean; // the /preview gallery shows the account menu open
@@ -110,8 +111,11 @@ function useToday() {
 export default function DayView(props: DayViewProps) {
   const { screen, goal, voice, on, progress } = props;
   const bookings = props.bookings ?? {};
-  const steps = openSteps(goal);
+  const open = openSteps(goal);
+  const led = screen === "plan" && props.lead ? open.find((step) => step.id === props.lead?.stepId) : undefined;
+  const steps = led ? [led, ...open.filter((step) => step !== led)] : open;
   const top = (screen === "plan" || screen === "focus" || screen === "checkin") && steps[0] ? steps[0] : null;
+  const topMinutes = led && props.lead ? props.lead.minutes : top?.minutes;
   const finished = screen === "checkin" && goal !== null && steps.length === 0;
   const pick = screen === "ready" && props.pick ? props.pick : null;
   const lineOnCard = !top && !finished && !pick;
@@ -124,7 +128,7 @@ export default function DayView(props: DayViewProps) {
     screen === "signed-out"
       ? ["Sign in with Google"]
       : screen === "plan" && top
-        ? [startLabel(top.minutes), "Change the plan"]
+        ? [startLabel(topMinutes), "Change the plan"]
         : screen === "focus" && top
           ? ["Done", "I'm stuck"]
           : screen === "checkin"
@@ -145,7 +149,6 @@ export default function DayView(props: DayViewProps) {
       : "";
   const today = useToday();
   const streak = progress?.streak ?? 0;
-  const atRisk = Boolean(progress?.atRisk && streak > 0);
 
   const pillsRef = useRef<HTMLDivElement>(null);
   const typeRef = useRef<HTMLButtonElement>(null);
@@ -191,13 +194,15 @@ export default function DayView(props: DayViewProps) {
       <BookingChip booking={booking} onBook={() => on.book(booking.key)} onUndo={() => on.unbook(booking.key)} />
     ) : null;
   };
-  // On a roadmap strip: the chip, else the step's time once booked.
-  const slot = (step: Step) => {
-    const chip = chipFor(step);
-    // shortcut: phones hide later steps' chips so Start stays near the card; Stop for now still offers the next one.
-    if (chip) return <div className="shrink-0 max-sm:hidden">{chip}</div>;
-    return step.scheduledAt ? <span className="shrink-0 font-mono text-ink-2">{whenLabel(step.scheduledAt, zone())}</span> : null;
-  };
+  // The chip, else the step's time once booked: offer, booked and scheduled are one chip family.
+  const slot = (step: Step) =>
+    chipFor(step) ??
+    (step.scheduledAt ? (
+      <span className="booked">
+        Booked<span aria-hidden="true"> · </span>
+        <span className="font-normal">{whenLabel(step.scheduledAt, zone())}</span>
+      </span>
+    ) : null);
 
   const answerChips = props.chips.map((chip, i) => (
     <button
@@ -216,7 +221,8 @@ export default function DayView(props: DayViewProps) {
     </button>
   ));
   const offerChips = (props.offers ?? []).map((booking) => (
-    <BookingChip key={booking.key} booking={booking} ink={screen === "wrap" || screen === "setup"} onBook={() => on.book(booking.key)} onUndo={() => on.unbook(booking.key)} />
+    // Only the wrap-up's booking is the screen's one main answer; on setup, Start my day is.
+    <BookingChip key={booking.key} booking={booking} ink={screen === "wrap"} onBook={() => on.book(booking.key)} onUndo={() => on.unbook(booking.key)} />
   ));
 
   return (
@@ -239,7 +245,8 @@ export default function DayView(props: DayViewProps) {
           {screen && screen !== "signed-out" && streak > 0 && (
             <p className="whitespace-nowrap">
               <span className="font-mono font-bold">{streak}</span>
-              <span className="sm:hidden"> {streak === 1 ? "day" : "days"}</span>
+              {/* Under 360px the word goes, so the account button keeps its gutter. */}
+              <span className="sm:hidden max-[359px]:hidden"> {streak === 1 ? "day" : "days"}</span>
               <span className="max-sm:hidden"> day streak</span>
             </p>
           )}
@@ -294,7 +301,7 @@ export default function DayView(props: DayViewProps) {
               props.list
                 ? cardSize([cardText, ...props.list.map((fact) => fact.text)].join(" "))
                 : pick
-                  ? cardSize([pick.steps[0].title, pick.goal, atRisk ? "Keep your streak going" : pick.why].join(" "))
+                  ? cardSize([pick.steps[0].title, pick.goal, pick.why].join(" "))
                   : screen === "plan" && cardText.length > 32
                     ? "m"
                     : cardSize(cardText)
@@ -313,14 +320,6 @@ export default function DayView(props: DayViewProps) {
             <div className="lines">
               {pick ? (
                 <>
-                  {/* An at-risk evening leads with the streak, in place of the why (Zeno's line says the rest). */}
-                  {atRisk && (
-                    <p>
-                      <span className="hand" style={{ fontWeight: 700 }}>
-                        Keep your {streak}-day streak going
-                      </span>
-                    </p>
-                  )}
                   <p>
                     <span className="mins">{pick.steps[0].minutes} min</span>
                     {pick.steps[0].title}
@@ -331,8 +330,9 @@ export default function DayView(props: DayViewProps) {
                       {pick.due && today ? <span className="whitespace-nowrap"> · {dueLabel(pick.due, today)}</span> : null}
                     </span>
                   </p>
-                  {!atRisk && !(pick.due && pick.why.replace(/\.$/, "") === dueLabel(pick.due, today)) && (
-                    <p>
+                  {/* Phones leave the why to Zeno's line under the card, so Start and both answers clear the dock. */}
+                  {!(pick.due && pick.why.replace(/\.$/, "") === dueLabel(pick.due, today)) && (
+                    <p className="max-sm:hidden">
                       <span className="hand">{pick.why}</span>
                     </p>
                   )}
@@ -343,16 +343,14 @@ export default function DayView(props: DayViewProps) {
                     {/* The plan's deadline rides where the minutes would (Start says the minutes), so Start stays above the dock. */}
                     {screen === "plan" && goal?.due && today ? (
                       <span className="mins due">{dueLabel(goal.due, today, true)}</span>
-                    ) : screen !== "focus" && top.minutes ? (
-                      <span className="mins">{top.minutes} min</span>
+                    ) : screen !== "focus" && topMinutes ? (
+                      <span className="mins">{topMinutes} min</span>
                     ) : null}
+                    {/* The first step's booking rides on its card at the right of the title's second line, like the steps
+                        under it, so Start has the row to itself. Phones hide it as they hide the later steps' chips. */}
+                    {screen === "plan" && slot(top) ? <span className="slot max-sm:hidden">{slot(top)}</span> : null}
                     {top.title}
                   </p>
-                  {screen === "plan" && top.scheduledAt && bookings[top.id]?.state !== "booked" ? (
-                    <p>
-                      <span className="hand text-ink-2">On your calendar, {whenLabel(top.scheduledAt, zone())}</span>
-                    </p>
-                  ) : null}
                   {screen === "focus" && top.minutes ? (
                     <p className="mt-(--lh)">
                       <Countdown minutes={props.timer ?? top.minutes} startedAt={top.startedAt} />
@@ -375,7 +373,17 @@ export default function DayView(props: DayViewProps) {
                             {fact.text}
                             {fact.device && <span className="text-ink-2"> · On this device</span>}
                           </span>
-                          <button type="button" className="x" onClick={() => on.remove(fact)} aria-label={`Remove: ${fact.text}`}>
+                          <button
+                            type="button"
+                            className="x"
+                            onClick={(event) => {
+                              // Focus moves to the next fact's ×, not to the page, when this one goes.
+                              const li = event.currentTarget.closest("li");
+                              (li?.nextElementSibling ?? li?.previousElementSibling)?.querySelector("button")?.focus();
+                              on.remove(fact);
+                            }}
+                            aria-label={`Remove: ${fact.text}`}
+                          >
                             <Icon name="close" />
                           </button>
                         </li>
@@ -422,9 +430,10 @@ export default function DayView(props: DayViewProps) {
                   <span className="text-ink-2">{steps.length - 3} more steps</span>
                 ) : (
                   <>
-                    <span className="min-w-0 flex-1 truncate max-sm:line-clamp-2 max-sm:whitespace-normal">{s.title}</span>
+                    <span className="min-w-0 flex-1">{s.title}</span>
                     {s.minutes ? <span className="shrink-0 font-mono text-ink-2">{s.minutes} min</span> : null}
-                    {slot(s)}
+                    {/* shortcut: phones hide later steps' chips so Start stays near the card; Stop for now still offers the next one. */}
+                    {slot(s) && <div className="shrink-0 max-sm:hidden">{slot(s)}</div>}
                   </>
                 )}
               </div>
@@ -524,14 +533,14 @@ export default function DayView(props: DayViewProps) {
                   if (i === 0) on.primary();
                   else on.secondary();
                 }}
-                className={`pill max-sm:flex-auto max-sm:px-4 max-sm:text-[18px] sm:min-w-[240px] ${i === 0 ? "pill-ink" : ""}`}
+                className={`pill max-sm:flex-auto max-sm:px-4 max-sm:text-[18px] sm:min-w-[240px] ${
+                  i === 0 ? `pill-ink ${screen === "plan" ? "sm:min-w-[360px]" : ""}` : screen === "plan" ? "pill-quiet" : ""
+                }`}
               >
                 {label}
               </button>
             ))
           )}
-          {/* The plan's first step can go on the calendar instead of starting now. */}
-          {screen === "plan" && top && chipFor(top)}
         </div>
 
         {props.calendarAsk && (screen === "plan" || screen === "wrap") && (
@@ -542,9 +551,10 @@ export default function DayView(props: DayViewProps) {
         )}
 
         {screen === "focus" && props.checkins != null && (
+          // One fixed label; aria-pressed says whether it is on.
           <button type="button" aria-pressed={!props.checkins} onClick={on.checkins} className="pill pill-small pill-quiet mt-4">
             <Icon name={props.checkins ? "sound" : "sound-off"} />
-            {props.checkins ? "Check-ins on" : "Check-ins muted"}
+            Mute check-ins
           </button>
         )}
 
@@ -684,9 +694,30 @@ function Write({ busy, onSend, onClose }: { busy: boolean; onSend(text: string):
 
 function Paste({ onSave }: { onSave(text: string): void }) {
   const box = useRef<HTMLTextAreaElement>(null);
+  const snap = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // At rest the notes sit on whole lines, so no line shows cut in half under the heading and the rules meet the card's.
+  function settle() {
+    const el = box.current;
+    const lh = el ? parseFloat(getComputedStyle(el).lineHeight) : 0;
+    if (!el || !lh) return;
+    const top = Math.round(el.scrollTop / lh) * lh;
+    if (Math.abs(top - el.scrollTop) > 1) el.scrollTo({ top, behavior: "smooth" });
+  }
   return (
     <div className="flex flex-col items-end gap-4">
-      <textarea ref={box} autoFocus rows={3} className="write paste" aria-label="Your notes" placeholder="Paste notes here" />
+      <textarea
+        ref={box}
+        autoFocus
+        rows={3}
+        className="write paste"
+        aria-label="Your notes"
+        placeholder="Paste notes here"
+        onScroll={(event) => {
+          event.currentTarget.toggleAttribute("data-scrolled", event.currentTarget.scrollTop > 0);
+          clearTimeout(snap.current);
+          snap.current = setTimeout(settle, 150);
+        }}
+      />
       <button
         type="button"
         onClick={() => {

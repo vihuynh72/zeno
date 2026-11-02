@@ -4,6 +4,7 @@ import { useRef } from "react";
 import type { CalendarBlock, FirstPick, Goal, Memory, Progress, Step } from "@/lib/day";
 import type { VaultFact } from "@/lib/vault";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
+import { formatTime } from "@/lib/tz";
 import { SETUP, slotLabel, type Fact } from "@/components/day-flow";
 import type { Booking } from "@/components/booking-chip";
 import DayView, { type Chip, type DayViewProps, type Today } from "@/components/day-view";
@@ -95,10 +96,18 @@ const DEVICE: VaultFact[] = [{ id: "v1", text: "Mornings feel foggy lately.", gr
 
 const ASK = "What's the one thing you keep putting off?";
 
+// The week around the real weekday, Monday first: `before` ends yesterday (its last entries are used), then today.
+type DayState = Progress["week"][number];
+function week(before: DayState[], now: DayState): DayState[] {
+  const today = (new Date().getDay() + 6) % 7;
+  return Array.from({ length: 7 }, (_, i) => (i < today ? (before[before.length - today + i] ?? "none") : i === today ? now : "future"));
+}
+const PAST: DayState[] = ["done", "missed", "done", "rest", "done", "done"];
+
 const progress = (over: Partial<Progress> = {}): Progress => ({
   streak: 4,
   best: 9,
-  week: ["done", "rest", "done", "done", "today", "future", "future"],
+  week: week(PAST, "today"),
   stepsThisWeek: 5,
   restDaysLeft: 0,
   atRisk: false,
@@ -137,6 +146,9 @@ const BOOKINGS: Record<string, Booking> = {
 };
 const BOOKED_PLAN = roadmap("todo", "todo", "todo", "todo");
 BOOKED_PLAN.steps[3].scheduledAt = at(1590);
+const FOCUSED = roadmap("done", "doing", "todo", "todo");
+const BOOKED_FIRST = roadmap("todo", "todo", "todo", "todo");
+BOOKED_FIRST.steps[0].scheduledAt = at(1500);
 
 const chips = (...labels: string[]): Chip[] => [...labels.map((label) => ({ label })), { label: "Something else", tone: "quiet" }];
 const answers = (at: number): Chip[] =>
@@ -177,7 +189,7 @@ const STATES: Record<string, Fixture> = {
     line: "Good afternoon, Sam. Your Bio lab report is due tomorrow. Five minutes on it?",
     pick: RULE_PICK,
     chips: pickChips(),
-    progress: progress({ streak: 0, best: 0, week: ["none", "none", "none", "today", "future", "future", "future"], stepsThisWeek: 0 }),
+    progress: progress({ streak: 0, best: 0, week: week([], "today"), stepsThisWeek: 0 }),
   },
   // Evening, a live streak and nothing done today: the card leads with saving it.
   "pick-at-risk": {
@@ -289,6 +301,29 @@ const STATES: Record<string, Fixture> = {
     line: "Here's the plan. The first step takes 5 minutes.",
     bookings: { s1: offer("s1", block("s1", "Open the essay doc and write a working title", 40, 5)), ...BOOKINGS },
   },
+  // A booking that failed says so on its chip.
+  "plan-book-failed": {
+    screen: "plan",
+    goal: roadmap("todo", "todo", "todo", "todo"),
+    line: "Here's the plan. The first step takes 5 minutes.",
+    bookings: { s1: offer("s1", block("s1", "Open the essay doc and write a working title", 40, 5), "failed") },
+  },
+  // The first step is already on the calendar.
+  "plan-booked-first": { screen: "plan", goal: BOOKED_FIRST, line: "Here's the plan. The first step takes 5 minutes." },
+  // "See the plan" for a picked later step: that step leads, at the pick's 5 minutes.
+  "plan-lead": {
+    screen: "plan",
+    goal: roadmap("done", "todo", "todo", "todo"),
+    lead: { stepId: "s3", minutes: 5 },
+    line: "Here's the plan. This step first, 5 minutes.",
+  },
+  // After Change the plan: Zeno's question with answers to tap.
+  "plan-change": {
+    screen: "plan",
+    goal: roadmap("todo", "todo", "todo", "todo"),
+    line: "What should change?",
+    chips: [{ label: "Make step one smaller" }, { label: "Fewer steps" }, { label: "Different order" }],
+  },
   "plan-permission": {
     screen: "plan",
     goal: roadmap("todo", "todo", "todo", "todo"),
@@ -302,11 +337,11 @@ const STATES: Record<string, Fixture> = {
   },
   focus: { screen: "focus", goal: roadmap("done", "doing", "todo", "todo"), line: "Timer's on. 10 minutes, one thing.", checkins: true },
   // A heads-up during focus, check-ins muted.
+  // The warning leads (an event 5 to 10 minutes from the real clock), halfway through the timer.
   "focus-heads-up": {
     screen: "focus",
-    goal: roadmap("done", "doing", "todo", "todo"),
-    line: "Halfway there.",
-    quiet: [{ key: "w", text: "Heads up: Bio lab at 3:30 PM." }],
+    goal: { ...FOCUSED, steps: FOCUSED.steps.map((one) => (one.status === "doing" ? { ...one, startedAt: new Date(Date.now() - 300_000).toISOString() } : one)) },
+    line: `Heads up: Bio lab at ${formatTime(new Date(Math.ceil((Date.now() + 5 * 60_000) / 300_000) * 300_000).toISOString(), zone())}.`,
     checkins: false,
   },
   // Stuck in focus: Zeno's question still has answers to tap.
@@ -324,7 +359,7 @@ const STATES: Record<string, Fixture> = {
     goal: roadmap("done", "done", "todo", "todo"),
     line: "Nice. That's day 4. Next one's ready.",
     celebrate: true,
-    progress: progress({ week: ["done", "rest", "done", "done", "done", "future", "future"], stepsThisWeek: 6 }),
+    progress: progress({ week: week(PAST, "done"), stepsThisWeek: 6 }),
     phase: "speaking",
     level: 0.35,
   },
@@ -333,7 +368,7 @@ const STATES: Record<string, Fixture> = {
     goal: roadmap("done", "done", "todo", "todo"),
     line: "7 days in a row. That's a real habit now.",
     celebrate: true,
-    progress: progress({ streak: 7, best: 7, milestone: 7, week: ["done", "done", "rest", "done", "done", "done", "done"], stepsThisWeek: 9 }),
+    progress: progress({ streak: 7, best: 7, milestone: 7, week: week(["done", "done", "rest", "done", "done", "done"], "done"), stepsThisWeek: 9 }),
   },
   // After a break: Day 1 again, never shame. A new person's earlier days are plain dots.
   "day-one-again": {
@@ -341,14 +376,14 @@ const STATES: Record<string, Fixture> = {
     goal: roadmap("done", "done", "todo", "todo"),
     line: "Day 1 again. Your best is 9.",
     celebrate: true,
-    progress: progress({ streak: 1, best: 9, week: ["missed", "missed", "done", "future", "future", "future", "future"], stepsThisWeek: 1 }),
+    progress: progress({ streak: 1, best: 9, week: week(["done", "rest", "missed", "missed", "missed", "missed"], "done"), stepsThisWeek: 1 }),
   },
   "first-day": {
     screen: "checkin",
     goal: roadmap("done", "todo", "todo", "todo"),
     line: "Day 1. That's how it starts. Next one's ready.",
     celebrate: true,
-    progress: progress({ streak: 1, best: 1, week: ["none", "none", "done", "future", "future", "future", "future"], stepsThisWeek: 1, restDaysLeft: 1 }),
+    progress: progress({ streak: 1, best: 1, week: week([], "done"), stepsThisWeek: 1, restDaysLeft: 1 }),
   },
   finished: {
     screen: "checkin",
@@ -361,6 +396,16 @@ const STATES: Record<string, Fixture> = {
     goal: roadmap("done", "done", "todo", "todo"),
     line: "Good place to stop. Want me to put “Draft the opening paragraph” on your calendar?",
     offers: [offer("s3", block("s3", "Draft the opening paragraph", 1500, 15))],
+    chips: [{ label: "Not now", tone: "quiet" }],
+  },
+  // No calendar to write to: a plain goodbye, nothing to tap.
+  "wrap-quiet": { screen: "wrap", goal: roadmap("done", "done", "todo", "todo"), line: "Good place to stop. See you tomorrow.", chips: [] },
+  // Calendar write not allowed yet: the ask, and Not now.
+  "wrap-permission": {
+    screen: "wrap",
+    goal: roadmap("done", "done", "todo", "todo"),
+    line: "Good place to stop. Want me to put “Draft the opening paragraph” on your calendar?",
+    calendarAsk: true,
     chips: [{ label: "Not now", tone: "quiet" }],
   },
   "wrap-booked": {

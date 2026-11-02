@@ -7,7 +7,7 @@ export type VoiceError = "blocked" | "unsupported" | "network" | null;
 
 type Listen = typeof listenWeb;
 type UserTurn = (text: string, how: "voice" | "typed") => Promise<string | null>;
-// Whether to listen after Zeno says this line, for a tapped or typed turn and for speak(); a spoken turn always does.
+// Whether to listen after Zeno says this line, for every turn and for speak(); without it, only a spoken turn does.
 type ListenAfter = (said: string) => boolean;
 
 const LISTEN_LIMIT_MS = 30_000;
@@ -28,16 +28,17 @@ function say(text: string) {
 }
 
 // Half duplex: the mic is released before Zeno speaks and opened again only after.
-export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAfter }, adapter?: { listen?: Listen }) {
+// onSilence: a listen ended without hearing anything (no speech, an empty result, or the time limit).
+export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAfter; onSilence?: () => void }, adapter?: { listen?: Listen }) {
   const listen = adapter?.listen ?? listenWeb;
   const [phase, setPhase] = useState<VoicePhase>("idle");
   const [partial, setPartial] = useState("");
   const [muted, setMutedState] = useState(false);
   const [error, setError] = useState<VoiceError>(null);
   const levelRef = useRef(0);
-  const latest = useRef({ onUserTurn: options.onUserTurn, listenAfter: options.listenAfter, listen });
+  const latest = useRef({ ...options, listen });
   useEffect(() => {
-    latest.current = { onUserTurn: options.onUserTurn, listenAfter: options.listenAfter, listen };
+    latest.current = { ...options, listen };
   });
   const supported = useSyncExternalStore(subscribeNever, () => canListen(listen), () => false);
 
@@ -68,11 +69,16 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
       go("idle");
     }
 
+    function silent() {
+      stop();
+      latest.current.onSilence?.();
+    }
+
     async function listenNow() {
       const mine = gen;
       go("listening");
       setError(null);
-      timer = setTimeout(stop, LISTEN_LIMIT_MS);
+      timer = setTimeout(silent, LISTEN_LIMIT_MS);
       // Between turns the session is only paused, so an adapter can keep its connection open.
       if (session) return session.resume();
       const handlers: ListenHandlers = {
@@ -84,12 +90,13 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
           clearTimeout(timer);
           session?.pause();
           if (text.trim()) void turn(text.trim(), "voice");
-          else stop();
+          else silent();
         },
         onError(reason) {
           if (mine !== gen || current !== "listening") return;
+          if (reason === "no-speech") return silent();
           stop();
-          if (reason !== "no-speech") setError(reason);
+          setError(reason);
         },
       };
       try {
@@ -124,7 +131,8 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
       } catch {
         // The UI shows its own message for a failed turn; Zeno just stays quiet.
       }
-      if (mine === gen) await answer(reply, how === "voice" || Boolean(reply && latest.current.listenAfter?.(reply)));
+      const { listenAfter } = latest.current;
+      if (mine === gen) await answer(reply, listenAfter ? Boolean(reply && listenAfter(reply)) : how === "voice");
     }
 
     // Called from a click or key press, so unlockAudio() still runs inside the gesture.

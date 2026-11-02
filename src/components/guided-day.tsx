@@ -28,7 +28,7 @@ import { listenAuto, type ListenHandlers } from "@/lib/listen";
 import { audioContext } from "@/lib/speak";
 import { formatTime, localDate } from "@/lib/tz";
 import { useVoice } from "@/lib/use-voice";
-import { addToVault, clearVault, readVault, removeFromVault, vaultTexts, type VaultFact } from "@/lib/vault";
+import { addToVault, readVault, removeFromVault, vaultTexts, type VaultFact } from "@/lib/vault";
 import {
   asks,
   CHECKINS,
@@ -212,6 +212,8 @@ export default function GuidedDay() {
   const [leaving, setLeaving] = useState<Step | null>(null);
   const [celebrate, setCelebrate] = useState(false);
   const [timer, setTimer] = useState<number | null>(null);
+  // "See the plan" for a picked step: the plan leads with that step and starts it at the pick's minutes.
+  const [lead, setLead] = useState<{ stepId: string; minutes: number } | null>(null);
   const [hear, setHear] = useState(false);
   const [quiet, setQuiet] = useState<Quiet[]>([]);
   const [bookings, setBookings] = useState<Record<string, Booking>>({});
@@ -249,7 +251,12 @@ export default function GuidedDay() {
   const signInFailed = useSyncExternalStore(noStore, () => new URLSearchParams(window.location.search).has("error"), () => false);
 
   const voice = useVoice(
-    { onUserTurn, listenAfter: (said) => talking.current && asks(said) },
+    {
+      onUserTurn,
+      listenAfter: (said) => talking.current && asks(said),
+      // A listen that heard nothing ends hands-free, so a later question never reopens the mic without a tap.
+      onSilence: () => (talking.current = false),
+    },
     { listen: (handlers, opts) => (talking.current ? listenAuto(handlers, opts) : micClosed(handlers)) },
   );
 
@@ -371,9 +378,10 @@ export default function GuidedDay() {
     // The first open of the day (not the first run) re-reads calendar and email quietly; new facts show as Noted lines.
     const today = localDate(zone());
     if (readLocal(scannedKey(data.account)) !== today) {
-      writeLocal(scannedKey(data.account), today);
       setTimeout(() => {
         void post<ProfileResponse>("/api/profile/scan", { private: vaultTexts(data.account) }).then((res) => {
+          // A failed scan is tried again on the next open today.
+          if (res.state === "ok" || res.state === "no-access") writeLocal(scannedKey(data.account), today);
           if (res.state !== "ok") return;
           for (const memory of res.learned ?? []) noted(memory);
           keep(res.private);
@@ -388,7 +396,7 @@ export default function GuidedDay() {
     const ok = res.state === "ok" && typeof res.opening === "string" && res.opening.trim() !== "";
     // Without a new model line, a saved one (maybe hours old) is dropped, never said: today's rule line stands in.
     if (!ok) store({ opening: null });
-    if (moved.current || latest.current.screen !== "ready" || voice.phase !== "idle" || typing) return;
+    if (moved.current || latest.current.screen !== "ready") return;
     // cache.current.day is this load's /api/day, even before the render that sets `day`.
     const text = ok ? res.opening.trim() : (cache.current?.day.opening ?? line);
     const next = quickReplies(ok ? res.options : cache.current?.day.options);
@@ -399,7 +407,8 @@ export default function GuidedDay() {
     setPick(card);
     if (spoke.current || voice.muted) return;
     spoke.current = true;
-    if (allowed) void voice.speak(text);
+    // Never over another line (a heads-up) or the person: Hear Zeno offers it instead.
+    if (allowed && voice.phase === "idle" && !typing) void voice.speak(text);
     else setHear(true);
   });
 
@@ -408,11 +417,12 @@ export default function GuidedDay() {
     const { saved } = readBoot();
     const allowed = audioAllowed();
     // Someone who was here before gets the model's opening asked for at once; anyone else once the day says who they are.
-    const early = saved && (!saved.day.isNew || saved.setupDone) ? fetchOpening(saved.day.account) : null;
+    // The early ask carries no private facts: the saved day may be another account's until /api/day answers.
+    const early = saved && (!saved.day.isNew || saved.setupDone) ? fetchOpening(null) : null;
     void getJson<DayResponse>("/api/day").then(async (data) => {
       if (!live || !onDay(data)) return;
-      // An opening asked for with another account's private facts is never shown.
-      const mine = data.state === "ok" && early && saved?.day.account === data.account ? early : null;
+      // The early opening stands only for this account, and only when it has no private facts to add.
+      const mine = data.state === "ok" && early && saved?.day.account === data.account && vaultTexts(data.account).length === 0 ? early : null;
       const [res, ok] = await Promise.all([mine ?? fetchOpening(data.state === "ok" ? data.account : null), allowed]);
       if (live) onOpening(res, ok);
     });
@@ -426,7 +436,7 @@ export default function GuidedDay() {
   useEffect(() => {
     if (!wantOpening) return;
     let live = true;
-    const opening = nextOpening.current ?? fetchOpening(cache.current?.day.account ?? null);
+    const opening = nextOpening.current ?? Promise.allSettled(saves.current).then(() => fetchOpening(account()));
     void Promise.all([opening, audioAllowed()]).then(([res, ok]) => {
       if (live) onOpening(res, ok);
     });
@@ -445,6 +455,8 @@ export default function GuidedDay() {
     setHear(false);
     setPick(null);
     setQuiet([]);
+    setOfferKeys([]);
+    setBookings({});
     setLine(SIGNED_OUT_LINE);
     setScreen("signed-out");
   }
@@ -467,6 +479,7 @@ export default function GuidedDay() {
       remember([{ role: "assistant", content: before.line }]);
     }
     moved.current = true;
+    setLead(null);
     // Answering the opening is picking one thing, so the card and the progress row move on at once.
     if (before.screen === "ready" || before.screen === "wrap") setScreen("talk");
     if (fromChip) setTyping(false);
@@ -502,7 +515,10 @@ export default function GuidedDay() {
     for (const action of res.actions ?? []) {
       if (action.type === "remembered" && action.memoryId) noted({ id: action.memoryId, text: action.label });
     }
-    const proposal = Array.isArray(res.proposal) ? res.proposal : [];
+    // shortcut: a step already on the calendar is not offered again (booking it would double-book); add "Move to …?" if people ask.
+    const proposal = (Array.isArray(res.proposal) ? res.proposal : []).filter(
+      (block) => !block.stepId || !res.goal?.steps.some((step) => step.id === block.stepId && step.scheduledAt),
+    );
     for (const block of proposal) offer(blockKey(block), [block], offerLabel(block));
     setOfferKeys(proposal.map(blockKey));
     if (res.progress) changeProgress(res.progress);
@@ -510,7 +526,7 @@ export default function GuidedDay() {
     const next = nextScreen(now.screen ?? "ready", res.actions ?? [], res.goal);
     const done = now.screen === "focus" && next === "checkin" ? openSteps(now.goal)[0] : undefined;
     if (next === "checkin") setCelebrate(Boolean(res.progress));
-    if (next !== "focus") setTimer(null);
+    if (next !== "focus" || openSteps(res.goal)[0]?.id !== openSteps(now.goal)[0]?.id) setTimer(null);
     if (done) {
       // Said "done" out loud: same stamp as the Done button, so the card and pills wait for it too.
       setStamping(true);
@@ -622,12 +638,13 @@ export default function GuidedDay() {
   // "See the plan": the steps at once; a new plan is saved behind them, so Start and booking use real steps.
   function seePlan(card: FirstPick) {
     moved.current = true;
-    const said = `Here's the plan. The first step takes ${card.steps[0].minutes} minutes.`;
+    const minutes = card.steps[0].minutes;
+    const said = card.stepId ? `Here's the plan. This step first, ${minutes} minutes.` : `Here's the plan. The first step takes ${minutes} minutes.`;
     setScreen("plan");
     setLine(said);
     setOptions([]);
     speakLine(said);
-    if (card.stepId) return;
+    if (card.stepId) return setLead({ stepId: card.stepId, minutes });
     const before = goal;
     changeGoal(draftGoal(card, false, new Date()));
     starting.current = savePick(card, false, before);
@@ -658,12 +675,13 @@ export default function GuidedDay() {
     speakLine(said);
   }
 
-  async function startStep(step: Step) {
+  async function startStep(step: Step, minutes?: number) {
     const before = goal;
     const back = screen ?? "plan";
-    setTimer(null);
+    setLead(null);
+    setTimer(minutes ?? null);
     if (goal) changeGoal(withStatus(goal, step.id, "doing", new Date()));
-    enterFocus(step.minutes);
+    enterFocus(minutes ?? step.minutes);
     const real = await realStep(step);
     if (!real) return failStart({ state: "error" }, before, back);
     const res = await patchStep(real.id, "doing");
@@ -717,6 +735,7 @@ export default function GuidedDay() {
     if (write !== "ok") return;
     void post<FreeResponse>("/api/calendar/free", { minutes: next.minutes ?? 10, days: 2 }).then((res) => {
       if (res.state === "signed-out") return showSignedOut();
+      if (latest.current.screen !== "wrap") return;
       const block = res.state === "ok" ? laterBlock(next, res.slots, zone()) : null;
       if (block) offer(next.id, [block], offerLabel(block));
       else setLine("Good place to stop. I couldn't find a free time for the next step, so it's on your plan for tomorrow.");
@@ -734,7 +753,9 @@ export default function GuidedDay() {
   function primary() {
     if (performance.now() - cardAt.current < 400) return;
     const step = openSteps(goal)[0];
+    const led = lead && openSteps(goal).find((one) => one.id === lead.stepId);
     if (screen === "signed-out") void signIn("google", { redirectTo: "/" });
+    else if (screen === "plan" && lead && led) void startStep(led, lead.minutes);
     else if (screen === "plan" && step) void startStep(step);
     else if (screen === "focus" && step) void finishStep(step);
     else if (screen === "checkin" && step) void startStep(step);
@@ -875,7 +896,7 @@ export default function GuidedDay() {
   const focusStep = screen === "focus" ? openSteps(goal)[0] ?? null : null;
   const focusMinutes = timer ?? focusStep?.minutes ?? null;
   const checkin = useEffectEvent((kind: "half" | "end") => {
-    if (latest.current.screen !== "focus") return;
+    if (latest.current.screen !== "focus" || options.length > 0 || voice.phase === "listening" || voice.phase === "thinking") return;
     const said = CHECKINS[kind];
     setLine(said);
     if (checkinsOn && voice.phase === "idle") speakLine(said);
@@ -892,13 +913,17 @@ export default function GuidedDay() {
   }, [focusStep?.id, focusStep?.startedAt, focusMinutes]);
 
   const headsUp = useEffectEvent(() => {
-    const soon = soonEvent(day?.events ?? [], Date.now());
+    setQuiet((list) => list.filter((one) => !one.until || one.until > Date.now()));
+    const keyOf = (event: { title: string; start: string }) => `${event.title}@${event.start}`;
+    const soon = soonEvent((day?.events ?? []).filter((event) => !warned.current.has(keyOf(event))), Date.now());
     if (!soon) return;
-    const key = `${soon.title}@${soon.start}`;
-    if (warned.current.has(key)) return;
+    const key = keyOf(soon);
     warned.current.add(key);
     const minutes = Math.max(1, Math.round((Date.parse(soon.start) - Date.now()) / 60_000));
-    sayQuiet({ key: `w:${key}`, text: `Heads up: ${soon.title} at ${formatTime(soon.start, zone())}.` });
+    const text = `Heads up: ${soon.title} at ${formatTime(soon.start, zone())}.`;
+    // In focus it is the lead line (unless a question waits for an answer); elsewhere a quiet line until it starts.
+    if (latest.current.screen === "focus" && options.length === 0) setLine(text);
+    else sayQuiet({ key: `w:${key}`, text, until: Date.parse(soon.start) });
     // Said once, never over the person talking.
     if (voice.phase === "idle" || voice.phase === "speaking") speakLine(`Heads up, ${soon.title} in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`);
   });
@@ -918,7 +943,8 @@ export default function GuidedDay() {
   function startScan(mine: string) {
     writeLocal(scannedKey(mine), localDate(zone()));
     setScanning(true);
-    void post<ProfileResponse>("/api/profile/scan", { first: true, private: vaultTexts(mine) }).then((res) => {
+    // Among the setup saves, so the first card's opening is written with what the scan learned.
+    const scan = post<ProfileResponse>("/api/profile/scan", { first: true, private: vaultTexts(mine) }).then((res) => {
       setScanning(false);
       if (res.state === "signed-out") return showSignedOut();
       if (res.state !== "ok") return;
@@ -927,6 +953,7 @@ export default function GuidedDay() {
       const added = keep(res.private, false);
       setSetupDevice((list) => [...added, ...list]);
     });
+    saves.current.push(scan);
   }
 
   function learn(res: SaveMemoryResponse | ImportResponse | { state: "error" }) {
@@ -1032,12 +1059,16 @@ export default function GuidedDay() {
     setDevice(readVault(mine));
   }
 
+  // The route sorts it (feat/vault): a private fact comes back in `private`, unsaved, for this device; a never-list one is "not-kept".
   async function addMemory(text: string) {
     setNote(null);
     const res = await post<SaveMemoryResponse>("/api/memory", { text });
     if (res.state === "signed-out") return showSignedOut();
-    if (res.state === "ok" && Array.isArray(res.memories)) setMemories(res.memories);
-    else setNote(SAVE_FAIL);
+    if ((res.state as string) === "not-kept") return setNote("Zeno never keeps that kind of thing, so it isn't saved.");
+    if (res.state !== "ok" || !Array.isArray(res.memories)) return setNote(SAVE_FAIL);
+    setMemories(res.memories);
+    const mine = account();
+    if (mine && keep((res as { private?: PrivateFact[] }).private, false).length > 0) setDevice(readVault(mine));
   }
 
   // ---------- Chips ----------
@@ -1143,6 +1174,7 @@ export default function GuidedDay() {
       offers={offers}
       calendarAsk={day?.calendarWrite === "needs-permission"}
       timer={timer}
+      lead={lead}
       device={device}
       account={screen && screen !== "signed-out" ? (name?.trim()[0]?.toUpperCase() ?? "") : null}
       checkins={screen === "focus" ? checkinsOn : null}
@@ -1194,9 +1226,13 @@ export default function GuidedDay() {
           void signIn("google", { redirectTo: "/" });
         },
         signOut() {
-          // The next person at a shared computer must not read this one's private facts.
-          const mine = account();
-          if (mine) clearVault(mine);
+          // The next person at a shared computer must not read anyone's private facts, even before /api/day said whose
+          // browser this is (keys as in src/lib/vault.ts).
+          try {
+            for (const key of Object.keys(localStorage)) if (key.startsWith("zeno.vault.")) localStorage.removeItem(key);
+          } catch {
+            // Unreadable storage holds nothing to clear.
+          }
           writeSaved(null);
           cache.current = null;
           void signOut({ redirectTo: "/" });

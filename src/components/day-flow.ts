@@ -259,7 +259,8 @@ export function doneLine(before: Progress | null, after: Progress | undefined, m
 // ---------- Focus check-ins ----------
 
 export const CHECKINS = {
-  start: (minutes: number) => (minutes <= 5 ? "Timer's on. Just five minutes." : `Timer's on. ${minutes} minutes, one thing.`),
+  start: (minutes: number) =>
+    minutes === 5 ? "Timer's on. Just five minutes." : `Timer's on. ${minutes} ${minutes === 1 ? "minute" : "minutes"}, one thing.`,
   half: "Halfway there.",
   end: "Time's up. Done, or stuck?",
 };
