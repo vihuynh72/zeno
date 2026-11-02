@@ -55,6 +55,8 @@ assert.notEqual(dayPart(new Date(2026, 9, 31, 4)), dayPart(new Date(2026, 9, 31,
 
 assert.deepEqual(quickReplies(["Start the essay", " ", 3, " Plan my day ", "a", "b"]), ["Start the essay", "Plan my day", "a"]);
 assert.deepEqual(quickReplies(undefined), []);
+// The model's own "Something else" (its prompt even suggests it) and repeats would duplicate a chip's key.
+assert.deepEqual(quickReplies(["Start it", "Something else", "Start it", "Set up tomorrow", "something else."]), ["Start it", "Set up tomorrow"]);
 assert.equal(quickReplies(["x".repeat(200)])[0].length, 80);
 assert.ok(SETUP.every((card) => card.answers.length >= 2 && card.answers.length <= 4));
 

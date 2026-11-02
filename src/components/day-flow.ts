@@ -110,6 +110,8 @@ export function quickReplies(options: unknown): string[] {
   return options
     .filter((o): o is string => typeof o === "string" && o.trim() !== "")
     .map((o) => o.trim().slice(0, 80))
+    // Chips are keyed by label and the card adds its own "Something else", so no label may repeat.
+    .filter((o, i, all) => all.indexOf(o) === i && !/^something else\W*$/i.test(o))
     .slice(0, 3);
 }
 
