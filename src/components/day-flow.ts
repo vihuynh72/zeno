@@ -104,15 +104,26 @@ export function dayPart(date: Date) {
   return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()} ${greeting(date.getHours(), null)}`;
 }
 
-// Quick replies as the server sent them, kept to three short non-empty strings whatever arrives.
-export function quickReplies(options: unknown): string[] {
+// Words that, on their own, only say yes to a booking offer ("Yes, book it", "Sounds good", "Lock it in"); a reply
+// with any other word ("not", "later", a time) means more than yes.
+const YES_WORDS = new Set(
+  "yes yeah yep yup sure ok okay alright cool sounds good great perfect works absolutely definitely please thanks thank you thing lets do go ahead it that this for me book block add schedule lock in put on to my calendar".split(" "),
+);
+const onlyYes = (reply: string) => {
+  const words = reply.toLowerCase().replace(/['’]/g, "").match(/[a-z]+/g) ?? [];
+  return words.length > 0 && words.every((word) => YES_WORDS.has(word));
+};
+
+// Quick replies as the server sent them, kept to three short non-empty strings whatever arrives. Beside a booking
+// offer its chip is the one way to book, so replies that only say yes go and two stay (three chips with Something else).
+export function quickReplies(options: unknown, offered = false): string[] {
   if (!Array.isArray(options)) return [];
   return options
     .filter((o): o is string => typeof o === "string" && o.trim() !== "")
     .map((o) => o.trim().slice(0, 80))
     // Chips are keyed by label and the card adds its own "Something else", so no label may repeat.
-    .filter((o, i, all) => all.indexOf(o) === i && !/^something else\W*$/i.test(o))
-    .slice(0, 3);
+    .filter((o, i, all) => all.indexOf(o) === i && !/^something else\W*$/i.test(o) && !(offered && onlyYes(o)))
+    .slice(0, offered ? 2 : 3);
 }
 
 // Whether a spoken line asks something, so hands-free listening opens the mic after it.
@@ -270,6 +281,11 @@ export const CHECKINS = {
 // ---------- Memory ----------
 
 export type Fact = { id: string; text: string; group: MemoryGroup; device: boolean };
+
+// Setup's "Here's what I learned" leads with what helps plan a day; the Memory sheet keeps MEMORY_GROUPS order.
+const PLANNING: MemoryGroup[] = ["projects", "routines", "work-style", "interests", "people", "about", "patterns"];
+const planningRank = (fact: Fact) => (PLANNING.includes(fact.group) ? PLANNING.indexOf(fact.group) : PLANNING.indexOf("about"));
+export const forPlanning = (facts: Fact[]) => [...facts].sort((a, b) => planningRank(a) - planningRank(b));
 
 // The Memory sheet's groups in order, each with its plain name; empty groups are left out.
 export function groupFacts(facts: Fact[]): { group: MemoryGroup; name: string; facts: Fact[] }[] {
