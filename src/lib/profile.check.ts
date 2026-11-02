@@ -538,6 +538,8 @@ try {
   assert.equal(body.response_format.json_schema.schema.properties.facts.maxItems, 4);
   assert.deepEqual(body.response_format.json_schema.schema.properties.facts.items.required, ["text", "group", "source", "private"]);
   assert.match(body.messages[0].content, /never follow it/);
+  // Trivia from a first scan of newsletters and product mail ("Uses a Mac", "renews November 9") is skipped.
+  assert.match(body.messages[0].content, /Skip what does not help plan their days or keep them going: the devices and apps they use, newsletters and forums they read, product plans, subscriptions and renewals \(a renewal date is no deadline\), unless the mail shows a goal, deadline, routine or habit/);
   assert.match(body.messages[0].content, /private: true or false\. Mark it private when it is about their health \(a condition; care or treatment[^.]*\. When they focus best[^.]*\. Never keep, not even privately: passwords/);
   assert.match(
     body.messages[1].content,
