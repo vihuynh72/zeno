@@ -110,7 +110,7 @@ const YES_WORDS = new Set(
   "yes yeah yep yup sure ok okay alright cool sounds good great perfect works absolutely definitely please thanks thank you thing lets do go ahead it that this for me book block add schedule lock in put on to my calendar".split(" "),
 );
 const onlyYes = (reply: string) => {
-  const words = reply.toLowerCase().replace(/['’]/g, "").match(/[a-z]+/g) ?? [];
+  const words = reply.toLowerCase().replace(/['’]/g, "").match(/[a-z]+|\d+/g) ?? [];
   return words.length > 0 && words.every((word) => YES_WORDS.has(word));
 };
 

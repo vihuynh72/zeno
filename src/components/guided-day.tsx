@@ -1127,7 +1127,7 @@ export default function GuidedDay() {
             : options.length
               ? [...options.map((label) => ({ label })), { label: "Something else", tone: "quiet" }]
               : [{ label: "Let's start", tone: "ink" }]
-        : screen === "talk" && options.length
+        : screen === "talk" && (options.length || offerKeys.length)
           ? [...options.map((label) => ({ label })), { label: "Something else", tone: "quiet" }]
           : screen === "wrap"
             ? offerKeys.length || day?.calendarWrite === "needs-permission"
