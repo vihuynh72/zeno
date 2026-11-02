@@ -1,20 +1,24 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode, type Ref } from "react";
-import type { DayEmail, DayEvent, Goal, Memory, SourceState, Step } from "@/lib/day";
+import type { DayEmail, DayEvent, Deadline, FreeSlot, Goal, Memory, SourceState, Step } from "@/lib/day";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
 import { cardSize, clock, openSteps, sayMode, STAGE_OF, STAGES, type SayMode, type Screen } from "@/components/day-flow";
 import Desk from "@/components/desk";
 import PrepPack from "@/components/prep-pack";
 import VoiceRing from "@/components/voice-ring";
 
-export type Sheet = "today" | "memory" | null;
+// "week" opens the desk on its Week view.
+export type Sheet = "today" | "week" | "memory" | null;
 
 export type Today = {
   events: DayEvent[];
   emails: DayEmail[];
   unreadEmail: number;
   sources: { calendar: SourceState; email: SourceState; goals: SourceState };
+  // The rest of today's free time and the next deadlines (missing from days saved before they existed).
+  free?: FreeSlot[];
+  deadlines?: Deadline[];
 };
 
 // A tap-first answer under the card; "ink" is the one to take, "quiet" the way out.
@@ -385,7 +389,14 @@ export default function DayView(props: DayViewProps) {
         </nav>
       )}
 
-      <Desk open={props.sheet === "today"} today={props.today} goal={goal} onClose={() => on.sheet(null)} onSignIn={on.signIn} />
+      <Desk
+        open={props.sheet === "today" || props.sheet === "week"}
+        tab={props.sheet === "week" ? "week" : "today"}
+        today={props.today}
+        goal={goal}
+        onClose={() => on.sheet(null)}
+        onSignIn={on.signIn}
+      />
       <SheetPanel open={props.sheet === "memory"} title="Memory" onClose={() => on.sheet(null)}>
         {props.sheet === "memory" && (
           <>

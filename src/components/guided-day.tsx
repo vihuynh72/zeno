@@ -543,7 +543,7 @@ export default function GuidedDay() {
       line={screen === "setup" ? setupLine : line}
       you={voice.phase === "listening" ? voice.partial : heard}
       goal={goal}
-      today={day && { events: day.events, emails: day.emails, unreadEmail: day.unreadEmail, sources: day.sources }}
+      today={day && { events: day.events, emails: day.emails, unreadEmail: day.unreadEmail, sources: day.sources, free: day.free, deadlines: day.deadlines }}
       memories={memories}
       sheet={sheet}
       typing={typing && screen !== "setup"}

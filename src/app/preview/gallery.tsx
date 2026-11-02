@@ -261,3 +261,10 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
     </div>
   );
 }
+
+// ---- The desk's free time, deadlines and Week view (week track) ----
+// week-samples answers the calendar API itself, so these states never read or book a real calendar.
+import { WEEK_STATES, withPlans } from "./week-samples";
+const DESK: Fixture = { line: "Good afternoon, Sam.", goal: roadmap("done", "doing", "todo", "todo") };
+STATES["desk-plans"] = { ...DESK, sheet: "today", today: withPlans(TODAY) };
+for (const name of WEEK_STATES) STATES[name] = { ...DESK, sheet: "week" };

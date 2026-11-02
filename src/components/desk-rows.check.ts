@@ -1,7 +1,14 @@
-// Self-check for desk-rows.ts: node src/components/desk-rows.check.ts
+// Self-check for desk-rows.ts: node src/components/desk-rows.check.ts (the week grid's math: week-grid.check.ts)
 import assert from "node:assert/strict";
+import { registerHooks } from "node:module";
 import type { DayEvent } from "@/lib/day";
-import { markEvents, senderName, unescapeHtml } from "./desk-rows.ts";
+
+// desk-rows.ts imports tz.ts through the @/ alias, which plain node cannot resolve on its own.
+registerHooks({
+  resolve: (specifier, context, nextResolve) =>
+    nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
+});
+const { markEvents, senderName, unescapeHtml } = await import("./desk-rows.ts");
 
 const event = (title: string, start: string, end: string, allDay = false): DayEvent => ({ title, start, end, allDay });
 const day = [
