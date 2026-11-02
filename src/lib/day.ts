@@ -218,8 +218,9 @@ export type BookResponse =
   | { state: "ok"; booked: CalendarBlock[] }
   | { state: "needs-permission" | "signed-out" | "no-access" | "bad-request" | "error" };
 
-// POST /api/profile/scan body: { first?: boolean; private?: string[] } (the device's facts, so they are known). Reads calendar and email at most once a day and returns
-// only what it newly learned.
+// POST /api/profile/scan body: { first?: boolean; private?: string[]; removed?: string[] } (the device's facts, so they
+// are known, and the ones removed there, so a scan never finds them again). Reads calendar and email at most once a
+// day and returns only what it newly learned.
 export type ProfileResponse =
   | { state: "ok"; learned: Memory[]; scannedAt: string; private?: PrivateFact[] }
   | { state: "signed-out" | "no-access" | "error" };

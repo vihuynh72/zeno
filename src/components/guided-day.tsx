@@ -28,7 +28,7 @@ import { listenAuto, type ListenHandlers } from "@/lib/listen";
 import { audioContext } from "@/lib/speak";
 import { formatTime, localDate } from "@/lib/tz";
 import { useVoice } from "@/lib/use-voice";
-import { addToVault, readVault, removeFromVault, vaultTexts, type VaultFact } from "@/lib/vault";
+import { addToVault, readVault, removeFromVault, vaultRemoved, vaultTexts, type VaultFact } from "@/lib/vault";
 import {
   asks,
   CHECKINS,
@@ -379,7 +379,7 @@ export default function GuidedDay() {
     const today = localDate(zone());
     if (readLocal(scannedKey(data.account)) !== today) {
       setTimeout(() => {
-        void post<ProfileResponse>("/api/profile/scan", { private: vaultTexts(data.account) }).then((res) => {
+        void post<ProfileResponse>("/api/profile/scan", { private: vaultTexts(data.account), removed: vaultRemoved(data.account) }).then((res) => {
           // A failed scan is tried again on the next open today.
           if (res.state === "ok" || res.state === "no-access") writeLocal(scannedKey(data.account), today);
           if (res.state !== "ok") return;
@@ -944,7 +944,7 @@ export default function GuidedDay() {
     writeLocal(scannedKey(mine), localDate(zone()));
     setScanning(true);
     // Among the setup saves, so the first card's opening is written with what the scan learned.
-    const scan = post<ProfileResponse>("/api/profile/scan", { first: true, private: vaultTexts(mine) }).then((res) => {
+    const scan = post<ProfileResponse>("/api/profile/scan", { first: true, private: vaultTexts(mine), removed: vaultRemoved(mine) }).then((res) => {
       setScanning(false);
       if (res.state === "signed-out") return showSignedOut();
       if (res.state !== "ok") return;
@@ -1238,10 +1238,9 @@ export default function GuidedDay() {
           void signOut({ redirectTo: "/" });
         },
         // A step booked or taken off in the Week: the goal says so, so nothing offers to book it twice.
+        // Through linkSteps, so the saved day gets the time too and a reload never offers it again.
         booked({ event, stepId, undone }) {
-          if (!stepId || !goal) return;
-          const at = undone ? { scheduledAt: null, eventId: null } : { scheduledAt: event.start, eventId: event.id };
-          setGoal({ ...goal, steps: goal.steps.map((s) => (s.id === stepId ? { ...s, ...at } : s)) });
+          if (stepId) linkSteps([{ title: event.title, kind: "step", start: event.start, stepId, eventId: event.id }], !undone);
         },
       }}
     />
