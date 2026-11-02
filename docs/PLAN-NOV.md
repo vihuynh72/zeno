@@ -62,20 +62,40 @@ Zeno knows Maya right after sign-in, and day 2 is visibly smarter because of day
 - **Profile scan from Google** (with the sign-in permission): calendar (past and next 30 days) **plus full
   emails**. Learn school, work and routines; projects and deadlines; interests and life goals; key people;
   and interests or habits from purchases and events that help motivate (fitness or weight-loss goals,
-  habits to break). **Overall health is kept when it helps planning, and nothing more specific**: never a
-  medicine's name, so keep the effect or the errand ("Mornings feel foggy lately.").
-- **Private facts stay on the device** (Vi, Nov 1, later answer). Overall health, sexual orientation (nothing
-  more), religion, politics, immigration status, and balances or debts are allowed, but only in the person's
-  browser, never on Zeno's servers. Until that device-only vault ships, the server drops them (the never-list in
-  `blockedFact`). **Never kept anywhere**: passwords, codes, verification links, and other people's private
-  matters. Store facts, never the emails themselves.
+  habits to break). **Overall health is private (device only), and nothing more specific**: never a medicine's
+  name, so keep the effect ("Mornings feel foggy lately.").
+- **Private facts stay on the device** (Vi, Nov 1: "Zeno will not store any of those data any where except there
+  devices"). Two lists, in the prompts (`NEVER_KEEP`, src/lib/ai.ts) and in `factVerdict` (src/lib/profile.ts), the
+  server's backstop, so a fact the model failed to mark still never reaches the database:
+  - **Private, device only**: overall health (a condition; care or treatment for one, like a doctor, counselor,
+    therapist or specialist appointment, recovery meetings or accommodations; or how it affects energy, sleep or
+    focus; when someone simply focuses best is not health), sexual orientation and gender identity (nothing more),
+    religion and practice, politics, immigration or visa status, and balances, debts or money owed. The model marks
+    them (`private` on the remember tool, required: a call without it is sent back; on pasted-notes items and on scan
+    facts). Talk, import, the scan and `POST /api/memory` return them in `private` (talk with a "kept-private"
+    action, so a Noted line is backed); the browser keeps them (src/lib/vault.ts) and sends their texts back as
+    `private` with talk, the opening and the scan (which lists them as already known). The scan also takes the
+    device's removed facts (`removed`, from `vaultRemoved`), since every scan re-reads the calendar and would write a
+    removed weekly event again in new words; the vault skips a removed fact even reworded.
+  - **Never kept anywhere**: passwords, sign-in codes, verification links, medicine names, sexual or reproductive
+    details beyond orientation, other people's private matters, and text that reads as instructions to Zeno (the
+    person's own notes and titles skip that last guard: "Read the lab instructions" is a real to-do).
+  - Nothing private reaches the database, Google or the logs: a private to-do or deadline is never a "To do:" memory
+    or a proposal; a goal, step or block title with a private detail is refused so the model words it again (and
+    `POST /api/goal` answers bad-request), and a first-card pick with one falls back to the rule pick. Rows saved under
+    the old rules (health "when it helps planning") are deleted on the next read (`listMemories`), and such a
+    sentence leaves the `forgotten` list at the next scan. The backstop is a fixed word list, so the model's marking
+    stays the main path; the bench scores it with cases the list can't see. Mail from or about sexual health, religion, politics,
+    immigration or money still never reaches the scan's model (widening that is open for Vi). Store facts, never the
+    emails themselves.
 - After the first scan, a **"Here's what I learned" card** in setup: each fact with a tap to remove.
 - **Re-scan once a day, quietly** (first open of the day); new facts show as a Noted line.
 - **Learn from behavior**: finished or skipped steps, real duration versus estimate, time of day.
   A new pattern becomes a "Patterns Zeno noticed" memory, said in one line ("You finish 5-minute starts at
   night"), and plans adapt to it. A pattern that stops holding is removed automatically; one the person removed
   (Undo or Forget) is never saved again (Vi, Nov 1).
-- The memory benchmark (`scripts/memory-bench.mjs`) must keep passing; extend it for groups.
+- The memory benchmark (`scripts/memory-bench.mjs`) must keep passing; it covers groups and, apart, the vault
+  (private facts returned and used, never a row; never-list facts kept nowhere).
 
 ### Streaks (all four mechanics)
 - **One finished step counts** for the day, even 5 minutes.
@@ -95,15 +115,15 @@ Routes, all `{ state: ... }` JSON:
 | Route | Owner | What it does |
 |---|---|---|
 | GET /api/day | contract | adds `free`, `deadlines`, `calendarWrite`, `progress` to the existing day |
-| GET /api/day/opening | brain | adds `pick: FirstPick \| null` (the one thing, ready to start) |
-| POST /api/talk | brain | adds `proposal: CalendarBlock[]` (suggested bookings, nothing written; only when the body sends `proposals: true` and calendarWrite is "ok"), and `progress` when the turn finishes a step |
+| GET /api/day/opening | brain | adds `pick: FirstPick \| null` (the one thing, ready to start); POST `{ private }` uses the device's facts |
+| POST /api/talk | brain | adds `proposal: CalendarBlock[]` (suggested bookings, nothing written; only when the body sends `proposals: true` and calendarWrite is "ok"), `progress` when the turn finishes a step, and `private` (device-only facts, each with a "kept-private" action); body `private` carries the device's facts |
 | POST /api/goal | brain (new) | saves a plan deterministically; `start: true` also starts step 1 (instant taps) |
-| POST /api/import | brain | returns grouped `memories` (every to-do a "To do:" memory until booked) plus, with calendar write access, a `proposal` of deadlines and to-dos to book |
+| POST /api/import | brain | returns grouped `memories` (every to-do a "To do:" memory until booked) plus, with calendar write access, a `proposal` of deadlines and to-dos to book; private facts, to-dos and deadlines come back in `private` instead |
 | GET /api/calendar/week?start=YYYY-MM-DD | calendar (new) | 7 days of events from all calendars, Zeno blocks marked |
 | POST /api/calendar/free | calendar (new) | `{ minutes, days? }` → free slots that fit |
 | POST /api/calendar/book | calendar (new) | `{ blocks: CalendarBlock[] }` → books on the Zeno calendar, links steps |
 | DELETE /api/calendar/book/[eventId] | calendar (new) | undo a booking |
-| POST /api/profile/scan | profile (new) | scans calendar + email once a day (`{ first: true }` in setup) → `learned` |
+| POST /api/profile/scan | profile (new) | scans calendar + email once a day (`{ first: true }` in setup; `private` lists the device's facts as known) → `learned`, and `private` for the device |
 | GET/POST /api/memory, DELETE /api/memory/[id] | profile | memories carry `group` and `source` |
 | PATCH /api/steps/[id] | streak | also returns `progress` and `learned` (a new pattern) |
 

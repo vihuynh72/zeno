@@ -11,8 +11,46 @@ export const VAULT_MAX = 40;
 const MAX_CHARS = 200;
 const key = (account: string) => `zeno.vault.${account}`;
 const isGroup = (group: unknown): group is MemoryGroup => (MEMORY_GROUPS as readonly unknown[]).includes(group);
-// The same fact in any case or punctuation.
-const factKey = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+// The same fact in any case or punctuation (as src/lib/goals.ts factKey).
+const factKey = (text: string) =>
+  text
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/(\d)(\p{L})/gu, "$1 $2")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
+const FILLER = new Set(
+  "a an the at on in of to for and or with by from as is are be has have had every each this that their they them about".split(" "),
+);
+const DATE_WORD = /^(\d.*|am|pm|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun|monday|tuesday|wednesday|thursday|friday|saturday|sunday|jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december|noon|midnight)$/;
+
+function words(text: string): string[] {
+  return text
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/(\d)(\p{L})/gu, "$1 $2")
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word && !FILLER.has(word))
+    .map((word) => (word.length > 3 && word.endsWith("s") ? word.slice(0, -1) : word));
+}
+
+// A reworded known fact ("Bio lab on Wednesdays at 2 PM" for "Has bio lab every Wednesday at 2pm"). A different
+// day, date or time is a different fact, so those words must match exactly, and one fact's other words must all be in
+// the other's: "with Jess" and "with Omar" are two facts. A rare near-duplicate costs less than a lost fact.
+// Here, not in profile.ts, because the browser's vault uses it too.
+export function sameFact(a: string, b: string): boolean {
+  if (factKey(a) === factKey(b)) return true;
+  const split = (text: string) => {
+    const all = [...new Set(words(text))];
+    return { dates: all.filter((word) => DATE_WORD.test(word)).sort().join(" "), rest: all.filter((word) => !DATE_WORD.test(word)) };
+  };
+  const x = split(a);
+  const y = split(b);
+  if (x.dates !== y.dates || !x.rest.length || !y.rest.length) return false;
+  const [small, big] = x.rest.length <= y.rest.length ? [x.rest, y.rest] : [y.rest, x.rest];
+  return small.every((word) => big.includes(word));
+}
 
 function load(account: string): Vault {
   try {
@@ -40,16 +78,16 @@ export function readVault(account: string): VaultFact[] {
   return load(account).facts;
 }
 
-// Keeps new facts, newest first, skipping any already kept or removed by the person. Returns the ones added, for
-// the "Kept on this device" line.
+// Keeps new facts, newest first, skipping any already kept or removed by the person, even reworded (a scan rewords
+// the same calendar event every day). Returns the ones added, for the "Kept on this device" line.
 export function addToVault(account: string, facts: PrivateFact[], now = new Date()): VaultFact[] {
   const vault = load(account);
-  const known = new Set([...vault.facts.map((fact) => factKey(fact.text)), ...vault.removed]);
+  const known = [...vault.facts.map((fact) => fact.text), ...vault.removed];
   const added: VaultFact[] = [];
   for (const fact of facts) {
     const text = typeof fact?.text === "string" ? fact.text.trim().slice(0, MAX_CHARS) : "";
-    if (!text || !isGroup(fact.group) || known.has(factKey(text))) continue;
-    known.add(factKey(text));
+    if (!text || !isGroup(fact.group) || known.some((other) => sameFact(other, text))) continue;
+    known.push(text);
     added.push({ id: crypto.randomUUID(), text, group: fact.group, createdAt: now.toISOString() });
   }
   if (added.length > 0) save(account, { facts: [...added, ...vault.facts].slice(0, VAULT_MAX), removed: vault.removed });
@@ -75,6 +113,8 @@ export function clearVault(account: string) {
 
 // What a request sends.
 export const vaultTexts = (account: string) => readVault(account).map((fact) => fact.text);
+// What the person removed here, for the profile scan's body (`removed`), so a scan never finds one again.
+export const vaultRemoved = (account: string) => load(account).removed.slice(-VAULT_MAX);
 
 // Server side: a request body's `private` field, untrusted. Brackets are removed so a fact can't fake a data label.
 export function cleanPrivate(raw: unknown): string[] {

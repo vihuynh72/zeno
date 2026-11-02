@@ -1,5 +1,7 @@
 import { MEMORY_GROUPS, type Goal, type Memory, type MemoryGroup, type MemorySource, type PrepSource, type StepStatus } from "@/lib/day";
 import { ensureSchema, getSql } from "@/lib/db";
+// profile.ts imports this file too; neither uses the other until a call, so the cycle is safe.
+import { factVerdict } from "@/lib/profile";
 
 // A step for a new or edited roadmap; `id` keeps an existing todo step.
 export type NewStep = { id?: string; title: string; minutes: number | null };
@@ -238,15 +240,23 @@ export function factKey(text: string): string {
 
 // Grouped in the order Memory shows them, newest first within a group. A deadline memory is hidden once its
 // expires_on (the day after the due date) has begun at UTC-12, the last place a day ends, so it never vanishes on
-// its due day in any zone.
+// its due day in any zone. A row the two lists (src/lib/profile.ts factVerdict) say the server must not hold, saved
+// under older rules (health "when it helps planning"), is deleted here, never listed, never sent to a prompt.
+// shortcut: deleted, not handed to the device; return them once as `private` if people miss them.
 export async function listMemories(email: string): Promise<Memory[]> {
   await ensureSchema();
-  const rows = await getSql()`
-    SELECT id, text, created_at, memory_group, source FROM memories
-    WHERE user_email = ${email} AND (expires_on IS NULL OR expires_on > (now() AT TIME ZONE 'UTC' - interval '12 hours')::date)
-    ORDER BY array_position(${[...MEMORY_GROUPS]}::text[], memory_group), created_at DESC
-  `;
-  return rows.map(memoryFrom);
+  const sql = getSql();
+  const rows = (
+    await sql`
+      SELECT id, text, created_at, memory_group, source FROM memories
+      WHERE user_email = ${email} AND (expires_on IS NULL OR expires_on > (now() AT TIME ZONE 'UTC' - interval '12 hours')::date)
+      ORDER BY array_position(${[...MEMORY_GROUPS]}::text[], memory_group), created_at DESC
+    `
+  ).map(memoryFrom);
+  // The person's own words skip the instructions guard, as when they were saved: "To do: Read the lab instructions".
+  const banned = rows.filter((memory) => factVerdict(memory.text, { own: memory.source === "you" })).map((memory) => memory.id);
+  if (banned.length > 0) await sql`DELETE FROM memories WHERE user_email = ${email} AND id = ANY(${banned}::uuid[])`;
+  return rows.filter((memory) => !banned.includes(memory.id));
 }
 
 // Returns the saved memory, or null when nothing new was saved (so callers never claim a save): the fact is

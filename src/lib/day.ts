@@ -179,10 +179,11 @@ export type MemoryResponse =
   | { state: "ok"; memories: Memory[] }
   | { state: "signed-out" | "error" };
 
-// POST /api/memory body { text, group? } saves one memory.
+// POST /api/memory body { text, group? } saves one memory. A private fact is not saved: it comes back in `private`
+// for the device; a never-list one is "not-kept".
 export type SaveMemoryResponse =
-  | { state: "ok"; memories: Memory[] }
-  | { state: "signed-out" | "bad-request" | "error" };
+  | { state: "ok"; memories: Memory[]; private?: PrivateFact[] }
+  | { state: "signed-out" | "bad-request" | "not-kept" | "error" };
 
 // POST /api/import body { text }: pasted notes become grouped memories (every to-do as a "To do: …" memory, dropped
 // once it is booked), plus, when calendarWrite is "ok", a proposal to book their deadlines (all-day) and the to-dos
