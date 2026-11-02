@@ -66,13 +66,14 @@
   --font-mono: var(--font-atkinson-mono);
 }
 
-/* Laptop browsers are often under 700px tall; a tighter rhythm keeps the dock on the first screen. */
-@custom-variant short (@media (min-width: 640px) and (max-height: 820px));
+/* Laptop browsers are often under 900px tall (a 14" MacBook's Chrome is 862px); a tighter rhythm keeps the dock and a
+   five-line card's answers on the first screen. */
+@custom-variant short (@media (min-width: 640px) and (max-height: 900px));
 
 html {
   scrollbar-color: var(--track) var(--desk);
-  /* The dock is sticky at the bottom (176px at most), so keyboard focus scrolls clear of it. */
-  scroll-padding-bottom: 176px;
+  /* The dock is sticky at the bottom (176px at most, plus its 16px fade), so keyboard focus and answers scroll clear of it. */
+  scroll-padding-bottom: 192px;
 }
 
 body {

@@ -168,6 +168,17 @@ export default function DayView(props: DayViewProps) {
     pressed.current = false;
     if (document.activeElement === document.body) first.focus();
   }, [answersKey]);
+  useEffect(() => {
+    // A tall card or line can leave the answers under the sticky dock or its fade; bring them clear of it (html's
+    // scroll-padding-bottom is the dock). Answers far below, under an open desk, stay put.
+    const pills = pillsRef.current;
+    if (!pills) return;
+    const { top, bottom } = pills.getBoundingClientRect();
+    const dockTop = document.querySelector(".dock")?.getBoundingClientRect().top ?? innerHeight;
+    if (top < innerHeight && bottom > dockTop - 16) {
+      pills.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    }
+  }, [answersKey]);
 
   const youLine = props.typing ? (
     <>
