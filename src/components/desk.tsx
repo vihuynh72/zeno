@@ -1,9 +1,11 @@
 "use client";
 
-import { type MouseEvent, useEffect, useRef, useSyncExternalStore } from "react";
-import type { DayEvent, Goal, SourceState, Step } from "@/lib/day";
+import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import type { DayEvent, Deadline, Goal, SourceState, Step, WeekEvent } from "@/lib/day";
 import type { Today } from "@/components/day-view";
-import { markEvents, senderName, unescapeHtml } from "@/components/desk-rows";
+import { browserZone, freeGaps, markEvents, senderName, timeRange, unescapeHtml } from "@/components/desk-rows";
+import WeekGrid, { type Booked } from "@/components/week-grid";
+import { formatTime, localDate } from "@/lib/tz";
 
 const STATUS: Record<Step["status"], string> = { done: "Done", doing: "Doing", todo: "To do", skipped: "Skipped" };
 
@@ -26,10 +28,21 @@ const everyHalfMinute = (onChange: () => void) => {
   return () => clearInterval(id);
 };
 
-const time = (event: DayEvent) =>
-  event.allDay ? "All day" : new Date(event.start).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+const time = (event: DayEvent) => (event.allDay ? "All day" : formatTime(event.start, browserZone()));
 
-type DeskProps = { open: boolean; today: Today | null; goal: Goal | null; onClose(): void; onSignIn(): void };
+type DeskTab = "today" | "week";
+const TABS: Record<DeskTab, string> = { today: "Today", week: "Week" };
+
+// tab is the view it opens on; the person switches between Today and Week inside. onBooked hears the Week's bookings.
+type DeskProps = {
+  open: boolean;
+  tab?: DeskTab;
+  today: Today | null;
+  goal: Goal | null;
+  onClose(): void;
+  onSignIn(): void;
+  onBooked?(change: Booked): void;
+};
 
 // Only the backdrop: a click on the dialog's own scrollbar lands inside its box.
 function onBackdrop(event: MouseEvent<HTMLDialogElement>) {
@@ -39,9 +52,15 @@ function onBackdrop(event: MouseEvent<HTMLDialogElement>) {
 }
 
 // Today's calendar and inbox in one wide view, unfolded from the card: the seed of the workstation.
-export default function Desk({ open, onClose, ...rest }: DeskProps) {
+export default function Desk({ open, onClose, onBooked, ...rest }: DeskProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const downOnBackdrop = useRef(false);
+  // Blocks the Week booked since the day loaded, kept while the desk closes, so Today shows them and not their time as free.
+  const [booked, setBooked] = useState<WeekEvent[]>([]);
+  function onWeekBooked(change: Booked) {
+    setBooked((all) => (change.undone ? all.filter((event) => event.id !== change.event.id) : [...all, change.event]));
+    onBooked?.(change);
+  }
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
@@ -51,7 +70,7 @@ export default function Desk({ open, onClose, ...rest }: DeskProps) {
       // Opens from the card's top edge, so the top bar and the four steps above stay whole.
       dialog.style.setProperty("--top", from ? `${Math.max(32, from.top)}px` : "");
       dialog.showModal();
-      dialog.querySelector("h2")?.focus();
+      dialog.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus();
       unfold(dialog, from);
     }
     if (!open && dialog.open) dialog.close();
@@ -60,7 +79,7 @@ export default function Desk({ open, onClose, ...rest }: DeskProps) {
   return (
     <dialog
       ref={ref}
-      aria-label="Today"
+      aria-label="Desk"
       className="desk"
       // Every way out (Esc, Close, the backdrop) closes the dialog itself, which tells the page here.
       onClose={onClose}
@@ -72,7 +91,7 @@ export default function Desk({ open, onClose, ...rest }: DeskProps) {
         if (downOnBackdrop.current && onBackdrop(event)) event.currentTarget.close();
       }}
     >
-      {open && <DeskBody {...rest} />}
+      {open && <DeskBody {...rest} booked={booked} onBooked={onWeekBooked} />}
     </dialog>
   );
 }
@@ -99,18 +118,44 @@ function unfold(dialog: HTMLDialogElement, from: DOMRect | undefined) {
   dialog.firstElementChild?.animate([{ opacity: 0.4 }, { opacity: 1 }], { duration: 120, easing: "ease-out" });
 }
 
-function DeskBody({ today, goal, onSignIn }: Omit<DeskProps, "open" | "onClose">) {
+type DeskBodyProps = Omit<DeskProps, "open" | "onClose" | "onBooked"> & { booked: WeekEvent[]; onBooked(change: Booked): void };
+
+function DeskBody({ tab: opensOn = "today", today, goal, onSignIn, booked, onBooked }: DeskBodyProps) {
   // Wall clock to the minute; 0 on the server, so nothing is marked before the browser knows the time.
   const now = useSyncExternalStore(everyHalfMinute, () => Math.floor(Date.now() / 60_000) * 60_000, () => 0);
+  const [tab, setTab] = useState(opensOn);
   const noAccess = today && (today.sources.calendar === "no-access" || today.sources.email === "no-access");
+
+  // Arrow keys move between the two views, as a tab list does.
+  function onTabKey(event: KeyboardEvent<HTMLDivElement>) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === "Home" ? "today" : event.key === "End" ? "week" : tab === "today" ? "week" : "today";
+    setTab(next);
+    document.getElementById(`desk-tab-${next}`)?.focus();
+  }
 
   return (
     // Fills the dialog, so a click inside never reads as a backdrop click.
-    <div className="min-h-full wrap-break-word">
+    <div className={`wrap-break-word ${tab === "week" ? "flex h-full flex-col" : "min-h-full"}`} data-view={tab}>
       <div className="sticky top-0 z-10 flex items-center justify-between gap-4 bg-desk px-4 pt-6 pb-4 sm:px-8">
-        <h2 tabIndex={-1} className="text-[28px] leading-10 font-bold">
-          Today
-        </h2>
+        <div role="tablist" aria-label="Desk" className="flex gap-6" onKeyDown={onTabKey}>
+          {(Object.keys(TABS) as DeskTab[]).map((name) => (
+            <button
+              key={name}
+              id={`desk-tab-${name}`}
+              type="button"
+              role="tab"
+              aria-selected={tab === name}
+              aria-controls={`desk-${name}`}
+              tabIndex={tab === name ? 0 : -1}
+              onClick={() => setTab(name)}
+              className="desk-tab"
+            >
+              {TABS[name]}
+            </button>
+          ))}
+        </div>
         <button type="button" onClick={(event) => event.currentTarget.closest("dialog")?.close()} className="pill pill-small">
           <svg
             viewBox="0 0 24 24"
@@ -127,22 +172,32 @@ function DeskBody({ today, goal, onSignIn }: Omit<DeskProps, "open" | "onClose">
         </button>
       </div>
 
-      <div className="flex flex-col gap-6 px-4 pb-8 sm:px-8">
-        {goal && goal.steps.length > 0 && <Roadmap goal={goal} />}
-        {today ? (
-          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-            <Calendar today={today} now={now} />
-            <Inbox today={today} />
-          </div>
-        ) : (
-          <p className="text-ink-2">I couldn&apos;t load today just now. Reload the page to try again.</p>
-        )}
-        {noAccess && (
-          <button type="button" onClick={onSignIn} className="pill pill-small self-start">
-            Sign in again
-          </button>
-        )}
-      </div>
+      {tab === "week" ? (
+        <div id="desk-week" role="tabpanel" aria-labelledby="desk-tab-week" className="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4 sm:px-8 sm:pb-8">
+          <WeekGrid goal={goal} now={now} onSignIn={onSignIn} onBooked={onBooked} />
+        </div>
+      ) : (
+        <div id="desk-today" role="tabpanel" aria-labelledby="desk-tab-today" className="flex flex-col gap-6 px-4 pb-8 sm:px-8">
+          <h2 className="sr-only">Today</h2>
+          {goal && goal.steps.length > 0 && <Roadmap goal={goal} />}
+          {today ? (
+            <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+              <div className="flex flex-col gap-6">
+                <Calendar today={today} now={now} booked={booked} />
+                {today.sources.calendar === "ok" && today.deadlines && today.deadlines.length > 0 && <Deadlines deadlines={today.deadlines} />}
+              </div>
+              <Inbox today={today} />
+            </div>
+          ) : (
+            <p className="text-ink-2">I couldn&apos;t load today just now. Reload the page to try again.</p>
+          )}
+          {noAccess && (
+            <button type="button" onClick={onSignIn} className="pill pill-small self-start">
+              Sign in again
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -178,9 +233,20 @@ function Roadmap({ goal }: { goal: Goal }) {
   );
 }
 
-function Calendar({ today, now }: { today: Today; now: number }) {
+function Calendar({ today, now, booked }: { today: Today; now: number; booked: WeekEvent[] }) {
   const { calendar } = today.sources;
-  const marks = now ? markEvents(today.events, now) : [];
+  const zone = browserZone();
+  // Today's blocks booked from the Week join the list, in time order after the all-day ones.
+  const added = booked.filter((event) => now && localDate(zone, new Date(event.start)) === localDate(zone, new Date(now)));
+  const events = added.length
+    ? [...today.events, ...added].sort((a, b) => Number(b.allDay) - Number(a.allDay) || Date.parse(a.start) - Date.parse(b.start))
+    : today.events;
+  const marks = now ? markEvents(events, now) : [];
+  // The rest of today's open time worth a step, soonest first: from now on, less what the Week just booked.
+  const busy = added.map((event) => ({ top: Date.parse(event.start), bottom: Date.parse(event.end) }));
+  const free = (today.free ?? [])
+    .flatMap((slot) => freeGaps(busy, Math.max(Date.parse(slot.start), now), Date.parse(slot.end), 15 * 60_000))
+    .slice(0, 3);
   return (
     <section className="mini">
       <h3 className="text-[20px] leading-8 font-bold">
@@ -189,27 +255,68 @@ function Calendar({ today, now }: { today: Today; now: number }) {
       <ul className="lines mt-2">
         {calendar !== "ok" ? (
           <li className="text-ink-2">{SOURCE_NOTE[calendar]("calendar")}</li>
-        ) : today.events.length === 0 ? (
+        ) : events.length === 0 ? (
           <li className="text-ink-2">Nothing on your calendar today.</li>
         ) : (
-          today.events.map((event, i) => {
+          events.map((event, i) => {
             const mark = marks[i];
             const marked = mark === "now" || mark === "next";
             return (
               <li
-                key={`${event.start}:${event.title}`}
+                key={`${event.start}:${event.title}:${i}`}
                 data-mark={mark ?? undefined}
                 className={`flex items-baseline gap-4 ${mark === "past" ? "text-ink-2" : ""}`}
               >
                 <span className="w-[8ch] shrink-0 font-mono leading-none whitespace-nowrap text-ink-2">
                   {time(event)}
                 </span>
-                <span className={`min-w-0 flex-1 ${marked ? "font-bold" : ""}`}>{event.title}</span>
+                {/* Zeno's own blocks carry a red margin mark, as they do on the week. */}
+                <span className={`min-w-0 flex-1 ${marked ? "font-bold" : ""} ${event.zeno ? "border-l-2 border-margin pl-2" : ""}`}>
+                  {event.zeno && <span className="sr-only">Zeno block: </span>}
+                  {event.title}
+                </span>
                 {marked && <span className="shrink-0">{mark === "now" ? "Now" : "Next"}</span>}
               </li>
             );
           })
         )}
+        {calendar === "ok" && free.length > 0 && (
+          <li className="text-ink-2">
+            Free{" "}
+            {free.map((slot, i) => (
+              <span key={slot.top}>
+                {i > 0 && ", "}
+                <span className="font-mono whitespace-nowrap">{timeRange(slot.top, slot.bottom, zone)}</span>
+              </span>
+            ))}
+          </li>
+        )}
+      </ul>
+    </section>
+  );
+}
+
+function Deadlines({ deadlines }: { deadlines: Deadline[] }) {
+  return (
+    <section className="mini">
+      <h3 className="text-[20px] leading-8 font-bold">Deadlines</h3>
+      <ul className="lines mt-2">
+        {deadlines.slice(0, 5).map((deadline, i) => (
+          <li key={`${deadline.date}:${deadline.title}:${i}`} className="flex items-baseline gap-4">
+            <span className={`min-w-0 flex-1 ${deadline.daysLeft === 0 ? "font-bold" : ""}`}>{deadline.title}</span>
+            <span className="shrink-0 text-ink-2">
+              {deadline.daysLeft === 0 ? (
+                "Due today"
+              ) : deadline.daysLeft === 1 ? (
+                "Tomorrow"
+              ) : (
+                <>
+                  in <span className="font-mono">{deadline.daysLeft}</span> days
+                </>
+              )}
+            </span>
+          </li>
+        ))}
       </ul>
     </section>
   );

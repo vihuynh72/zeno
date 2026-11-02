@@ -155,7 +155,7 @@ A paper-and-ink palette: two warm neutrals, near-black ink, one blue for ruling 
 - **Ink** (`ink`): text, filled pills, the Talk button, the Z mark, the current step bar and the 3px focus ring. In dark it inverts to Warm Chalk (`dark-ink`).
 
 ### Secondary
-- **Margin Red** (`margin-red`; `dark-margin-red` at night): the card's 2px margin line, the DONE stamp, the caret and listening pen, a written-on line under focus, lit dots in the voice ring, the now/next dot on the desk timeline, and the in-progress step bar on the desk view's plan strip. Never a button fill, never body text.
+- **Margin Red** (`margin-red`; `dark-margin-red` at night): the card's 2px margin line, the DONE stamp, the caret and listening pen, a written-on line under focus, lit dots in the voice ring, the now/next dot on the desk timeline, the in-progress step bar on the desk view's plan strip, and on the Week the margin line, the now line and the 2px line on Zeno's own blocks. Never a button fill, never body text.
 
 ### Tertiary
 - **Rule Blue** (`rule-blue`; `dark-rule-blue` at night): the 1px horizontal rules on cards and the underline of the caption input. Structural only; never text.
@@ -166,8 +166,11 @@ A paper-and-ink palette: two warm neutrals, near-black ink, one blue for ruling 
 - **Pencil Grey** (`ink-2`; `dark-ink-2`): secondary text, placeholders, minutes, inactive step names.
 - **Track** (`track`; `dark-track`): unlit dots, upcoming step bars, quiet pill outlines, sheet edges, and in dark the 1px rim that lifts the desk view.
 
+### Calendar Tints (data, not accent)
+On the desk's Week, events from the person's other calendars tint the card in their own Google calendar color (20% into card stock, 32% at night; 8% once the event is over), like a highlighter over data. A tint is never a stripe, a border, a button or text color, and never red's job: the person's colors say whose calendar an event is on, so they are exempt from "no second accent".
+
 ### Named Rules
-**The Red Pen Rule.** Red appears only where a teacher's pen or a margin would put it: the margin line, the stamp, the caret, the lit dots, the timeline mark, the in-progress step bar on the desk view. If it is a button or a heading, it is ink.
+**The Red Pen Rule.** Red appears only where a teacher's pen or a margin would put it: the margin line, the stamp, the caret, the lit dots, the timeline mark, the in-progress step bar on the desk view, and the 2px line on Zeno's blocks in the Week. On the Week, red means Zeno: other calendars show by tint only. If it is a button or a heading, it is ink.
 
 **The Two Themes, One Red Rule.** Dark mode swaps the paper and the ink but keeps the red role identical; never introduce a dark-only accent.
 
@@ -252,7 +255,10 @@ Sixty 1.9px dots on a 54px radius around the 64px ink Talk button, unlit in Trac
 
 ### Sheets and Desk View
 - **Sheets** (Memory, setup lists): 440px right-side panels on Desk with a scrim, sliding in over 0.24s; bottom sheets with 16px top corners on phones. Content is mini cards: small ruled cards (20/32, margin at 24px, Edge shadow).
-- **Desk View** (Today): up to 1120px over the scrim, starting at the card's top edge, 8px corners, Paper shadow, Track rim in dark. Plan strip on top (4px step bars: done in Ink with struck text, in progress in Margin Red and bold, upcoming in Track), then calendar and inbox mini cards side by side (stacked below 1024px). The red margin doubles as the day's timeline, with a filled red dot for now and a hollow one for next.
+- **Desk View** (Today | Week): up to 1120px over the scrim, starting at the card's top edge (the whole screen on phones and below 560px tall), 8px corners, Paper shadow, Track rim in dark. Two tabs at Headline size, the one showing over a 4px Ink bar like the four steps.
+- **Today:** plan strip on top (4px step bars: done in Ink with struck text, in progress in Margin Red and bold, upcoming in Track), then calendar (with Zeno's blocks marked by a 2px red line, and the rest of today's free time in Mono), Deadlines and inbox mini cards side by side (stacked below 1024px). The red margin doubles as the day's timeline, with a filled red dot for now and a hollow one for next.
+- **Week:** one white ruled card in place of seven: an hour per rule (64px), the hours in Mono written on the rules left of the one red margin line, a day per column (seven on laptops, three on tablets, one on phones, swiped with scroll snap or stepped with the arrows). All-day items are chips under the date (beside it on phones). Events are drawn on the wall clock as Google Calendar draws them: ones that start together share the width, a later one cascades over the right side of a longer one, one 20px indent per level, with a card-colored rim. Titles wrap between words and end in an ellipsis (one line in a narrow box); times are shown whole or not at all (the range, else the start). Today's date is an Ink circle; now is a red line with a red dot on today's column.
+- **Plan here:** tapping open time opens a small ruled card (its own 2px red margin) beside the tap: the date and time in Mono, the current step as the Ink pill with its title in full, a focus block as the outlined pill, Not now as quiet. A booked block shows at once in a dashed outline ("Booking…") until Google confirms; the status line (its own reserved space, so the toolbar never moves) says when and offers Undo.
 
 ### Progress
 Four labeled 4px bars (Ink done or current, Track upcoming) for the guided flow; setup uses 12px dots in the same two colors.
@@ -270,7 +276,8 @@ Four labeled 4px bars (Ink done or current, Track upcoming) for the guided flow;
 ### Don't:
 - **Don't** use chat bubbles, avatars or a message thread; Zeno's words are written on a card.
 - **Don't** use red for buttons, headings or body text.
-- **Don't** add a second accent color or gradient; the palette is paper, ink, one blue rule and one red.
+- **Don't** add a second accent color or gradient; the palette is paper, ink, one blue rule and one red. (The Week's calendar tints are the person's data, not an accent; see Calendar Tints.)
+- **Don't** mark an event or chip with a colored side stripe; a calendar shows by its tint, and only Zeno's blocks carry a line, the 2px red one.
 - **Don't** use hard offset shadows or glass blur; depth is soft paper shadow only.
 - **Don't** add a second voice indicator (waveforms, pulsing orbs); the dot ring is the only one.
 - **Don't** draw boxes around text inputs on a card; focus shows as the written line turning red.
