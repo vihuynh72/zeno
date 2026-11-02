@@ -60,10 +60,15 @@ const PRIVATE_TOPICS: [string, RegExp][] = [
   ["immigration status", IMMIGRATION],
   ["balances or debts", MONEY],
 ];
+// Passwords, sign-in codes and the like: a fact that holds one is kept nowhere, and mail that says one never reaches
+// the model (sensitiveEmail). A code can mix letters and digits (Steam Guard's "F4K9Q").
+const SECRETS =
+  /\b(passwords?|passcodes?|pin|otp|one-time (code|pass\w*|pin|link)|verification (code|link|email)|(verify|confirm) your (email|account|identity|device|phone|login|sign-in)|2fa|two-factor|2-step|(security|login|sign-in|guard|access|confirmation) codes?|reset link|magic link|api key|ssn|social security|account number|routing number)\b|\b(code|pin)\W{0,3}(is\W{0,3})?(?=[a-z]*\d)[a-z\d]{4,}\b|\b(locker|lock|gate|door|garage|alarm) (combo|combination|code)s?\b/i;
 const NEVER: [string, RegExp][] = [
+  ["passwords, codes and links", SECRETS],
   [
     "passwords, codes and links",
-    /\b(passwords?|passcodes?|pin|otp|one-time (code|pass\w*|pin|link)|verification (code|link|email)|verify your|2fa|two-factor|2-step|security code|login code|sign-in code|reset link|magic link|api key|ssn|social security|account number|routing number)\b|https?:\/\/|www\.|[\w.+-]+@[\w-]+\.\w+|\b\d{6,}\b|\b(code|pin)\W{0,3}(is\W{0,3})?\d{4,}|\(?\b\d{3}\)?[-. ]\d{3}[-. ]\d{4}\b|\b\d{3}[-.]\d{4}\b|\b(locker|lock|gate|door|garage|alarm) (combo|combination|code)s?\b|\b\d{1,3}( \d{1,3}){2,}\b|\b(zero|one|two|three|four|five|six|seven|eight|nine)([ -](zero|one|two|three|four|five|six|seven|eight|nine)){3,}\b/i,
+    /https?:\/\/|www\.|[\w.+-]+@[\w-]+\.\w+|\b\d{6,}\b|\(?\b\d{3}\)?[-. ]\d{3}[-. ]\d{4}\b|\b\d{3}[-.]\d{4}\b|\b\d{1,3}( \d{1,3}){2,}\b|\b(zero|one|two|three|four|five|six|seven|eight|nine)([ -](zero|one|two|three|four|five|six|seven|eight|nine)){3,}\b/i,
   ],
   ["a medicine's name", MEDICINE],
   // PrEP only in its own spelling: "prep" is an everyday word ("Prep for the interview").
@@ -108,13 +113,24 @@ export function factVerdict(text: string, { own = false }: { own?: boolean } = {
 // Security, code, bank and bill mail never reaches the model at all, nor mail from or about sexual health, religion,
 // politics, immigration or money: a private fact from mail would be allowed now, but reading that mail stays off.
 const SENSITIVE_MAIL =
-  /\b(verification|verify|security|one-time|passcodes?|passwords?|sign[- ]?in|log[- ]?in|2-step|two-factor|otp|codes?|bank|banking|(?<!(personal|mission|problem|thesis|artist) )statements?|balance|credit card|payments?|invoices?|loans?|financial aid|collections)\b/i;
+  /\b(verification|verify|security|one-time|passcodes?|passwords?|sign[- ]?in|log[- ]?in|2-step|two-factor|otp|codes?|bank|banking|transactions?|(?<!(personal|mission|problem|thesis|artist) )statements?|balance|credit card|payments?|invoices?|loans?|financial aid|collections)\b/i;
 const MAIL_TOPICS = [SEXUAL, RELIGION, POLITICS, IMMIGRATION, MONEY];
+// Bank and security mail by what it says, when its subject says neither.
+const MAIL_TEXT = /\b((card|account) ending|(new|unusual|suspicious) (log[- ]?in|sign[- ]?in|device))\b/i;
 
-export function sensitiveEmail({ from, subject }: Pick<ProfileEmail, "from" | "subject">): boolean {
+// The day's mail has a snippet, the scan's a body.
+export function sensitiveEmail({ from, subject, snippet = "", body = "" }: Pick<ProfileEmail, "from" | "subject"> & { snippet?: string; body?: string }): boolean {
   const both = `${from} ${subject}`;
+  // What it says counts too: Steam's "Access from new device" holds a Steam Guard code, Zelle's "You sent $25" a card.
+  const said = `${subject}\n${snippet}\n${body}`;
   // "bill" only in the subject: Bill is also a sender's name.
-  return SENSITIVE_MAIL.test(both) || /\bbills?\b/i.test(subject) || MAIL_TOPICS.some((pattern) => pattern.test(both));
+  return (
+    SENSITIVE_MAIL.test(both) ||
+    /\bbills?\b/i.test(subject) ||
+    MAIL_TOPICS.some((pattern) => pattern.test(both)) ||
+    SECRETS.test(said) ||
+    MAIL_TEXT.test(said)
+  );
 }
 
 // The model's reply, checked: valid groups and sources, one short sentence each, nothing on the never-list, no

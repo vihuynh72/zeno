@@ -132,9 +132,13 @@ export async function loadUserContext(
 // Event titles and email lines can be written by anyone (an invite, a sender), so they go between <<< and >>>.
 // Whole runs of 3 or more brackets go, so removing one can't join its neighbors into a new marker (">><<<>").
 const data = (text: string) => `<<<${text.replace(/[<>]{3,}/g, "")}>>>`;
-// "No passwords or codes" (docs/PLAN-NOV.md): a sign-in code can be 4 digits, and a link or address can carry one.
+// "No passwords or codes" (docs/PLAN-NOV.md): a sign-in code can be 4 digits or split ("482 913"), and a link or
+// address can carry one, a link without https too ("zoom.us/j/812?pwd=...").
 const scrub = (text: string) =>
-  text.replace(/https?:\/\/\S+|www\.\S+/gi, "[link]").replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, "[email]").replace(/\d{4,}/g, "[number]");
+  text
+    .replace(/https?:\/\/\S+|www\.\S+|\b[\w-]+(\.[\w-]+)+\/\S*/gi, "[link]")
+    .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, "[email]")
+    .replace(/\d{3,}([ .-]\d{3,})+|\d{4,}/g, "[number]");
 
 // Time, calendar and email. The Guided day leaves out the old tasks list, which its screens never show.
 export function dayToText(context: UserContext, now = new Date()): string {
