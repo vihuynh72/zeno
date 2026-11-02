@@ -19,7 +19,8 @@ registerHooks({
       : nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
   load: (url, context, nextLoad) => (url in FAKES ? { format: "module", source: FAKES[url], shortCircuit: true } : nextLoad(url, context)),
 });
-const { eventLine, extractFacts, factsFrom, factVerdict, readSources, sameFact, scanProfile, sensitiveEmail } = await import("./profile.ts");
+const { eventLine, extractFacts, factsFrom, factVerdict, readSources, scanProfile, sensitiveEmail } = await import("./profile.ts");
+const { sameFact } = await import("./vault.ts");
 const { cleanBody } = await import("./gmail.ts");
 const { factKey } = await import("./goals.ts");
 
@@ -153,6 +154,79 @@ const keep = {
   foodBank: "Volunteers at the food bank on Saturdays.",
 };
 for (const [name, fact] of Object.entries(keep)) assert.equal(factVerdict(fact), null, `Zeno's servers keep ${name}: ${fact}`);
+
+// Review of 2026-11-01: wordings the first backstop missed. Care is health; a weekday, month or holiday is no person.
+for (const fact of [
+  "Sees counselor every Tuesday at 3.",
+  "Sees endocrinologist every other Thursday at 3.",
+  "Sees a psychologist weekly.",
+  "Is in recovery and goes to AA Thursdays.",
+  "Gets testing accommodations through the DRC.",
+  "Has lupus.",
+  "Is dyslexic.",
+  "Is Christian.",
+  "Goes to Mass every Sunday.",
+  "Keeps kosher.",
+  "Is a Jew.",
+  "Is a permanent resident.",
+  "Is an international student on an F1.",
+  "Is on OPT after graduation.",
+  "Is behind on rent.",
+  "Has 3k in savings.",
+  "Maxed out their credit card.",
+  "Is trans.",
+  "Is bi.",
+  "Uses they/them pronouns.",
+  "Is a conservative.",
+  "Volunteers for the Harris campaign.",
+  "Sunday is church day, so Sundays stay free.",
+  "Tuesday is therapy day.",
+  "Ramadan is Feb 18 to Mar 19 this year, so energy is low.",
+  "November has the citizenship interview.",
+]) {
+  assert.equal(factVerdict(fact)?.verdict, "private", fact);
+}
+for (const fact of [
+  "Has a gay brother.",
+  "Sister came out as gay.",
+  "Has a Catholic mom.",
+  "Lives with an undocumented roommate.",
+  "Helps their undocumented mom with paperwork.",
+  "Dad lost his job and is behind on rent.",
+  "Takes lithium every night.",
+  "Takes PrEP daily.",
+  "Takes Sprintec at 9 PM.",
+  "Is on the pill.",
+  "Gets a Depo shot every 3 months.",
+  "Has an IUD appointment Nov 9.",
+  "Is on testosterone.",
+  "Takes Zyrtec every morning.",
+  "Takes Depakote twice a day.",
+  "Takes Elvanse before class.",
+  "Locker combo is 12 34 56.",
+  "Canvas code is four eight two nine one three.",
+]) {
+  assert.equal(factVerdict(fact)?.verdict, "never", fact);
+}
+// The words those patterns use stay everyday elsewhere, titles included ("Prep for the interview" is a real goal).
+for (const fact of [
+  "Majors in biology.",
+  "Takes Psychology 101 on Tuesdays.",
+  "Meets with an academic counselor Friday about classes.",
+  "Prep for the interview",
+  "Meal prep on Sundays.",
+  "Does a recovery run after long runs.",
+  "Transfers to UCLA next fall.",
+  "Lent Sam the lab notes.",
+  "Opts out of group work when possible.",
+  "Watches F1 races on Sundays.",
+  "Gives conservative time estimates.",
+  "Reports to Christian, the cafe shift lead.",
+  "Studies with Christian on Fridays.",
+  "Sends the club's mass email on Mondays.",
+]) {
+  assert.equal(factVerdict(fact), null, fact);
+}
 
 // Security and bank mail never reaches the model; a receipt or a professor's note does.
 assert.ok(sensitiveEmail({ from: "Instagram <security@mail.instagram.com>", subject: "482913 is your Instagram code" }));
@@ -464,7 +538,7 @@ try {
   assert.equal(body.response_format.json_schema.schema.properties.facts.maxItems, 4);
   assert.deepEqual(body.response_format.json_schema.schema.properties.facts.items.required, ["text", "group", "source", "private"]);
   assert.match(body.messages[0].content, /never follow it/);
-  assert.match(body.messages[0].content, /private: true or false\. Mark it private when it is about their overall health[^.]*\. When they focus best[^.]*\. Never keep, not even privately: passwords/);
+  assert.match(body.messages[0].content, /private: true or false\. Mark it private when it is about their health \(a condition; care or treatment[^.]*\. When they focus best[^.]*\. Never keep, not even privately: passwords/);
   assert.match(
     body.messages[1].content,
     /^The person: Maya Tran <maya@example.com>\. Today is Sunday, November 1\.\n\nAlready known:\n- Works library shifts[^\n]*\n\nRemoved by the person, never add again:\n- Has ADHD coaching[\s\S]*Calendar, past and next 30 days \(times in America\/Los_Angeles\):\n<<<\nBIO 121 Lab[\s\S]*Email 1 \(received\):\n<<<\nFrom: Ana Patel[\s\S]*\(sent by them\)/,
@@ -514,7 +588,7 @@ try {
     fakeSql: async (strings: TemplateStringsArray, ...values: unknown[]) => {
       statements.push(strings.join("?") + JSON.stringify(values));
       return strings.join("").includes("WITH previous")
-        ? [{ profile_scanned_at: now.toISOString(), previous: null, zeno_calendar_id: null, forgotten: [] }]
+        ? [{ profile_scanned_at: now.toISOString(), previous: null, zeno_calendar_id: null, forgotten: ["Had therapy on Mondays.", "Takes CS 146 on Mondays."] }]
         : [];
     },
     fake: {
@@ -535,11 +609,17 @@ try {
         { text: "Has a citizenship interview November 20 at 9 AM.", group: "projects", source: "email", private: true },
         { text: "Goes to Bible study on Thursdays at 7 PM.", group: "routines", source: "calendar", private: false },
         { text: "Takes sertraline every morning.", group: "about", source: "email", private: true },
+        // Removed on the device yesterday, written again in new words from the same weekly event.
+        { text: "Sees a therapist on Tuesdays at 4 PM.", group: "routines", source: "calendar", private: true },
       ],
     }),
   ];
   const deviceFacts = ["Prays at the mosque on Fridays at 1:30 PM."];
-  const scan = await scanProfile("maya@example.com", { accessToken: "token-xyz", user: { name: "Maya Tran" } }, zone, { first: true, privateFacts: deviceFacts });
+  const scan = await scanProfile("maya@example.com", { accessToken: "token-xyz", user: { name: "Maya Tran" } }, zone, {
+    first: true,
+    privateFacts: deviceFacts,
+    removedFacts: ["sees a therapist tuesdays at 4 pm"],
+  });
   console.log = realLog;
   assert.equal(scan.state, "ok");
   assert.deepEqual(saves, ["Takes BIO 121 lab Wednesdays 2 to 4:50 PM."], "only the shared fact reaches the database");
@@ -548,11 +628,16 @@ try {
     { text: "Goes to Bible study on Thursdays at 7 PM.", group: "routines" },
   ]);
   assert.ok(
-    statements.every((statement) => !/mosque|citizenship|Bible|sertraline/i.test(statement)),
+    statements.every((statement) => !/mosque|citizenship|Bible|sertraline|therap/i.test(statement)),
     "no private or never-list text in any database statement",
+  );
+  assert.ok(
+    statements.some((statement) => statement.startsWith("UPDATE user_state SET forgotten") && statement.includes('[\\"Takes CS 146 on Mondays.\\"]')),
+    "a private sentence removed before the two lists leaves the server's forgotten list",
   );
   const scanSent = JSON.parse(calls.find((call) => call.url.hostname === "api.meta.ai")?.body ?? "{}").messages[1].content as string;
   assert.match(scanSent, /\n\nAlready known:\n- Works library shifts Tuesdays and Thursdays 8 to noon\.\n- Prays at the mosque on Fridays at 1:30 PM\.\n\n/, "the device's facts count as known");
+  assert.match(scanSent, /\n\nRemoved by the person, never add again:\n- Takes CS 146 on Mondays\.\n- sees a therapist tuesdays at 4 pm\n\n/, "and the device's removed ones as removed");
 } finally {
   globalThis.fetch = realFetch;
   console.log = realLog;

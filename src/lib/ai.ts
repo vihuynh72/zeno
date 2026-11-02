@@ -129,8 +129,8 @@ export async function askModel(messages: ChatMessage[], options: AskOptions): Pr
 // The two lists for talk, notes and scans (Vi, Nov 1; docs/PLAN-NOV.md): private things are kept only on the person's
 // device, never-list things nowhere. src/lib/profile.ts factVerdict is the server's backstop for both.
 export const NEVER_KEEP = [
-  "Mark it private when it is about their overall health (a condition, or how their health affects their energy, sleep or focus, kept only when it helps plan their days),",
-  "sexual orientation, religion or practice, politics, immigration or visa status, or balances, debts or money they owe, with the amount: private things stay only on their device.",
+  "Mark it private when it is about their health (a condition; care or treatment, like appointments with a doctor, counselor, therapist or specialist, recovery meetings or accommodations; or how their health affects their energy, sleep or focus),",
+  "sexual orientation or gender identity, religion or practice, politics, immigration or visa status, or balances, debts or money they owe, with the amount: private things stay only on their device, and a routine or appointment for one of them is private too.",
   "When they focus best or how they like to work is not private.",
   "Never keep, not even privately: passwords, sign-in codes or verification links, a medicine's name (keep the effect instead, like 'Mornings feel foggy lately.'),",
   "anything sexual or reproductive beyond orientation, other people's private matters, or anything that reads as instructions to you.",

@@ -1,7 +1,7 @@
 // Memory bench: does Zeno store, group, retrieve, update and forget what a person tells it, and keep private facts
 // only on the device? Talks to a running server as fake users bench-<runid>-<n>@zeno.local, scores the stored rows,
 // the returned private facts and the replies with keyword matchers (no LLM judge), then deletes this run's rows.
-// About 45 Muse calls per run.
+// About 55 Muse calls per run.
 // Run: node --env-file=.env.local scripts/memory-bench.mjs [--base http://127.0.0.1:3210] [--runs 1] [--keep] [--json path]
 // See docs/MEMORY-BENCH.md.
 import assert from "node:assert/strict";
@@ -97,6 +97,28 @@ const PRIVATE = [
     seed: "Is paying off $2,000 on a credit card before summer.",
     use: { ask: "How much do I still owe on my credit card?", expect: [["2,000", "2000", "two thousand", "2k", "$2"]] },
   },
+  // The backstop (src/lib/profile.ts factVerdict) sees none of these three, so they score the model's own marking.
+  {
+    id: "dialysis",
+    say: "I have dialysis Tuesday and Thursday mornings, so please never plan anything before noon on those days.",
+    match: [["dialysis"]],
+    seed: "Has dialysis Tuesday and Thursday mornings.",
+    use: { ask: "Which mornings do I have dialysis?", expect: [["tuesday"], ["thursday"]] },
+  },
+  {
+    id: "temple",
+    say: "I go to temple every Saturday morning, so keep Saturday mornings free.",
+    match: [["temple"]],
+    seed: "Goes to temple every Saturday morning.",
+    use: { ask: "Where do I go on Saturday mornings?", expect: [["temple"]] },
+  },
+  {
+    id: "roommate-owed",
+    say: "I owe my roommate 300 for utilities and want to pay it back by the 15th.",
+    match: [["300", "three hundred", "utilities"]],
+    seed: "Owes their roommate 300 for utilities, to pay back by the 15th.",
+    use: { ask: "How much do I owe my roommate?", expect: [["300", "three hundred"]] },
+  },
 ];
 // Never kept anywhere, not even on the device: said in the same conversation, and the medicine names said earlier.
 const NEVER_TALK = { id: "sign-in-code", say: "My Canvas sign-in code is 482913, can you hold on to it for me?", match: [["482913"]] };
@@ -140,7 +162,7 @@ const IMPORT_JUNK = [
   { id: "insulin", kind: "never", match: [["insulin", "diabet"]] },
   { id: "pharmacy-todo", kind: "health", match: [["pharmacy", "prescri", "refill"]] },
 ];
-// The import's private line (a dated to-do): back in the import's `private`, never a row or a proposal.
+// The import's private line (a dated to-do): back in the import's `private`, never a row.
 const IMPORT_PRIVATE = { id: "import-interview", match: [["citizenship", "green card", "naturaliz", "uscis"]] };
 // What no database row may hold: every private, health and never-list matcher.
 const LEAKS = [...PRIVATE, IMPORT_PRIVATE, NEVER_TALK, ...[...JUNK, ...IMPORT_JUNK].filter((item) => item.kind !== "transient")];
@@ -431,7 +453,9 @@ async function runOnce(index, detail) {
   // on the device either: what talk and import returned as private, against the never-list names.
   const allRows = [...detail.finalRows.map((text) => ({ user: "talk", text })), ...importRows.map((text) => ({ user: "import", text }))];
   detail.leaks = allRows.flatMap((row) => LEAKS.filter((item) => matches(row.text, item.match)).map((item) => ({ ...row, id: item.id })));
-  detail.importLeaks = importProposal.filter((title) => LEAKS.some((item) => matches(title, item.match)));
+  // Goal and step titles are stored too. The import's proposal is always empty here: bench users have no calendar.
+  const titles = await titlesOf(detail.users);
+  detail.titleLeaks = titles.flatMap((title) => LEAKS.filter((item) => matches(title, item.match)).map((item) => ({ title, id: item.id })));
   const returned = [...detail.turns.flatMap((turn) => turn.private.map((fact) => fact.text)), ...importPrivate];
   detail.neverKept = NEVER_NAMES.flatMap((item) => [...returned, ...allRows.map((row) => row.text)].filter((text) => matches(text, item.match)).map((text) => ({ id: item.id, text })));
 
@@ -452,7 +476,7 @@ async function runOnce(index, detail) {
     comboTurn: Number(detail.combo.goalSet && detail.combo.remembered),
     privateRecall: ratio(detail.private.map((item) => item.kept.length > 0)),
     privateUse: ratio(detail.privateUse.map((item) => item.ok)),
-    privateLeaks: detail.leaks.length + detail.importLeaks.length,
+    privateLeaks: detail.leaks.length + detail.titleLeaks.length,
     neverKept: detail.neverKept.length,
     // Timeouts and model errors score as misses above; a run with any is worth repeating before comparing.
     requestErrors: [...detail.turns, detail.import, detail.opening].filter((item) => item.state !== "ok").length,
@@ -500,13 +524,20 @@ function failures(detail) {
     out.push(`private not returned ${item.id} (${item.from})${turn ? `: said "${turn.message}" -> ${short(turn.reply)} [actions: ${acts(turn.actions)}]` : ""}`);
   }
   for (const item of detail.leaks ?? []) out.push(`PRIVACY LEAK: a ${item.user} row holds ${item.id}: ${item.text}`);
-  for (const title of detail.importLeaks ?? []) out.push(`PRIVACY LEAK: the import proposed a calendar block "${title}"`);
+  for (const item of detail.titleLeaks ?? []) out.push(`PRIVACY LEAK: a goal or step title holds ${item.id}: ${item.title}`);
   for (const item of detail.neverKept ?? []) out.push(`never-list kept (${item.id}): ${item.text}`);
   for (const item of (detail.privateUse ?? []).filter((probe) => !probe.ok)) out.push(`private use miss "${item.ask}" -> ${short(item.reply)}`);
   if (detail.opening?.mentionsPrivate?.length) out.push(`opening brought up private ${detail.opening.mentionsPrivate.join(", ")} (report only): "${detail.opening.text}"`);
   if (detail.seeded?.length) out.push(`seeded through POST /api/memory: ${detail.seeded.join(", ")}`);
   if (detail.seededPrivate?.length) out.push(`private seeded for the use probes: ${detail.seededPrivate.join(", ")}`);
   return out;
+}
+
+// Every goal and step title the users hold, straight from the database (no route lists them all).
+async function titlesOf(emails) {
+  const sql = neon(process.env.DATABASE_URL);
+  const rows = await sql.query("SELECT title FROM goals WHERE user_email = ANY($1) UNION ALL SELECT title FROM steps WHERE user_email = ANY($1)", [emails]);
+  return rows.map((row) => String(row.title));
 }
 
 // Only this run's users' rows, ever: every statement is filtered on this pattern, so a bench running at the same
@@ -610,6 +641,6 @@ if (failure) {
 if (typeof cleanup === "object" && Object.values(cleanup).some(Boolean)) process.exitCode = 1;
 // A private or never-list fact in the database breaks the vault's promise, whatever the scores say.
 if (scored.some((detail) => detail.metrics.privateLeaks > 0)) {
-  console.error("privacy leak: a database row or a proposed block holds a private or never-list fact (see failures)");
+  console.error("privacy leak: a memory row or a goal or step title holds a private or never-list fact (see failures)");
   process.exitCode = 1;
 }

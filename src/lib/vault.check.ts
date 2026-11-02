@@ -20,7 +20,7 @@ Object.assign(globalThis, {
     removeItem: (k: string) => (guard(), void store.delete(k)),
   },
 });
-const { addToVault, cleanPrivate, clearVault, readVault, removeFromVault, vaultTexts, VAULT_MAX } = await import("./vault.ts");
+const { addToVault, cleanPrivate, clearVault, readVault, removeFromVault, vaultRemoved, vaultTexts, VAULT_MAX } = await import("./vault.ts");
 
 const A = "acct-a";
 const added = addToVault(A, [
@@ -38,6 +38,9 @@ assert.equal(addToVault(A, [{ text: "Prays at noon on weekdays!", group: "routin
 removeFromVault(A, added[1].id);
 assert.deepEqual(vaultTexts(A), ["Has ADHD and does best with short steps."], "removed");
 assert.equal(addToVault(A, [{ text: "prays at noon on weekdays", group: "routines" }]).length, 0, "removed stays removed");
+assert.equal(addToVault(A, [{ text: "Prays at noon on weekdays, every week.", group: "routines" }]).length, 0, "even reworded, as a daily scan rewords it");
+assert.equal(addToVault(A, [{ text: "Prays at 1 PM on weekdays.", group: "routines" }]).length, 1, "another time is another fact");
+assert.deepEqual(vaultRemoved(A), ["prays at noon on weekdays"], "what the scan's body sends as removed");
 
 addToVault(A, Array.from({ length: VAULT_MAX + 5 }, (_, i) => ({ text: `Fact number ${i}.`, group: "about" as const })));
 assert.equal(readVault(A).length, VAULT_MAX, "capped");

@@ -118,15 +118,25 @@ try {
   );
 
   // A removed fact never comes back from a scan; the person can still say it again.
-  const coaching = await addMemory(memoryEmail, "Has ADHD coaching every other Friday at 3 PM.", { group: "about", source: "calendar" });
+  const coaching = await addMemory(memoryEmail, "Has chess club every other Friday at 3 PM.", { group: "about", source: "calendar" });
   assert.ok(coaching && (await forgetMemory(memoryEmail, coaching.id)));
   assert.equal(await forgetMemory(memoryEmail, coaching.id), false, "removing twice finds nothing");
   assert.equal(
-    await addMemory(memoryEmail, "has ADHD coaching every other Friday at 3pm", { group: "about", source: "calendar" }),
+    await addMemory(memoryEmail, "has chess club every other Friday at 3pm", { group: "about", source: "calendar" }),
     null,
     "a scan never brings it back",
   );
-  assert.equal((await addMemory(memoryEmail, "Has ADHD coaching every other Friday at 3 PM.", { group: "about" }))?.source, "you", "said again, it saves");
+  assert.equal((await addMemory(memoryEmail, "Has chess club every other Friday at 3 PM.", { group: "about" }))?.source, "you", "said again, it saves");
+
+  // A row saved under the old rules (health "when it helps planning") is deleted on the next read and never listed;
+  // the person's own to-do keeps its instructions, which only other people's mail may not give.
+  await sql`
+    INSERT INTO memories (user_email, text, memory_group, source)
+    VALUES (${memoryEmail}, 'Has ADHD and sees a counselor on Tuesdays.', 'about', 'you'), (${memoryEmail}, 'To do: Read the lab instructions', 'projects', 'you')
+  `;
+  const listed = (await listMemories(memoryEmail)).map((memory) => memory.text);
+  assert.ok(!listed.some((text) => /adhd/i.test(text)) && listed.includes("To do: Read the lab instructions"), "a private row is never listed");
+  assert.equal((await sql`SELECT count(*)::int AS n FROM memories WHERE user_email = ${memoryEmail} AND text ILIKE '%adhd%'`)[0].n, 0, "and is gone");
 
   // The whole profile keeps 120: past it, the oldest non-"you" fact goes.
   await sql`
@@ -134,7 +144,7 @@ try {
     SELECT ${memoryEmail}, 'Scanned fact ' || n, 'projects', 'email', now() - interval '1 day' + n * interval '1 second'
     FROM generate_series(1, 120 - ${(await listMemories(memoryEmail)).length}) AS n
   `;
-  assert.ok(await addMemory(memoryEmail, "Has ADHD and starts best with a timer.", { group: "about" }));
+  assert.ok(await addMemory(memoryEmail, "Starts best with a timer and a tiny first step.", { group: "about" }));
   const all = await listMemories(memoryEmail);
   assert.equal(all.length, 120);
   assert.ok(!all.some((memory) => memory.text === "Scanned fact 1") && all.some((memory) => memory.text === "Scanned fact 2"));
@@ -143,7 +153,7 @@ try {
     ["about", "routines", "projects", "patterns"],
     "listed in Memory's group order",
   );
-  assert.equal(all[0].text, "Has ADHD and starts best with a timer.", "newest first within a group");
+  assert.equal(all[0].text, "Starts best with a timer and a tiny first step.", "newest first within a group");
 } finally {
   await sql`DELETE FROM memories WHERE user_email = ${memoryEmail}`;
   await sql`DELETE FROM user_state WHERE user_email = ${memoryEmail}`;

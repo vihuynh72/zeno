@@ -24,14 +24,14 @@ export default function Privacy() {
         <li>Your goals and steps, and short facts Zeno remembers about you (like your classes or how you like to work).</li>
         <li>You can see every remembered fact in Memory and delete any of them, any time.</li>
         <li>Zeno does not save your emails or calendar events. It reads them when it needs them.</li>
-        <li>Zeno never keeps passwords, sign-in codes, verification links or the names of medicines, not even on your device.</li>
+        <li>Zeno is built never to keep passwords, sign-in codes, verification links or the names of medicines, not even on your device.</li>
       </ul>
 
       <h2 className="mt-10 text-[22px] font-bold">Private things stay on your device</h2>
       <p className="mt-3">
         Your overall health, sexual orientation, religion, politics, immigration status, and balances or debts are
-        private. Zeno keeps them only in this browser on this device. They are sent only with the request that needs
-        them, to write that reply through Meta&apos;s model, and are never saved on Zeno&apos;s servers. If a spoken
+        private. Zeno keeps them only in this browser on this device. They are sent with each conversation, opening
+        and daily scan, to write that reply through Meta&apos;s model, and are never saved on Zeno&apos;s servers. If a spoken
         reply mentions one, Google&apos;s text-to-speech reads that reply. Forget removes them, and Sign out clears
         them from this browser.
       </p>

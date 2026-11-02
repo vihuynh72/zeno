@@ -62,23 +62,30 @@ Zeno knows Maya right after sign-in, and day 2 is visibly smarter because of day
 - **Profile scan from Google** (with the sign-in permission): calendar (past and next 30 days) **plus full
   emails**. Learn school, work and routines; projects and deadlines; interests and life goals; key people;
   and interests or habits from purchases and events that help motivate (fitness or weight-loss goals,
-  habits to break). **Overall health is kept, privately, when it helps planning, and nothing more specific**:
-  never a medicine's name, so keep the effect ("Mornings feel foggy lately.").
+  habits to break). **Overall health is private (device only), and nothing more specific**: never a medicine's
+  name, so keep the effect ("Mornings feel foggy lately.").
 - **Private facts stay on the device** (Vi, Nov 1: "Zeno will not store any of those data any where except there
   devices"). Two lists, in the prompts (`NEVER_KEEP`, src/lib/ai.ts) and in `factVerdict` (src/lib/profile.ts), the
   server's backstop, so a fact the model failed to mark still never reaches the database:
-  - **Private, device only**: overall health (a condition, or how it affects energy, sleep or focus; when someone
-    simply focuses best is not health), sexual orientation (nothing more), religion and practice, politics,
-    immigration or visa status, and balances, debts or money owed. The model marks them (`private` on the remember
-    tool, on pasted-notes items and on scan facts). Talk, import and the scan return them in `private` (talk with a
-    "kept-private" action, so a Noted line is backed); the browser keeps them (src/lib/vault.ts) and sends their texts
-    back as `private` with talk, the opening and the scan (which lists them as already known).
+  - **Private, device only**: overall health (a condition; care or treatment for one, like a doctor, counselor,
+    therapist or specialist appointment, recovery meetings or accommodations; or how it affects energy, sleep or
+    focus; when someone simply focuses best is not health), sexual orientation and gender identity (nothing more),
+    religion and practice, politics, immigration or visa status, and balances, debts or money owed. The model marks
+    them (`private` on the remember tool, required: a call without it is sent back; on pasted-notes items and on scan
+    facts). Talk, import, the scan and `POST /api/memory` return them in `private` (talk with a "kept-private"
+    action, so a Noted line is backed); the browser keeps them (src/lib/vault.ts) and sends their texts back as
+    `private` with talk, the opening and the scan (which lists them as already known). The scan also takes the
+    device's removed facts (`removed`, from `vaultRemoved`), since every scan re-reads the calendar and would write a
+    removed weekly event again in new words; the vault skips a removed fact even reworded.
   - **Never kept anywhere**: passwords, sign-in codes, verification links, medicine names, sexual or reproductive
     details beyond orientation, other people's private matters, and text that reads as instructions to Zeno (the
     person's own notes and titles skip that last guard: "Read the lab instructions" is a real to-do).
   - Nothing private reaches the database, Google or the logs: a private to-do or deadline is never a "To do:" memory
-    or a proposal; a goal, step or block title with a private detail is refused so the model words it again, and a
-    first-card pick with one falls back to the rule pick. Mail from or about sexual health, religion, politics,
+    or a proposal; a goal, step or block title with a private detail is refused so the model words it again (and
+    `POST /api/goal` answers bad-request), and a first-card pick with one falls back to the rule pick. Rows saved under
+    the old rules (health "when it helps planning") are deleted on the next read (`listMemories`), and such a
+    sentence leaves the `forgotten` list at the next scan. The backstop is a fixed word list, so the model's marking
+    stays the main path; the bench scores it with cases the list can't see. Mail from or about sexual health, religion, politics,
     immigration or money still never reaches the scan's model (widening that is open for Vi). Store facts, never the
     emails themselves.
 - After the first scan, a **"Here's what I learned" card** in setup: each fact with a tap to remove.

@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { MEMORY_GROUPS, type MemoryResponse, type SaveMemoryResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
 import { addMemory, listMemories } from "@/lib/goals";
+import { factVerdict } from "@/lib/profile";
 
 export async function GET() {
   const session = await auth();
@@ -23,7 +24,8 @@ export async function GET() {
 }
 
 // Body { text, group? }: one thing the person tells Zeno to remember, 1 to 200 characters, in one of MEMORY_GROUPS
-// ("about" when left out).
+// ("about" when left out). The two lists hold here too: a never-list fact is "not-kept" (400), a private one is not
+// saved and comes back in `private` for the device's vault.
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.email) {
@@ -35,11 +37,20 @@ export async function POST(request: Request) {
   if (!text || [...text].length > 200 || (body?.group != null && !group)) {
     return NextResponse.json({ state: "bad-request" } satisfies SaveMemoryResponse, { status: 400 });
   }
+  // The person's own words, so the instructions guard (for other people's mail) is off.
+  const verdict = factVerdict(text, { own: true });
+  if (verdict?.verdict === "never") {
+    return NextResponse.json({ state: "not-kept" } satisfies SaveMemoryResponse, { status: 400 });
+  }
   if (!databaseConfigured()) {
     return NextResponse.json({ state: "error" } satisfies SaveMemoryResponse, { status: 503 });
   }
 
   try {
+    if (verdict) {
+      const memories = await listMemories(session.user.email);
+      return NextResponse.json({ state: "ok", memories, private: [{ text, group: group ?? "about" }] } satisfies SaveMemoryResponse);
+    }
     await addMemory(session.user.email, text, { group });
     const memories = await listMemories(session.user.email);
     return NextResponse.json({ state: "ok", memories } satisfies SaveMemoryResponse);

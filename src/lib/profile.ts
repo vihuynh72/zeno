@@ -3,8 +3,9 @@ import { askModel, NEVER_KEEP } from "@/lib/ai";
 import { MEMORY_GROUPS, type Memory, type MemoryGroup, type PrivateFact, type ProfileResponse } from "@/lib/day";
 import { ensureSchema, getSql } from "@/lib/db";
 import { getProfileEmails, type ProfileEmail } from "@/lib/gmail";
-import { addMemory, factKey, listMemories, scannedSince } from "@/lib/goals";
+import { addMemory, listMemories, scannedSince } from "@/lib/goals";
 import { dayBounds, formatDate, formatTime } from "@/lib/tz";
+import { sameFact } from "@/lib/vault";
 
 // The profile scan (docs/PLAN-NOV.md "Memory and profile"): once a local day, calendar and email become a few
 // grouped facts. Emails and events are read in memory and never stored; only the facts are.
@@ -21,27 +22,35 @@ const CONTENT_CAP = 40_000;
 // device; never-list facts are kept nowhere. The prompts say the same; these patterns are the server's backstop, so
 // a fact the model failed to mark still never reaches the database.
 const SEXUAL =
-  /\b(sex|sexually|sexual(?! orientation)|pregnan\w*|contracepti\w*|birth control|plan b|morning[- ]after|condoms?|ovulat\w*|fertility|ivf|abortion\w*|miscarri\w*|stds?|stis?|hiv|herpes|hpv|chlamydia|gonorrh\w*|syphilis|gyn[ae]c\w*|ob-?gyn|prenatal|menstrua\w*|planned parenthood|erectile|viagra|cialis)\b/i;
+  /\b(sex|sexually|sexual(?! orientation)|pregnan\w*|contracepti\w*|birth control|plan b|morning[- ]after|condoms?|ovulat\w*|fertility|ivf|abortion\w*|miscarri\w*|stds?|stis?|hiv|herpes|hpv|chlamydia|gonorrh\w*|syphilis|gyn[ae]c\w*|ob-?gyn|prenatal|menstrua\w*|planned parenthood|erectile|viagra|cialis|(on|takes|taking|started|stopped|off) the pill|iuds?|depo(-provera)?|nexplanon)\b/i;
 const RELIGION =
-  /\b(church(es)?|mosque|synagogue|gurdwara|bible|qur'?an|koran|torah|pray\w*|ramadan|baptis\w*|bar mitzvah|bat mitzvah|sermon|pastor|imam|rabbi|priest|religio(?!us stud)\w*|worship\w*|christianity|christians|muslims?|islam|islamic|jewish|judaism|hindus?|hinduism|buddhis\w*|catholic\w*|mormon\w*|evangelical\w*|atheis\w*|sikhs?|sikhism|spiritual\w*|youth group)\b/i;
+  /\b(church(es)?|mosque|synagogue|gurdwara|bible|qur'?an|koran|torah|pray\w*|ramadan|baptis\w*|bar mitzvah|bat mitzvah|sermon|pastor|imam|rabbi|priest|religio(?!us stud)\w*|worship\w*|christianity|christians|muslims?|islam|islamic|jewish|judaism|hindus?|hinduism|buddhis\w*|catholic\w*|mormon\w*|evangelical\w*|atheis\w*|sikhs?|sikhism|spiritual\w*|youth group|(is|am|are|as|a|being|devout|practicing) christians?|jews?|(to|attends?|attending|at|after|before|sunday|saturday|vigil|daily) mass|kosher|halal|shabbat|sabbath|(for|during|observes?|observing) lent|yom kippur|rosh hashanah|passover|eid|diwali)\b/i;
 const POLITICS =
-  /\b(politic(?!al science)\w*|democrats?|democratic party|republicans?|gop|maga|elections?|ballots?|vot(e|es|ed|er|ers|ing)|campaign(s|ing)? for|for (president(?! of)|senate|congress|governor|mayor|assembly|city council)|actblue|winred|caucus\w*|senators?|congress\w*|protest\w*|left-wing|right-wing)\b/i;
+  /\b(politic(?!al science)\w*|democrats?|democratic party|republicans?|gop|maga|elections?|ballots?|vot(e|es|ed|er|ers|ing)|campaign(s|ing)? for|for (president(?! of)|senate|congress|governor|mayor|assembly|city council)|actblue|winred|caucus\w*|senators?|congress\w*|protest\w*|left-wing|right-wing|(is|am|are|as|a|an|being|identifies as) (an? )?(conservative|liberal(?! arts)|progressive|libertarian|socialist|leftist)s?|(volunteer\w*|interns?|interning|works?|working|canvass\w*) (for|on|with) (the |a )?(\w+ )?campaign|canvass\w*|phone[- ]?bank\w*)\b/i;
 const IMMIGRATION =
-  /\b(visas?|green card|immigra\w*|citizenship|uscis|daca|undocumented|asylum|deport\w*|i-20|i-94|h-?1b|f-1|sevis|naturaliz\w*|work permit|refugee\w*|biometrics)\b/i;
+  /\b(visas?|green card|immigra\w*|citizenship|uscis|daca|undocumented|asylum|deport\w*|i-20|i-94|h-?1b|f-1|sevis|naturaliz\w*|work permit|refugee\w*|biometrics|(on an?|an) f-?1|f-?1 (visa|status|students?)|stem opt|(on|for|applying for|applied for) opt|opt (after|status|application|extension)|permanent residen\w*|work authori[sz]ation)\b/i;
 // "Owes a lab report" and "work-life balance" stay: owing, balances and past-due count only next to money,
 // and an amount only next to an account, card, bill, loan or rent ("$24.99 a month for the gym" stays).
 const MONEY =
-  /\$\s?\d[\d,.]*[^.]*\b(checking|savings|bank|credit card|bills?|loans?|rent)\b|\b(checking|savings|credit card|bills?|loans?|rent)\b[^.]*\$\s?\d|\b(debts?|loans?|overdra\w*|in collections|collections agency|credit score|bankrupt\w*|minimum payment|bank account|checking account|savings account|wire transfer|gift cards?|bitcoin|crypto\w*|venmo|zelle|paypal|cash ?app|pay(s|ing)? (it |them )?off|paid off|short on (rent|money|cash))\b|\b(balance|owe[sd]?|owing|past due)\b[^.]*(\$|\b(account|bank|card|credit|statement|tuition|checking|savings?|money|rent|bills?|dollars?|bucks|fees?)\b)|(\$|\b(account|bank|card|credit|statement|tuition|checking|savings?|money|rent|bills?)\b)[^.]*\b(balance|owe[sd]?|owing|past due)\b/i;
-// A condition, care for one, or how health affects energy, sleep or focus. When someone simply focuses best is not health.
+  /\$\s?\d[\d,.]*[^.]*\b(checking|savings|bank|credit card|bills?|loans?|rent)\b|\b(checking|savings|credit card|bills?|loans?|rent)\b[^.]*\$\s?\d|\b(debts?|loans?|overdra\w*|in collections|collections agency|credit score|bankrupt\w*|minimum payment|bank account|checking account|savings account|wire transfer|gift cards?|bitcoin|crypto\w*|venmo|zelle|paypal|cash ?app|pay(s|ing)? (it |them )?off|paid off|short on (rent|money|cash)|(behind|late) on (the |their |my )?(rent|bills?|tuition|payments?|loans?|credit card)|can'?t (pay|afford) (the |their |my )?(rent|bills?|tuition)|maxed out (their |my |a |the )?(credit )?cards?|(in|into) (savings|checking))\b|\b(balance|owe[sd]?|owing|past due)\b[^.]*(\$|\b(account|bank|card|credit|statement|tuition|checking|savings?|money|rent|bills?|dollars?|bucks|fees?)\b)|(\$|\b(account|bank|card|credit|statement|tuition|checking|savings?|money|rent|bills?)\b)[^.]*\b(balance|owe[sd]?|owing|past due)\b/i;
+// A condition, care or treatment for one (a counselor, a specialist, a clinic, recovery meetings, accommodations), or
+// how health affects energy, sleep or focus. When someone simply focuses best is not health; an academic counselor,
+// a biology class and a recovery run are not health either, so no bare "-ology" or "recovery".
 const HEALTH =
-  /\b(adhd|autis\w*|asperger'?s|anxiety|panic attacks?|depress\w*|bipolar|ocd|ptsd|eating disorders?|anorexi\w*|bulimi\w*|insomnia|migraines?|asthma|diabet\w*|epilep\w*|seizures?|fibromyalgia|crohn'?s|celiac|covid|cancer|chemo\w*|surgery|surgeries|diagnos\w*|disorders?|disabilit\w*|chronic (pain|fatigue|condition)s?|illness\w*|therap(y|ies|ists?)|psychiatr\w*|mental health|medications?|meds|prescriptions?|pharmacy|doctor'?s? (appointment|visit)s?|hospitali[sz]\w*|injur(y|ies|ed)|concussion|(back|knee|neck|joint) pain|brain fog|foggy|fatigue\w*|low energy|trouble sleeping|sleep (problems?|issues?|apnea|disorder))\b/i;
+  /\b(adhd|autis\w*|asperger'?s|anxiety|panic attacks?|depress\w*|bipolar|ocd|ptsd|eating disorders?|anorexi\w*|bulimi\w*|insomnia|migraines?|asthma|diabet\w*|epilep\w*|seizures?|fibromyalgia|crohn'?s|celiac|covid|cancer|chemo\w*|surgery|surgeries|diagnos\w*|disorders?|disabilit\w*|chronic (pain|fatigue|condition)s?|illness\w*|therap(y|ies|ists?)|psychiatr\w*|mental health|medications?|meds|prescriptions?|pharmacy|doctor'?s? (appointment|visit)s?|hospitali[sz]\w*|injur(y|ies|ed)|concussion|(back|knee|neck|joint) pain|brain fog|foggy|fatigue\w*|low energy|trouble sleeping|sleep (problems?|issues?|apnea|disorder)|(?<!(academic|guidance|career|admissions?|college|school|camp|peer|financial aid|transfer|legal) )counsel(l?ors?|l?ing)|psychologists?|(endocrin|dermat|rheumat|gastroenter|ophthalm|onc|cardi|ur|gyn[ae]c|nephr|pulmon|hemat)olog(y|ists?)|neurologists?|allerg\w*|lupus|dyslex\w*|dyspraxi\w*|dyscalcul\w*|arthritis|ibs|pcos|endometriosis|sickle cell|multiple sclerosis|clinics?|(sees|seeing|visits?|visiting|appointments? with|check-?ups? with) (an? |the |their |my )?(doctor|dr|physician|specialist|dentist|orthodontist)|check-?ups?|in recovery|recovery (meetings?|groups?|programs?)|alcoholics anonymous|narcotics anonymous|(aa|na) meetings?|(goes|go|going|went) to (aa|na)|sobriety|sober|12[- ]step|(testing|exam|academic|disability) accommodations?|accommodations? (letters?|plans?|office)|504 plans?|iep|(extra|extended) time on (tests|exams|quizzes))\b/i;
 // Orientation, and gender identity with it: kept on the device rather than stored or dropped.
-const ORIENTATION = /\b(gay|lesbian|bisexual|pansexual|asexual|queer|lgbt\w*|sexual orientation|sexuality|transgender|non-?binary)\b/i;
+const ORIENTATION =
+  /\b(gay|lesbian|bisexual|pansexual|asexual|queer|lgbt\w*|sexual orientation|sexuality|transgender|non-?binary|gender identity|genderqueer|genderfluid|(is|am|as|being|identifies as|openly) (bi|trans)(?!-)|trans (man|woman|men|women|person|people|kid|student)|(they|she|he)\/(them|her|him)|pronouns|came out|coming out (as|to))\b/i;
 // Common names, mostly ones a student might take, plus endings only drug names have. The prompt carries the rule.
 const MEDICINE =
-  /\b(adderall|ritalin|vyvanse|concerta|focalin|strattera|qelbree|intuniv|methylphenidate|amphetamines?|lisdexamfetamine|dexedrine|atomoxetine|guanfacine|wellbutrin|bupropion|lexapro|escitalopram|zoloft|sertraline|prozac|fluoxetine|paxil|paroxetine|celexa|citalopram|effexor|venlafaxine|cymbalta|duloxetine|trazodone|mirtazapine|xanax|alprazolam|ativan|lorazepam|klonopin|clonazepam|valium|diazepam|buspirone|hydroxyzine|lamictal|lamotrigine|abilify|aripiprazole|seroquel|quetiapine|risperidone|olanzapine|ambien|zolpidem|melatonin|ibuprofen|advil|motrin|tylenol|acetaminophen|aleve|naproxen|oxycodone|hydrocodone|vicodin|percocet|tramadol|gabapentin|codeine|morphine|fentanyl|insulin|metformin|ozempic|wegovy|mounjaro|zepbound|semaglutide|tirzepatide|levothyroxine|synthroid|albuterol|prednisone|accutane|isotretinoin|spironolactone|epipen|suboxone|narcan|\w+(olol|statin|azepam|azolam|oxetine|triptan|cillin|mycin|cycline|floxacin|prazole|sartan|tidine|codone))\b/i;
+  /\b(adderall|ritalin|vyvanse|concerta|focalin|strattera|qelbree|intuniv|methylphenidate|amphetamines?|lisdexamfetamine|dexedrine|atomoxetine|guanfacine|wellbutrin|bupropion|lexapro|escitalopram|zoloft|sertraline|prozac|fluoxetine|paxil|paroxetine|celexa|citalopram|effexor|venlafaxine|cymbalta|duloxetine|trazodone|mirtazapine|xanax|alprazolam|ativan|lorazepam|klonopin|clonazepam|valium|diazepam|buspirone|hydroxyzine|lamictal|lamotrigine|abilify|aripiprazole|seroquel|quetiapine|risperidone|olanzapine|ambien|zolpidem|melatonin|ibuprofen|advil|motrin|tylenol|acetaminophen|aleve|naproxen|oxycodone|hydrocodone|vicodin|percocet|tramadol|gabapentin|codeine|morphine|fentanyl|insulin|metformin|ozempic|wegovy|mounjaro|zepbound|semaglutide|tirzepatide|levothyroxine|synthroid|albuterol|prednisone|accutane|isotretinoin|spironolactone|epipen|suboxone|narcan|lithium|depakote|valproate|zyrtec|cetirizine|claritin|loratadine|allegra|benadryl|elvanse|truvada|descovy|sprintec|yaz|testosterone|estradiol|estrogen|hrt|\w+(olol|statin|azepam|azolam|oxetine|triptan|cillin|mycin|cycline|floxacin|prazole|sartan|tidine|codone))\b/i;
 const OTHERS_PRIVATE =
-  "surgery|diagnos\\w*|cancer|chemo\\w*|therap\\w*|rehab|illness|sick|hospital\\w*|divorc\\w*|arrest\\w*|jail|prison|lawsuit|affair|breakup|broke up|overdose|addict\\w*|depress\\w*|died|passed away|funeral";
+  "surgery|diagnos\\w*|cancer|chemo\\w*|therap\\w*|rehab|illness|sick|hospital\\w*|divorc\\w*|arrest\\w*|jail|prison|lawsuit|affair|breakup|broke up|overdose|addict\\w*|depress\\w*|died|passed away|funeral|came out|gay|lesbian|bisexual|transgender|queer|undocumented|deport\\w*|lost (his|her|their) jobs?|laid off|unemployed|behind on rent|in debt|bankrupt\\w*|evict\\w*";
+const PEOPLE =
+  "mom|mother|dad|father|parents?|sister|brother|siblings?|friends?|roommates?|boyfriend|girlfriend|partner|wife|husband|cousin|aunt|uncle|grandma|grandpa|grandmother|grandfather|coworkers?|classmates?|teammates?|boss|professor|prof";
+// A capitalized word before is or has that is no person: "Tuesday is therapy day" is the person's own fact.
+const NAME =
+  "(?!(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|April|May|June|July|August|September|October|November|December|Today|Tomorrow|Tonight|Ramadan|Lent|Easter|Passover|Thanksgiving|Christmas|Diwali|Hanukkah|Eid|Shabbat)\\b)\\p{Lu}\\p{Ll}+";
 
 const PRIVATE_TOPICS: [string, RegExp][] = [
   ["overall health", HEALTH],
@@ -54,28 +63,34 @@ const PRIVATE_TOPICS: [string, RegExp][] = [
 const NEVER: [string, RegExp][] = [
   [
     "passwords, codes and links",
-    /\b(passwords?|passcodes?|pin|otp|one-time (code|pass\w*|pin|link)|verification (code|link|email)|verify your|2fa|two-factor|2-step|security code|login code|sign-in code|reset link|magic link|api key|ssn|social security|account number|routing number)\b|https?:\/\/|www\.|[\w.+-]+@[\w-]+\.\w+|\b\d{6,}\b|\b(code|pin)\W{0,3}(is\W{0,3})?\d{4,}|\(?\b\d{3}\)?[-. ]\d{3}[-. ]\d{4}\b|\b\d{3}[-.]\d{4}\b/i,
+    /\b(passwords?|passcodes?|pin|otp|one-time (code|pass\w*|pin|link)|verification (code|link|email)|verify your|2fa|two-factor|2-step|security code|login code|sign-in code|reset link|magic link|api key|ssn|social security|account number|routing number)\b|https?:\/\/|www\.|[\w.+-]+@[\w-]+\.\w+|\b\d{6,}\b|\b(code|pin)\W{0,3}(is\W{0,3})?\d{4,}|\(?\b\d{3}\)?[-. ]\d{3}[-. ]\d{4}\b|\b\d{3}[-.]\d{4}\b|\b(locker|lock|gate|door|garage|alarm) (combo|combination|code)s?\b|\b\d{1,3}( \d{1,3}){2,}\b|\b(zero|one|two|three|four|five|six|seven|eight|nine)([ -](zero|one|two|three|four|five|six|seven|eight|nine)){3,}\b/i,
   ],
   ["a medicine's name", MEDICINE],
+  // PrEP only in its own spelling: "prep" is an everyday word ("Prep for the interview").
+  ["a medicine's name", /\bPrEP\b/],
   ["sexual or reproductive details", SEXUAL],
   [
     "other people's private matters",
+    new RegExp(`\\b(${PEOPLE})\\b[^.]*\\b(${OTHERS_PRIVATE})\\b`, "i"),
+  ],
+  // "a gay brother", "an undocumented roommate", "a Catholic mom".
+  [
+    "other people's private matters",
     new RegExp(
-      `\\b(mom|mother|dad|father|parents?|sister|brother|siblings?|friends?|roommates?|boyfriend|girlfriend|partner|wife|husband|cousin|aunt|uncle|grandma|grandpa|grandmother|grandfather|coworkers?|classmates?|teammates?|boss|professor|prof)\\b[^.]*\\b(${OTHERS_PRIVATE})\\b`,
+      `\\b(gay|lesbian|bi|bisexual|trans|transgender|queer|catholic|christian|muslim|jewish|mormon|hindu|buddhist|sikh|atheist|undocumented|immigrant|disabled|sick|depressed|autistic|alcoholic) (${PEOPLE})\\b`,
       "i",
     ),
   ],
   // A named person's: "Jess had surgery last week." The person's own facts start with a verb, never "Name had".
-  ["other people's private matters", new RegExp(`\\b\\p{Lu}\\p{Ll}+ (had|has|is|was|got)\\b[^.]*\\b(${OTHERS_PRIVATE})\\b`, "u")],
+  ["other people's private matters", new RegExp(`\\b${NAME} (had|has|is|was|got)\\b[^.]*\\b(${OTHERS_PRIVATE})\\b`, "u")],
   // Email text that talks to Zeno is an injection attempt, never a fact about the person.
   ["instructions", /\b(zeno|chatbot|ignore (all|any|previous|prior|the above)|disregard|system prompt|instructions?)\b/i],
 ];
 
 // Someone else as the subject ("Mom is Catholic", "Jess is undocumented"): on a private topic, that is their private
 // matter, never kept, not even on the device. The person's own facts start with a verb.
-const OTHER_SUBJECT =
-  /\b(mom|mother|dad|father|parents?|sister|brother|siblings?|friends?|roommates?|boyfriend|girlfriend|partner|wife|husband|cousin|aunt|uncle|grandma|grandpa|grandmother|grandfather|coworkers?|classmates?|teammates?|boss|professor|prof)\b (is|are|was|were|has|have|had|got|owes?)\b/i;
-const NAMED_SUBJECT = /\b\p{Lu}\p{Ll}+ (is|was|has|had|got|owes)\b/u;
+const OTHER_SUBJECT = new RegExp(`\\b(${PEOPLE})\\b (is|are|was|were|has|have|had|got|owes?)\\b`, "i");
+const NAMED_SUBJECT = new RegExp(`\\b${NAME} (is|was|has|had|got|owes)\\b`, "u");
 
 export type Verdict = { verdict: "never" | "private"; topic: string } | null;
 
@@ -100,37 +115,6 @@ export function sensitiveEmail({ from, subject }: Pick<ProfileEmail, "from" | "s
   const both = `${from} ${subject}`;
   // "bill" only in the subject: Bill is also a sender's name.
   return SENSITIVE_MAIL.test(both) || /\bbills?\b/i.test(subject) || MAIL_TOPICS.some((pattern) => pattern.test(both));
-}
-
-const FILLER = new Set(
-  "a an the at on in of to for and or with by from as is are be has have had every each this that their they them about".split(" "),
-);
-const DATE_WORD = /^(\d.*|am|pm|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun|monday|tuesday|wednesday|thursday|friday|saturday|sunday|jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december|noon|midnight)$/;
-
-function words(text: string): string[] {
-  return text
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/(\d)(\p{L})/gu, "$1 $2")
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter((word) => word && !FILLER.has(word))
-    .map((word) => (word.length > 3 && word.endsWith("s") ? word.slice(0, -1) : word));
-}
-
-// A reworded known fact ("Bio lab on Wednesdays at 2 PM" for "Has bio lab every Wednesday at 2pm"). A different
-// day, date or time is a different fact, so those words must match exactly, and one fact's other words must all be in
-// the other's: "with Jess" and "with Omar" are two facts. A rare near-duplicate costs less than a lost fact.
-export function sameFact(a: string, b: string): boolean {
-  if (factKey(a) === factKey(b)) return true;
-  const split = (text: string) => {
-    const all = [...new Set(words(text))];
-    return { dates: all.filter((word) => DATE_WORD.test(word)).sort().join(" "), rest: all.filter((word) => !DATE_WORD.test(word)) };
-  };
-  const x = split(a);
-  const y = split(b);
-  if (x.dates !== y.dates || !x.rest.length || !y.rest.length) return false;
-  const [small, big] = x.rest.length <= y.rest.length ? [x.rest, y.rest] : [y.rest, x.rest];
-  return small.every((word) => big.includes(word));
 }
 
 // The model's reply, checked: valid groups and sources, one short sentence each, nothing on the never-list, no
@@ -268,7 +252,7 @@ function profilePrompt(max: number): string {
     "and interests or habits that help motivate, seen in purchases and events, like a gym membership, a fitness or weight-loss goal, or a habit to break.",
     "Each fact is one short sentence about them, at most 20 words, starting with a verb and without their name, like",
     "'Takes BIO 121 lab Wednesdays 2 to 4:50 PM.' or 'Works library shifts Tuesdays and Thursdays 8 to noon.'",
-    "group: about (school, major, year, job, home town, health conditions that affect planning),",
+    "group: about (school, major, year, job, home town),",
     "routines (classes, shifts, practices and other repeating plans), projects (projects, exams, deadlines),",
     "interests (interests, hobbies and life goals, fitness and weight goals included),",
     "people (one fact per key person, their name and role to them, like 'Has Prof Kim for CHEM 1A.' or 'Reports to Sam, the cafe shift lead.'; nothing private about them),",
@@ -364,13 +348,14 @@ const iso = (value: unknown) => new Date(value as string).toISOString();
 
 // POST /api/profile/scan. At most once per local day: the first scan (setup, or a person never scanned) reads
 // 30 days and keeps up to 20 facts, a daily one reads mail since the last scan and keeps up to 8. privateFacts are
-// the device's (src/lib/vault.ts), listed as already known so a scan never finds them again; private facts it finds
-// are returned for the device and never saved here.
+// the device's (src/lib/vault.ts), listed as already known so a scan never finds them again, and removedFacts the
+// ones the person removed there, listed as removed: every scan re-reads the calendar, so a weekly event would
+// otherwise come back in new words. Private facts it finds are returned for the device and never saved here.
 export async function scanProfile(
   email: string,
   session: Pick<Session, "accessToken" | "error" | "user">,
   timeZone: string,
-  { first = false, privateFacts = [] }: { first?: boolean; privateFacts?: string[] } = {},
+  { first = false, privateFacts = [], removedFacts = [] }: { first?: boolean; privateFacts?: string[]; removedFacts?: string[] } = {},
 ): Promise<ProfileResponse> {
   // After a failed refresh the token is dead, so Google counts as unavailable.
   const accessToken = session.error ? undefined : session.accessToken;
@@ -413,13 +398,19 @@ export async function scanProfile(
       return { state: "error" };
     }
     const known = (await listMemories(email)).map((memory) => memory.text);
-    const removed = Array.isArray(claim.forgotten) ? claim.forgotten.map(String) : [];
+    const forgotten: string[] = Array.isArray(claim.forgotten) ? claim.forgotten.map(String) : [];
+    // A private or never-list sentence the person removed before the two lists never stays on the server, not even
+    // as a removal (src/lib/goals.ts listMemories deletes such rows).
+    const removed = forgotten.filter((text) => !factVerdict(text));
+    if (removed.length < forgotten.length) {
+      await sql`UPDATE user_state SET forgotten = ${JSON.stringify(removed)}::jsonb WHERE user_email = ${email}`;
+    }
     const found = await extractFacts({
       name: session.user?.name ?? null,
       email,
       timeZone,
       known: [...known, ...privateFacts],
-      removed,
+      removed: [...removed, ...removedFacts],
       events: sources.events,
       emails: sources.emails,
       max,
