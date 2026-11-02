@@ -47,9 +47,12 @@ Zeno knows Maya right after sign-in, and day 2 is visibly smarter because of day
 - **Booking takes one tap per suggestion** ("Tomorrow 9:30–9:40: email Prof Patel. Book it?"). After pasting
   notes, **one tap adds the whole batch**. Nothing is ever written without a tap (Meta's rules for Muse
   require confirming calendar writes). Booked blocks can be undone.
-- **To-dos and deadlines go straight onto the calendar**: deadlines become all-day "Due: …" events, to-dos
-  become short timed blocks at free times. Every to-do is also kept as a "projects" memory reading "To do: <title>"
-  until it is booked (or the day after it is due), so nothing pasted is lost, even when the batch is never booked or
+- **To-dos and deadlines go straight onto the calendar**: deadlines become all-day "Due: …" events (not when one of
+  their calendars already shows it that day), to-dos become short timed blocks at free times, spread out, never a
+  marathon: due soonest first, each at most 30 minutes, at most two a day, 8 AM to 9 PM, 10 free minutes after each,
+  in the part of the day they focus best when they said (morning, afternoon or evening), else the earliest (live
+  test, Nov 1: five to-dos had landed back to back on a Sunday night). Every to-do is also kept as a "projects"
+  memory reading "To do: <title>" until it is booked (or the day after it is due), so nothing pasted is lost, even when the batch is never booked or
   there is no calendar write access (Vi, Nov 1; review fix: a proposal alone was lost on reload).
 - **Deadline memories expire** the day after the due date; past due dates are refused for new plans (Vi, Nov 1).
 - **Week view: a grid like Google Calendar**, opened from the Today button.

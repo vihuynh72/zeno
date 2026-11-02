@@ -186,8 +186,10 @@ export type SaveMemoryResponse =
   | { state: "signed-out" | "bad-request" | "not-kept" | "error" };
 
 // POST /api/import body { text }: pasted notes become grouped memories (every to-do as a "To do: …" memory, dropped
-// once it is booked), plus, when calendarWrite is "ok", a proposal to book their deadlines (all-day) and the to-dos
-// that fit free time in 3 days (timed). Nothing is booked until the person taps; an unbooked proposal loses nothing.
+// once it is booked), plus, when calendarWrite is "ok", a proposal to book their deadlines (all-day, unless their
+// calendar already shows one that day) and their to-dos as short blocks in free time in 3 days (timed: at most 30
+// minutes, two a day, 8 AM to 9 PM, 10 free minutes after each, in the part of the day they focus best when they
+// said). Nothing is booked until the person taps; an unbooked proposal loses nothing.
 export type ImportResponse =
   | { state: "ok"; memories: Memory[]; proposal: CalendarBlock[]; private?: PrivateFact[] }
   | { state: "signed-out" | "bad-request" | "error" };

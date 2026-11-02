@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { extractNotes, keepNotes } from "@/lib/agent";
 import { aiConfigured } from "@/lib/ai";
-import { calendarWriteFor, freeSlots } from "@/lib/calendar";
+import { calendarWriteFor, freeSlots, withoutKnownDeadlines } from "@/lib/calendar";
 import type { ImportResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
 import { listMemories } from "@/lib/goals";
@@ -13,8 +13,9 @@ export const maxDuration = 30;
 
 // Body { text }: pasted notes, 1 to 8000 characters. Facts, deadlines and to-dos become grouped memories (keepNotes
 // saves them one at a time, so addMemory's dedupe and group caps see each save); when Zeno may write to its calendar,
-// deadlines and the to-dos that fit free time in the next 3 days also come back as a proposal to book (nothing is
-// written to the calendar here). Without write access (no access, or a sign-in from before it) the proposal is empty.
+// the deadlines their calendars don't already show that day and the to-dos placeTodos fits in free time in the next
+// 3 days also come back as a proposal to book (nothing is written to the calendar here). Without write access (no
+// access, or a sign-in from before it) the proposal is empty.
 // Private facts, to-dos and deadlines come back in `private` for the device: never a memory, never a proposal.
 export async function POST(request: Request) {
   const session = await auth();
@@ -41,7 +42,11 @@ export async function POST(request: Request) {
       accessToken ? freeSlots(accessToken, timeZone, { minutes: 5, days: 3 }).catch(() => []) : null,
     ]);
     const proposal = await keepNotes(email, notes, slots, timeZone);
-    return NextResponse.json({ state: "ok", memories: await listMemories(email), proposal, private: notes.private } satisfies ImportResponse);
+    const [memories, fresh] = await Promise.all([
+      listMemories(email),
+      accessToken ? withoutKnownDeadlines(accessToken, timeZone, proposal) : proposal,
+    ]);
+    return NextResponse.json({ state: "ok", memories, proposal: fresh, private: notes.private } satisfies ImportResponse);
   } catch (error) {
     // Never log the model reply: it quotes the person's notes.
     console.error("Import failed:", error instanceof Error ? error.message.slice(0, 120) : "unknown");

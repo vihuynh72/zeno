@@ -1,5 +1,5 @@
 import { askModel, askWithTools, NEVER_KEEP, ZENO_VOICE_PROMPT, type AgentMessage, type ChatMessage, type ToolCall } from "@/lib/ai";
-import { nextDate, validBlocks } from "@/lib/calendar";
+import { nextDate, validBlocks, wakingWindows } from "@/lib/calendar";
 import { dayToText, type UserContext } from "@/lib/context";
 import {
   MEMORY_GROUPS,
@@ -14,7 +14,7 @@ import {
   type StepStatus,
   type TalkAction,
 } from "@/lib/day";
-import { addMemory, changeStepStatus, forgetMemory, replaceRemainingSteps, setGoal, todoMemory, type NewStep } from "@/lib/goals";
+import { addMemory, changeStepStatus, forgetMemory, listMemories, replaceRemainingSteps, setGoal, todoMemory, type NewStep } from "@/lib/goals";
 import { learnFromSteps } from "@/lib/patterns";
 import { factVerdict } from "@/lib/profile";
 import { progressFor } from "@/lib/progress";
@@ -417,7 +417,8 @@ export const deadlineMemory = (deadline: { title: string; date: string }) => `${
 // Saves what imported notes hold: every fact, deadline and to-do as a memory (a deadline's or dated to-do's memory
 // expires the day after it is due), so nothing pasted is lost even when the proposal is never booked. With calendar
 // write access (slots, maybe empty) it also returns the proposal to book, only what booking accepts: each deadline
-// all-day and the to-dos that fit the free time. Booking a to-do drops its "To do:" memory (dropTodos).
+// all-day and the to-dos placeTodos fits in the free time, in the part of the day the memories say they focus best.
+// Booking a to-do drops its "To do:" memory (dropTodos).
 export async function keepNotes(email: string, notes: Notes, slots: FreeSlot[] | null, timeZone: string, now = new Date()): Promise<CalendarBlock[]> {
   // One at a time, so each save's dedupe and group caps see the one before it.
   for (const fact of notes.facts) await addMemory(email, fact.text, { group: fact.group, source: "you" });
@@ -429,8 +430,26 @@ export async function keepNotes(email: string, notes: Notes, slots: FreeSlot[] |
   }
   if (!slots) return [];
   const deadlines = notes.deadlines.map((deadline) => ({ title: deadline.title, kind: "deadline" as const, date: deadline.date }));
+  const focus = focusPart(await listMemories(email));
   // A deadline past booking's 120 days stays a memory only, so the batch never earns a 400.
-  return validBlocks([...deadlines, ...placeTodos(notes.todos, slots, timeZone, now)], timeZone, now) ?? [];
+  return validBlocks([...deadlines, ...placeTodos(notes.todos, slots, timeZone, focus, now)], timeZone, now) ?? [];
+}
+
+// The local hours a to-do block may take (none after 9 PM: the live test, Nov 1, had one running to 9:30 PM), and
+// those of each part of the day someone may focus best in.
+const TODO_HOURS = { from: 8, to: 21 };
+const FOCUS_HOURS = { morning: { from: 8, to: 12 }, afternoon: { from: 12, to: 17 }, evening: { from: 17, to: 21 } };
+export type FocusPart = keyof typeof FOCUS_HOURS;
+const FOCUS = /\b(?:focus|work)\w* best\b.*?\b(morning|afternoon|evening|night|before (?:noon|lunch|\d{1,2}(?::\d\d)? ?a\.?m\b))/i;
+
+// When they focus best, from setup's answer ("Focuses best in the morning.") or what a scan or talk saved ("Focuses
+// best in mornings before 11 AM."): their own words first, then the newest. Late at night is no preference.
+export function focusPart(memories: Memory[]): FocusPart | null {
+  const said = [...memories]
+    .sort((a, b) => Number(b.source === "you") - Number(a.source === "you") || b.createdAt.localeCompare(a.createdAt))
+    .map((memory) => FOCUS.exec(memory.text)?.[1].toLowerCase())
+    .find(Boolean);
+  return !said || said === "night" ? null : said.startsWith("before") ? "morning" : (said as FocusPart);
 }
 
 type Slot = { start: number; end: number };
@@ -445,21 +464,38 @@ export function roundSlots(slots: FreeSlot[], now = new Date()): Slot[] {
   });
 }
 
-// To-dos as timed blocks in the earliest free time that fits, due soonest first, each ending by its due day.
-// One that fits nowhere is left out. Nothing is booked here.
-export function placeTodos(todos: Notes["todos"], slots: FreeSlot[], timeZone: string, now = new Date()): CalendarBlock[] {
+const GAP = 10 * 60_000;
+
+// To-dos as short blocks spread over the free time, never a marathon: due soonest first, each at most 30 minutes,
+// 8 AM to 9 PM, at most two a local day, with 10 free minutes after each, ending by its due day. Each takes the
+// earliest such time in the part of the day they focus best, else the earliest at all; one that fits nowhere is
+// left out. Nothing is booked here.
+export function placeTodos(todos: Notes["todos"], slots: FreeSlot[], timeZone: string, focus: FocusPart | null, now = new Date()): CalendarBlock[] {
   const free = roundSlots(slots, now);
+  const perDay = new Map<string, number>();
+  const find = (length: number, due: string | null, hours: { from: number; to: number }) => {
+    for (const [index, gap] of free.entries()) {
+      // shortcut: only a slot's first local day counts, as freeSlots never spans a night; split slots if a caller does.
+      const open = wakingWindows(timeZone, new Date(gap.start), 1, hours)[0];
+      if (!open) continue;
+      const date = localDate(timeZone, new Date(open.start));
+      if (open.start + length <= open.end && open.start + length + GAP <= gap.end && (!due || date <= due) && (perDay.get(date) ?? 0) < 2) {
+        return { index, start: open.start, date };
+      }
+    }
+    return null;
+  };
   return [...todos]
     .sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999"))
     .flatMap((todo) => {
-      const length = todo.minutes * 60_000;
-      const slot = free.find(
-        (gap) => gap.end - gap.start >= length && (!todo.due || localDate(timeZone, new Date(gap.start + length - 1)) <= todo.due),
-      );
-      if (!slot) return [];
-      const start = slot.start;
-      slot.start = Math.ceil((start + length) / FIVE_MINUTES) * FIVE_MINUTES;
-      return [{ title: todo.title, kind: "todo", start: new Date(start).toISOString(), end: new Date(start + length).toISOString(), stepId: null }];
+      const length = Math.min(todo.minutes, 30) * 60_000;
+      const spot = (focus && find(length, todo.due, FOCUS_HOURS[focus])) || find(length, todo.due, TODO_HOURS);
+      if (!spot) return [];
+      const { start, end } = free[spot.index];
+      const after = Math.ceil((spot.start + length + GAP) / FIVE_MINUTES) * FIVE_MINUTES;
+      free.splice(spot.index, 1, ...[{ start, end: spot.start }, { start: after, end }].filter((gap) => gap.end - gap.start >= FIVE_MINUTES));
+      perDay.set(spot.date, (perDay.get(spot.date) ?? 0) + 1);
+      return [{ title: todo.title, kind: "todo", start: new Date(spot.start).toISOString(), end: new Date(spot.start + length).toISOString(), stepId: null }];
     });
 }
 

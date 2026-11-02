@@ -1,7 +1,7 @@
 import type { Session } from "next-auth";
 import type { CalendarBlock, CalendarWrite, Deadline, FreeSlot, WeekEvent } from "@/lib/day";
 import { ensureSchema, getSql } from "@/lib/db";
-import { isId, setStepSchedule } from "@/lib/goals";
+import { factKey, isId, setStepSchedule } from "@/lib/goals";
 import { dayBounds, localDate, localHour } from "@/lib/tz";
 
 // The narrowest Google scope that lets Zeno make its own calendar and write events only there.
@@ -434,6 +434,30 @@ export async function upcomingDeadlines(accessToken: string, email: string, time
     const daysLeft = daysBetween(days[0].date, date);
     const title = (item.summary ?? "").replace(/^due:\s*/i, "").trim() || "Untitled";
     return daysLeft >= 0 && daysLeft <= 14 ? [{ title, date, daysLeft }] : [];
+  });
+}
+
+// The blocks without the deadlines a shown calendar already holds on their date: an event whose title, as words,
+// holds the deadline's ("Lab report 3 due" holds "Lab report 3"), or an all-day one the deadline's title holds
+// ("Midterm" in "HIST 110 midterm"; a timed "HIST 110" lecture never hides "HIST 110 essay"). Only those dates are
+// read, and a date that fails to read keeps its deadlines.
+export async function withoutKnownDeadlines(accessToken: string, timeZone: string, blocks: CalendarBlock[]): Promise<CalendarBlock[]> {
+  const dates = [...new Set(blocks.flatMap((block) => (block.kind === "deadline" && block.date ? [block.date] : [])))];
+  const read = await Promise.allSettled(
+    dates.map((date) => {
+      const { start, end } = dayBounds(timeZone, instantOn(timeZone, date));
+      return eventsAcross(accessToken, timeZone, start.getTime(), end.getTime());
+    }),
+  );
+  const words = (title: string) => ` ${factKey(title)} `;
+  return blocks.filter((block) => {
+    const day = read[dates.indexOf(block.date ?? "")];
+    const title = words(block.title);
+    return (
+      block.kind !== "deadline" ||
+      day?.status !== "fulfilled" ||
+      !day.value.some((event) => words(event.title).includes(title) || (event.allDay && title.includes(words(event.title))))
+    );
   });
 }
 

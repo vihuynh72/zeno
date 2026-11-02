@@ -12,8 +12,8 @@ registerHooks({
 });
 const {
   CALENDAR_WRITE, bookBlocks, bucketWeek, calendarFailure, calendarWriteFor, createZenoCalendar, deleteBlock, ensureZenoCalendar,
-  eventFor, freeSlots, gapsBetween, getTodayEvents, insertBlock, instantOn, isMonday, localDays, thisMonday, unbookBlock,
-  upcomingDeadlines, validBlocks, wakingWindows, weekEvents,
+  eventFor, freeSlots, gapsBetween, getTodayEvents, insertBlock, instantOn, isMonday, localDays, nextDate, thisMonday, unbookBlock,
+  upcomingDeadlines, validBlocks, wakingWindows, weekEvents, withoutKnownDeadlines,
 } = await import("./calendar.ts");
 
 const LA = "America/Los_Angeles";
@@ -354,6 +354,70 @@ assert.equal(calendarFailure(new Error("network down")), "error");
   // A holiday calendar answering alone is no day: the primary failing fails the read.
   stub((call) => (call.url.includes("/calendars/me%40example.com/") ? googleError(503, "backendError") : reader(call)));
   await assert.rejects(getTodayEvents("tok", LA), /503/, "the primary failing is an error");
+}
+
+// ---- An import never proposes a deadline a shown calendar already has that day (live test, Nov 1) ----
+{
+  const calendarList = Response.json({
+    items: [
+      { id: "me@example.com", primary: true, selected: true },
+      { id: "classes@group.calendar.google.com", selected: true },
+    ],
+  });
+  const allDay = (summary: string, date: string) => ({ id: summary, summary, start: { date }, end: { date: nextDate(date) } });
+  const timed = (summary: string, start: string, end: string) => ({ id: summary, summary, start: { dateTime: start }, end: { dateTime: end } });
+  // Each read is one local day, found by its timeMin (Los Angeles midnight).
+  const byDay: Record<string, Record<string, unknown[]>> = {
+    "2026-11-06T08:00:00.000Z": { "me@example.com": [allDay("Lab report 3 due", "2026-11-06")] },
+    "2026-11-10T08:00:00.000Z": {
+      "classes@group.calendar.google.com": [timed("HIST 110", "2026-11-10T10:00:00-08:00", "2026-11-10T11:15:00-08:00")],
+      "me@example.com": [timed("CS 161 problem set 3 due", "2026-11-10T23:00:00-08:00", "2026-11-10T23:59:00-08:00")],
+    },
+    "2026-11-12T08:00:00.000Z": { "classes@group.calendar.google.com": [allDay("Midterm", "2026-11-12"), allDay("Quiz 10", "2026-11-12")] },
+  };
+  stub((call) => {
+    if (call.url.includes("/calendarList")) return calendarList.clone();
+    const id = decodeURIComponent(call.url.split("/calendars/")[1].split("/events")[0]);
+    const day = new URL(call.url).searchParams.get("timeMin") ?? "";
+    // The primary failing fails that day's read.
+    if (day === "2026-11-20T08:00:00.000Z" && id === "me@example.com") return googleError(503, "backendError");
+    return Response.json({ items: byDay[day]?.[id] ?? [] });
+  });
+  const deadline = (title: string, date: string) => ({ title, kind: "deadline" as const, date });
+  const todo = { title: "Email Prof Patel", kind: "todo" as const, start: "2026-11-02T17:30:00.000Z", end: "2026-11-02T17:40:00.000Z", stepId: null };
+  const kept = await withoutKnownDeadlines("tok", LA, [
+    deadline("Lab report 3", "2026-11-06"), // "Lab report 3 due" holds it
+    todo,
+    deadline("HIST 110 essay", "2026-11-10"), // the HIST 110 lecture is timed, so it never hides the essay
+    deadline("CS 161 problem set 3", "2026-11-10"), // a timed event holding it counts
+    deadline("CHEM 1A midterm", "2026-11-12"), // the all-day "Midterm" it holds
+    deadline("Quiz 1", "2026-11-12"), // whole words: "Quiz 10" is another quiz
+    deadline("Essay draft", "2026-11-20"), // that day failed to read, so it stays
+    deadline("Final project", "2026-12-09"), // nothing that day
+  ]);
+  assert.deepEqual(kept.map((block) => block.title), ["Email Prof Patel", "HIST 110 essay", "Quiz 1", "Essay draft", "Final project"]);
+  const read = calls.filter((call) => call.url.includes("/events?")).map((call) => new URL(call.url).searchParams);
+  assert.deepEqual(
+    [...new Set(read.map((params) => `${params.get("timeMin")} to ${params.get("timeMax")}`))].sort(),
+    [
+      "2026-11-06T08:00:00.000Z to 2026-11-07T08:00:00.000Z",
+      "2026-11-10T08:00:00.000Z to 2026-11-11T08:00:00.000Z",
+      "2026-11-12T08:00:00.000Z to 2026-11-13T08:00:00.000Z",
+      "2026-11-20T08:00:00.000Z to 2026-11-21T08:00:00.000Z",
+      "2026-12-09T08:00:00.000Z to 2026-12-10T08:00:00.000Z",
+    ],
+    "only the deadlines' own days, each read once",
+  );
+  assert.equal(read.length, 10, "two shown calendars a day");
+  // Zeno's own "Due:" from an earlier import counts too, and a proposal with no deadline reads nothing.
+  stub((call) => (call.url.includes("/calendarList") ? calendarList.clone() : Response.json({ items: [allDay("Due: Lab report 3", "2026-11-06")] })));
+  assert.deepEqual(await withoutKnownDeadlines("tok", LA, [deadline("Lab report 3", "2026-11-06")]), []);
+  stub(() => googleError(500, "backendError"));
+  assert.deepEqual(await withoutKnownDeadlines("tok", LA, [todo]), [todo]);
+  assert.equal(calls.length, 0);
+  // A read that fails outright (an expired token too) keeps every deadline.
+  stub(() => googleError(401, "authError"));
+  assert.deepEqual(await withoutKnownDeadlines("tok", LA, [deadline("Lab report 3", "2026-11-06")]), [deadline("Lab report 3", "2026-11-06")]);
 }
 
 // ---- Writing to the Zeno calendar ----
