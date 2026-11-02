@@ -374,6 +374,16 @@ assert.deepEqual(rulePick({ ...context, goal: allDone, deadlines }, nine), {
   goal: "CS 146 final project", due: "2026-11-03", stepId: null, steps: [{ title: "Open it and work 5 minutes", minutes: 5 }], why: "Due tomorrow.",
 });
 assert.equal(rulePick(context, nine), null);
+// A new person whose only work is pasted to-dos still gets a card: a dated one first, and the line names it.
+const todo = (id: string, text: string) => ({ id, text, createdAt: "2026-10-29T15:00:00Z", group: "projects", source: "you" }) as const;
+const todos = [todo("t1", "To do: Email Prof Patel about the project groups."), todo("t2", "To do: Read chapter 4, due Tuesday, November 3.")];
+assert.deepEqual(rulePick({ ...context, memories: todos }, nine), {
+  goal: "Read chapter 4", due: null, stepId: null, steps: [{ title: "Open it and work 5 minutes", minutes: 5 }], why: "It's on your to-do list.",
+});
+assert.equal(rulePick({ ...context, memories: [todos[0]] }, nine)?.goal, "Email Prof Patel about the project groups");
+assert.equal(rulePick({ ...context, memories: [{ ...todos[0], group: "about" }] }, nine), null, "only Projects to-dos");
+assert.match(ruleOpening({ ...context, memories: todos }, "Vi", nine), /From your list: Read chapter 4\. Want to give it 5 minutes\?$/);
+assert.equal(rulePick({ ...context, deadlines, memories: todos }, nine)?.goal, "CS 146 final project", "a calendar deadline comes first");
 assert.equal(rulePick({ ...context, goal, deadlines }, new Date("2026-10-30T08:10:00Z")), null, "1:10 AM offers tomorrow, not a start");
 
 // The rule card, line and first option name the same step: the started one, wherever it sits, deadline or not.

@@ -27,9 +27,19 @@ export function rulePick(context: UserContext, now = new Date()): FirstPick | nu
     };
   }
   const deadline = context.deadlines[0];
-  return deadline
-    ? { goal: deadline.title, due: deadline.date, stepId: null, steps: [{ title: "Open it and work 5 minutes", minutes: 5 }], why: `Due ${dueIn(deadline.daysLeft)}.` }
-    : null;
+  if (deadline) {
+    return { goal: deadline.title, due: deadline.date, stepId: null, steps: [{ title: "Open it and work 5 minutes", minutes: 5 }], why: `Due ${dueIn(deadline.daysLeft)}.` };
+  }
+  const todo = firstTodo(context);
+  return todo ? { goal: todo, due: null, stepId: null, steps: [{ title: "Open it and work 5 minutes", minutes: 5 }], why: "It's on your to-do list." } : null;
+}
+
+// A new person's only work is often a pasted to-do ("To do: Read chapter 4, due Tuesday, November 3."): one with a
+// due date first, named without its date.
+function firstTodo({ memories }: UserContext): string | null {
+  const todos = memories.filter((memory) => memory.group === "projects" && memory.text.startsWith("To do: "));
+  const todo = todos.find((memory) => /, due /.test(memory.text)) ?? todos[0];
+  return todo ? todo.text.slice("To do: ".length).replace(/, due .*$/, "").replace(/\.$/, "").trim() || null : null;
 }
 
 // Before 5 AM it is still the night before for most people, not morning.
@@ -46,6 +56,7 @@ export function ruleOpening(context: UserContext, firstName: string | null, now 
   const { goal } = context;
   const next = nextStep(goal);
   const deadline = context.deadlines[0];
+  const todo = firstTodo(context);
   const late = localHour(context.timeZone, now) < 5;
   const unread = [context.calendarState !== "ok" && "calendar", context.emailState !== "ok" && "inbox"].filter(Boolean);
   return [
@@ -58,7 +69,9 @@ export function ruleOpening(context: UserContext, firstName: string | null, now 
         ? `Next up for ${goal.title}: ${next.title}. Want to pick it up?`
         : deadline
           ? `${deadline.title} is due ${dueIn(deadline.daysLeft)}. Want to open it for 5 minutes?`
-          : "What's one thing you want to move forward today?",
+          : todo
+            ? `From your list: ${todo}. Want to give it 5 minutes?`
+            : "What's one thing you want to move forward today?",
   ]
     .filter(Boolean)
     .join(" ");
