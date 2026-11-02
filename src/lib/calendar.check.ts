@@ -412,6 +412,12 @@ assert.equal(calendarFailure(new Error("network down")), "error");
   // Zeno's own "Due:" from an earlier import counts too, and a proposal with no deadline reads nothing.
   stub((call) => (call.url.includes("/calendarList") ? calendarList.clone() : Response.json({ items: [allDay("Due: Lab report 3", "2026-11-06")] })));
   assert.deepEqual(await withoutKnownDeadlines("tok", LA, [deadline("Lab report 3", "2026-11-06")]), []);
+  // An all-day event counts on its own dates: a calendar in New York can return Nov 7's for Los Angeles' Nov 6.
+  const lab = (start: string, end: string) => ({ id: "lab", summary: "Lab report 3 due", start: { date: start }, end: { date: end } });
+  stub((call) => (call.url.includes("/calendarList") ? calendarList.clone() : Response.json({ items: [lab("2026-11-07", "2026-11-08")] })));
+  assert.deepEqual(await withoutKnownDeadlines("tok", LA, [deadline("Lab report 3", "2026-11-06")]), [deadline("Lab report 3", "2026-11-06")]);
+  stub((call) => (call.url.includes("/calendarList") ? calendarList.clone() : Response.json({ items: [lab("2026-11-05", "2026-11-07")] })));
+  assert.deepEqual(await withoutKnownDeadlines("tok", LA, [deadline("Lab report 3", "2026-11-06")]), [], "a span that holds the date");
   stub(() => googleError(500, "backendError"));
   assert.deepEqual(await withoutKnownDeadlines("tok", LA, [todo]), [todo]);
   assert.equal(calls.length, 0);

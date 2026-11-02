@@ -14,7 +14,18 @@ import {
   type StepStatus,
   type TalkAction,
 } from "@/lib/day";
-import { addMemory, changeStepStatus, forgetMemory, listMemories, replaceRemainingSteps, setGoal, todoMemory, type NewStep } from "@/lib/goals";
+import {
+  addMemory,
+  changeStepStatus,
+  deadlineMemory,
+  dueDay,
+  forgetMemory,
+  listMemories,
+  replaceRemainingSteps,
+  setGoal,
+  todoMemory,
+  type NewStep,
+} from "@/lib/goals";
 import { learnFromSteps } from "@/lib/patterns";
 import { factVerdict } from "@/lib/profile";
 import { progressFor } from "@/lib/progress";
@@ -409,11 +420,6 @@ export function notesFrom(text: string, today: string): Notes {
   return { facts: facts.slice(0, 8), todos: todos.slice(0, 6), deadlines: deadlines.slice(0, 6), private: kept.slice(0, 20) };
 }
 
-const dueDay = (date: string) => formatDate(new Date(`${date}T12:00:00Z`), "UTC");
-
-// A deadline kept as a memory, so Zeno knows it even when it is never booked or is past the calendar's 14 days.
-export const deadlineMemory = (deadline: { title: string; date: string }) => `${deadline.title}, due ${dueDay(deadline.date)}.`;
-
 // Saves what imported notes hold: every fact, deadline and to-do as a memory (a deadline's or dated to-do's memory
 // expires the day after it is due), so nothing pasted is lost even when the proposal is never booked. With calendar
 // write access (slots, maybe empty) it also returns the proposal to book, only what booking accepts: each deadline
@@ -440,7 +446,10 @@ export async function keepNotes(email: string, notes: Notes, slots: FreeSlot[] |
 const TODO_HOURS = { from: 8, to: 21 };
 const FOCUS_HOURS = { morning: { from: 8, to: 12 }, afternoon: { from: 12, to: 17 }, evening: { from: 17, to: 21 } };
 export type FocusPart = keyof typeof FOCUS_HOURS;
-const FOCUS = /\b(?:focus|work)\w* best\b.*?\b(morning|afternoon|evening|night|before (?:noon|lunch|\d{1,2}(?::\d\d)? ?a\.?m\b))/i;
+// Only "in the", "at", "during" and the like between, so "best with music, never in the morning" and "best when the
+// night before is planned" say nothing; "before 2 AM" is a night owl's.
+const FOCUS =
+  /\b(?:(?:focus|work|stud(?:y|ie))\w* best|most productive) (?:(?:in|during|the|early|late|at) )*(morning|afternoon|evening|night|before (?:noon|lunch|(?:[6-9]|1[01])(?::\d\d)? ?a\.?m\b))/i;
 
 // When they focus best, from setup's answer ("Focuses best in the morning.") or what a scan or talk saved ("Focuses
 // best in mornings before 11 AM."): their own words first, then the newest. Late at night is no preference.

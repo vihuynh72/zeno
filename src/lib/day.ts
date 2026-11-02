@@ -51,7 +51,8 @@ export type DayEmail = { from: string; subject: string; snippet: string; unread:
 // A free gap in the person's calendars, ISO start and end.
 export type FreeSlot = { start: string; end: string };
 
-// A due date Zeno knows about (from the Zeno calendar's all-day "Due:" events), date is YYYY-MM-DD.
+// A due date Zeno knows about (the Zeno calendar's all-day "Due:" events and the deadlines kept as memories), date is
+// YYYY-MM-DD.
 export type Deadline = { title: string; date: string; daysLeft: number };
 
 // Whether Zeno may write to its own calendar: "needs-permission" until the person grants the calendar scope.

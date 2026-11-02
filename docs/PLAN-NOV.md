@@ -48,7 +48,8 @@ Zeno knows Maya right after sign-in, and day 2 is visibly smarter because of day
   notes, **one tap adds the whole batch**. Nothing is ever written without a tap (Meta's rules for Muse
   require confirming calendar writes). Booked blocks can be undone.
 - **To-dos and deadlines go straight onto the calendar**: deadlines become all-day "Due: …" events (not when one of
-  their calendars already shows it that day), to-dos become short timed blocks at free times, spread out, never a
+  their calendars already shows it that day; Today, the opening and the first-card pick still list it, as they read
+  deadlines from memory too), to-dos become short timed blocks at free times, spread out, never a
   marathon: due soonest first, each at most 30 minutes, at most two a day, 8 AM to 9 PM, 10 free minutes after each,
   in the part of the day they focus best when they said (morning, afternoon or evening), else the earliest (live
   test, Nov 1: five to-dos had landed back to back on a Sunday night). Every to-do is also kept as a "projects"

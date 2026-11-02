@@ -440,15 +440,10 @@ export async function upcomingDeadlines(accessToken: string, email: string, time
 // The blocks without the deadlines a shown calendar already holds on their date: an event whose title, as words,
 // holds the deadline's ("Lab report 3 due" holds "Lab report 3"), or an all-day one the deadline's title holds
 // ("Midterm" in "HIST 110 midterm"; a timed "HIST 110" lecture never hides "HIST 110 essay"). Only those dates are
-// read, and a date that fails to read keeps its deadlines.
+// read, and a date that fails to read keeps its deadlines. Zeno's deadlines (knownDeadlines) still list a skipped one.
 export async function withoutKnownDeadlines(accessToken: string, timeZone: string, blocks: CalendarBlock[]): Promise<CalendarBlock[]> {
   const dates = [...new Set(blocks.flatMap((block) => (block.kind === "deadline" && block.date ? [block.date] : [])))];
-  const read = await Promise.allSettled(
-    dates.map((date) => {
-      const { start, end } = dayBounds(timeZone, instantOn(timeZone, date));
-      return eventsAcross(accessToken, timeZone, start.getTime(), end.getTime());
-    }),
-  );
+  const read = await Promise.allSettled(dates.map((date) => eventsByDay(accessToken, timeZone, date, 1)));
   const words = (title: string) => ` ${factKey(title)} `;
   return blocks.filter((block) => {
     const day = read[dates.indexOf(block.date ?? "")];
@@ -456,7 +451,7 @@ export async function withoutKnownDeadlines(accessToken: string, timeZone: strin
     return (
       block.kind !== "deadline" ||
       day?.status !== "fulfilled" ||
-      !day.value.some((event) => words(event.title).includes(title) || (event.allDay && title.includes(words(event.title))))
+      !day.value[0].events.some((event) => words(event.title).includes(title) || (event.allDay && title.includes(words(event.title))))
     );
   });
 }
@@ -477,8 +472,12 @@ export function bucketWeek(events: WeekEvent[], days: LocalDay[]): { date: strin
   }));
 }
 
-// Seven local days from `monday` (YYYY-MM-DD) with the events from every shown calendar, in Google's calendar colors.
-export async function weekEvents(accessToken: string, timeZone: string, monday: string) {
-  const days = localDays(timeZone, instantOn(timeZone, monday), 7);
-  return bucketWeek(await eventsAcross(accessToken, timeZone, days[0].start, days[6].end), days);
+// `count` local days from `date` (YYYY-MM-DD) with the events from every shown calendar, in Google's calendar colors.
+// An all-day event counts by its own dates: a calendar in another zone can return the next day's for this window.
+async function eventsByDay(accessToken: string, timeZone: string, date: string, count: number) {
+  const days = localDays(timeZone, instantOn(timeZone, date), count);
+  return bucketWeek(await eventsAcross(accessToken, timeZone, days[0].start, days[count - 1].end), days);
 }
+
+// Seven local days from `monday` (YYYY-MM-DD).
+export const weekEvents = (accessToken: string, timeZone: string, monday: string) => eventsByDay(accessToken, timeZone, monday, 7);

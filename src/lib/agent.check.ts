@@ -24,12 +24,13 @@ registerHooks({
   load: (url, context, nextLoad) => (url in FAKES ? { format: "module", source: FAKES[url], shortCircuit: true } : nextLoad(url, context)),
 });
 const {
-  checkCall, checkPick, checkPlan, cleanHistory, deadlineMemory, extractNotes, focusPart, goalText, isDate, keepNotes, notesFrom,
+  checkCall, checkPick, checkPlan, cleanHistory, extractNotes, focusPart, goalText, isDate, keepNotes, notesFrom,
   openingPrompt, parseOpening, parseReply, placeTodos, roundSlots, slotsText, systemPrompt, talk,
 } = await import("./agent.ts");
 const { SETUP } = await import("../components/day-flow.ts");
 const { rulePick, ruleOpening, ruleOptions, senderName } = await import("./brief.ts");
-const { dayToText } = await import("./context.ts");
+const { dayToText, knownDeadlines } = await import("./context.ts");
+const { deadlineMemory } = await import("./goals.ts");
 const { NO_PROGRESS } = await import("./progress.ts");
 const { askWithTools } = await import("./ai.ts");
 const { localIso } = await import("./tz.ts");
@@ -607,6 +608,15 @@ assert.equal(focusPart([own("Focuses best in the morning.", "2026-11-01T09:00:00
 assert.equal(focusPart([own("Focuses best in the morning.", "2026-11-01T09:00:00.000Z"), own("Focuses best late at night.", "2026-11-01T11:00:00.000Z")]), null);
 assert.equal(focusPart([memory("m", "Takes CS 146.", "routines"), memory("n", "Starting is hard when energy is low.", "about")]), null);
 assert.equal(focusPart([]), null);
+// Only what says when: a night owl's "before 2 AM", a "never" and a stray "night" say nothing, so setup's answer stands.
+assert.equal(focusPart([scanned("Focuses best before 2 AM.")]), null);
+assert.equal(focusPart([scanned("Focuses best before 12 AM.")]), null);
+assert.equal(focusPart([scanned("Focuses best before 9:30 a.m.")]), "morning");
+assert.equal(focusPart([scanned("Focuses best with music, never in the morning.")]), null);
+assert.equal(focusPart([own("Focuses best in the morning.", "2026-11-01T09:00:00.000Z"), own("Works best when the night before is planned.", "2026-11-01T11:00:00.000Z")]), "morning");
+assert.equal(focusPart([scanned("Studies best in the evening.")]), "evening");
+assert.equal(focusPart([scanned("Most productive early in the morning.")]), "morning");
+assert.equal(focusPart([scanned("Works best in the late afternoon.")]), "afternoon");
 
 // dayToText: free time today and tomorrow, deadlines with days left and progress, honest when unread.
 const at = new Date("2026-11-02T16:00:00Z"); // Monday 8 AM in Los Angeles
@@ -650,6 +660,38 @@ assert.doesNotMatch(unread, /Free time today/);
 // The calendar read, but free time or the Zeno calendar's deadlines failed on their own: said as unread, never "none".
 const partly = dayToText({ ...context, freeState: "error", deadlinesState: "error" }, at);
 assert.match(partly, /\nFree time: could not be read\. Do not invent free time\.\nDeadlines on their Zeno calendar: could not be read\. Do not say they have none\.\n/);
+assert.match(
+  dayToText({ ...context, deadlines: [{ title: "Lab report 3", date: "2026-11-06", daysLeft: 4 }], deadlinesState: "error" }, at),
+  /\nDeadlines: Lab report 3, due in 4 days \(2026-11-06\)\.\nDeadlines on their Zeno calendar: could not be read\. Do not say they have none\.\n/,
+  "a remembered one still lists, and the unread calendar is said, as the list may be short",
+);
+// The deadlines Zeno knows: its calendar's and the remembered ones in the same 14 days, soonest first, each once
+// (live test, Nov 1: "Lab report 3", not proposed because their own calendar showed it, had dropped out of all three).
+const said = (title: string, date: string) => memory(title, deadlineMemory({ title, date }), "projects");
+assert.deepEqual(
+  knownDeadlines(
+    [{ title: "CS 146 final project", date: "2026-11-03", daysLeft: 1 }],
+    [
+      said("Lab report 3", "2026-11-06"),
+      said("cs 146 Final Project", "2026-11-03"), // booked too
+      said("Quiz 2", "2026-11-02"), // today
+      said("Bio quiz", "2026-11-16"), // the 14th day
+      said("Midterm 2", "2026-11-18"), // past the 14 days
+      memory("t", "To do: Read chapter 4, due Tuesday, November 3.", "projects"),
+      memory("f", "Focuses best in the morning.", "about"),
+    ],
+    zone,
+    at,
+  ),
+  [
+    { title: "Quiz 2", date: "2026-11-02", daysLeft: 0 },
+    { title: "CS 146 final project", date: "2026-11-03", daysLeft: 1 },
+    { title: "Lab report 3", date: "2026-11-06", daysLeft: 4 },
+    { title: "Bio quiz", date: "2026-11-16", daysLeft: 14 },
+  ],
+);
+assert.deepEqual(knownDeadlines([], [said("Lab report 3", "2026-11-06")], "Asia/Tokyo", new Date("2026-11-06T16:00:00Z")), [], "Tokyo's Nov 7: past due");
+assert.equal(rulePick({ ...context, deadlines: knownDeadlines([], [said("Lab report 3", "2026-11-06")], zone, at) }, at)?.why, "Due in 4 days.");
 assert.doesNotMatch(dayToText({ ...context, freeState: "error", free: [{ start: "2026-11-02T17:30:00Z", end: "2026-11-02T19:00:00Z" }] }, at), /could not be read/, "talk's own read of free time stands");
 
 // The model opening follows the person's clock and names one pick; an at-risk evening leads with the streak.

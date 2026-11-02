@@ -2,6 +2,7 @@ import { MEMORY_GROUPS, type Goal, type Memory, type MemoryGroup, type MemorySou
 import { ensureSchema, getSql } from "@/lib/db";
 // profile.ts imports this file too; neither uses the other until a call, so the cycle is safe.
 import { factVerdict } from "@/lib/profile";
+import { formatDate } from "@/lib/tz";
 
 // A step for a new or edited roadmap; `id` keeps an existing todo step.
 export type NewStep = { id?: string; title: string; minutes: number | null };
@@ -343,6 +344,11 @@ export async function dropMemories(email: string, ids: string[]): Promise<void> 
 
 // A pasted to-do, kept as a memory until it is booked (dropTodos) or the day after it is due.
 export const todoMemory = (title: string) => `To do: ${title}`;
+
+export const dueDay = (date: string) => formatDate(new Date(`${date}T12:00:00Z`), "UTC");
+
+// A deadline kept as a memory, so Zeno knows it even when it is never booked or is past the calendar's 14 days.
+export const deadlineMemory = (deadline: { title: string; date: string }) => `${deadline.title}, due ${dueDay(deadline.date)}.`;
 
 // Booked to-dos are on the calendar now, so their "To do:" memories go; dropped, not forgotten, so a later paste
 // of the same to-do is kept again.
