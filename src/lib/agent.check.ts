@@ -581,6 +581,11 @@ assert.deepEqual(placed(pasted, liveSlots, zone, "morning", liveAt), [
   // No morning is left in the 3 days read, so the last takes the earliest time.
   "Buy running shoes before Turkey Trot 2026-11-01T18:35-08:00 to 19:05-08:00",
 ]);
+// The import reads 5 days, so a free Wednesday morning takes it instead of Sunday night.
+assert.equal(
+  placed(pasted, [...liveSlots, slot("2026-11-04T08:00-08:00", "2026-11-04T10:00-08:00")], zone, "morning", liveAt)[4],
+  "Buy running shoes before Turkey Trot 2026-11-04T08:00-08:00 to 08:30-08:00",
+);
 assert.deepEqual(placed(pasted.slice(0, 1), liveSlots, zone, "afternoon", liveAt), ["Read chapter 4 for HIST 110 2026-11-02T13:30-08:00 to 14:00-08:00"]);
 assert.deepEqual(placed(pasted.slice(0, 1), liveSlots, zone, "evening", liveAt), ["Read chapter 4 for HIST 110 2026-11-01T18:35-08:00 to 19:05-08:00"]);
 assert.deepEqual(

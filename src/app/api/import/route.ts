@@ -14,7 +14,7 @@ export const maxDuration = 30;
 // Body { text }: pasted notes, 1 to 8000 characters. Facts, deadlines and to-dos become grouped memories (keepNotes
 // saves them one at a time, so addMemory's dedupe and group caps see each save); when Zeno may write to its calendar,
 // the deadlines their calendars don't already show that day and the to-dos placeTodos fits in free time in the next
-// 3 days also come back as a proposal to book (nothing is written to the calendar here). Without write access (no
+// 5 days also come back as a proposal to book (nothing is written to the calendar here). Without write access (no
 // access, or a sign-in from before it) the proposal is empty.
 // Private facts, to-dos and deadlines come back in `private` for the device: never a memory, never a proposal.
 export async function POST(request: Request) {
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     // Free time loads while the model reads; a failed read still proposes the deadlines.
     const [notes, slots] = await Promise.all([
       extractNotes(text, timeZone),
-      accessToken ? freeSlots(accessToken, timeZone, { minutes: 5, days: 3 }).catch(() => []) : null,
+      accessToken ? freeSlots(accessToken, timeZone, { minutes: 5, days: 5 }).catch(() => []) : null,
     ]);
     const proposal = await keepNotes(email, notes, slots, timeZone);
     const [memories, fresh] = await Promise.all([
