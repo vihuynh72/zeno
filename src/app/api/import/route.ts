@@ -15,6 +15,7 @@ export const maxDuration = 30;
 // saves them one at a time, so addMemory's dedupe and group caps see each save); when Zeno may write to its calendar,
 // deadlines and the to-dos that fit free time in the next 3 days also come back as a proposal to book (nothing is
 // written to the calendar here). Without write access (no access, or a sign-in from before it) the proposal is empty.
+// Private facts, to-dos and deadlines come back in `private` for the device: never a memory, never a proposal.
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.email) {
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
       accessToken ? freeSlots(accessToken, timeZone, { minutes: 5, days: 3 }).catch(() => []) : null,
     ]);
     const proposal = await keepNotes(email, notes, slots, timeZone);
-    return NextResponse.json({ state: "ok", memories: await listMemories(email), proposal } satisfies ImportResponse);
+    return NextResponse.json({ state: "ok", memories: await listMemories(email), proposal, private: notes.private } satisfies ImportResponse);
   } catch (error) {
     // Never log the model reply: it quotes the person's notes.
     console.error("Import failed:", error instanceof Error ? error.message.slice(0, 120) : "unknown");

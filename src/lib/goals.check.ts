@@ -224,7 +224,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     return json({
       items: [
         {
-          summary: "ADHD coaching",
+          summary: "Tutoring",
           recurrence: ["RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=FR"],
           start: { dateTime: "2026-10-02T15:00:00-07:00" },
           end: { dateTime: "2026-10-02T15:45:00-07:00" },
@@ -248,10 +248,23 @@ const texts = (result: Awaited<ReturnType<typeof scanProfile>>) => (result.state
 try {
   process.env.META_MODEL_API_KEY ??= "check-only";
   console.log = () => undefined;
-  const coaching = "Has ADHD coaching every other Friday at 3 PM.";
+  const coaching = "Has tutoring every other Friday at 3 PM.";
   const major = "Is a junior biology major at SJSU.";
-  modelReplies = [JSON.stringify({ facts: [{ text: coaching, group: "about", source: "calendar" }, { text: major, group: "about", source: "email" }] })];
-  assert.deepEqual(texts(await scanProfile(scanEmail, session, zone, { first: true })), [coaching, major], "the first scan learns");
+  const adhd = "Has ADHD coaching every other Friday at 4 PM.";
+  modelReplies = [
+    JSON.stringify({
+      facts: [
+        { text: coaching, group: "about", source: "calendar", private: false },
+        { text: major, group: "about", source: "email", private: false },
+        { text: adhd, group: "about", source: "calendar", private: false },
+      ],
+    }),
+  ];
+  const first = await scanProfile(scanEmail, session, zone, { first: true });
+  assert.deepEqual(texts(first), [coaching, major], "the first scan learns");
+  // Private (overall health), so it goes back to the device and no row ever holds it.
+  assert.deepEqual(first.state === "ok" && first.private, [{ text: adhd, group: "about" }]);
+  assert.equal((await sql`SELECT count(*)::int AS n FROM memories WHERE user_email = ${scanEmail} AND text ILIKE '%adhd%'`)[0].n, 0);
   assert.ok(gmailQueries.every((q) => q.startsWith("newer_than:30d ")), "the first scan reads 30 days of mail");
   assert.equal(modelBodies[0].response_format.json_schema.schema.properties.facts.maxItems, 20);
 
@@ -268,13 +281,13 @@ try {
   modelReplies = [
     JSON.stringify({
       facts: [
-        { text: "Has ADHD coaching every other Friday at 3pm.", group: "about", source: "calendar" },
+        { text: "Has tutoring every other Friday at 3pm.", group: "about", source: "calendar" },
         { text: "Plays intramural soccer Monday nights.", group: "routines", source: "calendar" },
       ],
     }),
   ];
   assert.deepEqual(texts(await scanProfile(scanEmail, session, zone)), ["Plays intramural soccer Monday nights."], "day 2 learns only what is new");
-  assert.match(modelBodies[1].messages[1].content, /Removed by the person, never add again:\n- Has ADHD coaching every other Friday at 3 PM\./);
+  assert.match(modelBodies[1].messages[1].content, /Removed by the person, never add again:\n- Has tutoring every other Friday at 3 PM\./);
   assert.equal(modelBodies[1].response_format.json_schema.schema.properties.facts.maxItems, 8, "a daily scan keeps up to 8");
   assert.ok(gmailQueries.length === 2 && gmailQueries.every((q) => /^after:\d+ /.test(q)), "a daily scan reads mail since the last one");
 
