@@ -1,9 +1,55 @@
 # Zeno handoff
 
-Last updated: 2026-10-31, 3:30 AM PT, by Claude (session 2, autonomous while Vi slept).
+Last updated: 2026-11-01, 6:15 PM PT, by Claude (session 3, the follow-through build).
 Read this first, then the Linear doc **"Zeno hackathon build plan (Nov 4)"** (project Zeno, team VI).
 
-## 0. Session 2 (2026-10-31, 1:21-4:21 AM PT, autonomous while Vi slept)
+## 0. Session 3 (2026-11-01): the follow-through build
+
+Spec: `docs/PLAN-NOV.md` (Vi's 30 answers and the Nov 1 privacy rule). Memory benchmark: `docs/MEMORY-BENCH.md`.
+Linear: VI-319 and VI-321 Done; VI-315, VI-320, VI-322 In Progress until the real-Google test.
+
+### Live on main (production, cf5a48a)
+- **Backend** (a4eef78):
+  - Calendar: a separate "Zeno" calendar, free time, booking with Undo, the week, and deadlines.
+  - Brain: the first-card pick, deterministic plan saves (`POST /api/goal`), and booking proposals.
+  - Profile: grouped memory and the Gmail and Calendar scan.
+  - Streak: a rest day, milestones, and patterns with hysteresis.
+- **Vault contract** (8b73157), **UI** (cf5a48a: merges of feat/flow-ui, feat/week-ui, feat/vault, plus 3 fixes):
+  - The first card with "Start · 5 min".
+  - The plan card with booking chips.
+  - The Noted line with Undo.
+  - Streak dots.
+  - The grouped Memory sheet and the account menu.
+  - Focus check-ins, heads-ups and hands-free.
+  - The Week grid.
+  - **Private facts stay in the browser**: `zeno.vault.<account>`, cleared at sign out. Routes take them as `private: string[]` in the body and never save them.
+
+### How it was verified
+- All checks pass: typegen, tsc, eslint, build, 15 self-checks, and listen-check. day-flow and week-grid also pass in LA and Tokyo time.
+- Memory bench run mvyldzj5: overall 100.0, privacy 100.0, no leaks.
+- Headless walkthrough as a new fake user: 21/21 at 1440 and 20/21 at 390. In the miss, the opening returned no pick.
+- Before the deploy, the only memory rows in the database were Vi's (1 row), and none matched the private or never lists. `listMemories` now deletes such rows on read, so that read deleted nothing.
+
+### Not verified yet
+- Real Google: booking on the Zeno calendar, freeBusy, the week view, and the Gmail profile scan. These wait on the demo sign-in as dotcainha@gmail.com.
+- A real microphone with hands-free, Safari and iOS, and dark mode in a live run (only checked in the gallery).
+
+### Known issues
+- **Undo of a Noted fact is guarded only in the browser.** The model can replay the undone request from the history, and its reply can still say it saved it.
+- **Reload shows the saved line for 2.5-4 s** before the new pick.
+- **Mute is not remembered across reloads.**
+- **"Hear Zeno" can push the pick's chips under the dock at 390x844.**
+- **About 1 in 4 new-user openings returned no pick**, and the rule had none either.
+- **The Google access token is readable from `/api/auth/session`** (pre-existing). It can now also write the Zeno calendar.
+- **Once about 120 facts are in the person's own words, scanned facts and patterns stop saving.**
+- **Undated "To do:" memories never clear.**
+
+### Next steps
+1. Vi signs in as dotcainha@gmail.com (all boxes ticked), then a live test of scan, free time, booking, week and Undo.
+2. The demo video and submission (VI-317), due Nov 4, 6 PM PT.
+3. After Nov 4: rotate the Meta and Google keys.
+
+## 0b. Session 2 (2026-10-31, 1:21-4:21 AM PT, autonomous while Vi slept)
 
 ### What Vi asked for (after testing the app)
 Almost instant first moment; Zeno talks by default; "good morning" at 1 AM was wrong; it is slow; typing feels wrong ("people like to consume, not create"), so give options to tap; short and fast-paced "like a reel"; habit-forming ("addictive") so people commit; a smarter AI with real context; a first-run setup where people onboard themselves and Zeno stores that context well; calendar and email in the middle of the page (a mail feature is coming); pressing a button for long "feels weird". Vi asked to be challenged where wrong.
@@ -105,7 +151,7 @@ Zeno is a voice-first daily helper: it gives a short spoken brief from your cale
 
 ## 5. In flight
 
-Nothing. All branches are merged into `main`; all worktrees were removed. Old local branches (`feat/*`, `design/finish`, `fix/foundation`) can be deleted.
+Nothing. Everything through cf5a48a is merged into `main`. Workflow worktrees under `.claude/worktrees/` and old local branches (`feat/*`, `integrate/*`, `design/finish`, `fix/foundation`) can be deleted.
 
 ## 6. Remaining work
 
@@ -126,7 +172,7 @@ See "Next steps" in section 0, the Linear issues VI-306 to VI-318, and `docs/SUB
 ## 8. Open items for Vi
 
 - Go through first-run setup yourself, then try Talk with the real mic in Chrome.
-- Google OAuth audience: confirm in Google Auth Platform > Audience; if it is in Testing, add dotcainha@gmail.com as a test user. Testing-mode refresh tokens expire after 7 days, so sign in again before the Nov 9 finals.
+- Google OAuth: the app is published and unverified (100-user cap). People see Google's "hasn't verified this app" screen and click Advanced, then Go to Zeno. Declaring the scopes under Data Access is only needed for verification.
 - "Import contacts": read as importing context (pasted notes). Say if you meant Google Contacts.
 - Rotate the Meta and Google keys after Nov 4 (they were pasted into a chat once); restrict the Google key to the Text-to-Speech API.
 - Local-only files (gitignored or untracked on purpose): `PRODUCT.md`, `.impeccable/` (design contract, decision sketches, detector config), `zeno-onboarding.html`.
