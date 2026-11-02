@@ -2,10 +2,11 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { ruleOpening, ruleOptions } from "@/lib/brief";
-import { loadUserContext } from "@/lib/context";
+import { loadUserContext, scrub } from "@/lib/context";
 import type { DayResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
 import { hasAnyGoal } from "@/lib/goals";
+import { sensitiveEmail } from "@/lib/profile";
 import { accountKey } from "@/lib/session-json";
 import { timeZoneFrom } from "@/lib/tz";
 
@@ -41,7 +42,10 @@ export async function GET() {
     free: context.free,
     deadlines: context.deadlines,
     calendarWrite: context.calendarWrite,
-    emails: context.emails.map(({ from, subject, snippet, unread }) => ({ from, subject, snippet, unread })),
+    // The day is kept in the browser, and codes are kept nowhere: code and bank mail shows that it came, not what it says.
+    emails: context.emails.map(({ from, subject, snippet, unread }) =>
+      sensitiveEmail({ from, subject, snippet }) ? { from, subject: scrub(subject), snippet: "", unread } : { from, subject, snippet, unread },
+    ),
     unreadEmail: context.emails.filter((item) => item.unread).length,
     isNew: context.tasksState === "ok" && context.memories.length === 0 && !anyGoal,
     streak: context.progress.streak,

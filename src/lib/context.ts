@@ -149,7 +149,7 @@ export function knownDeadlines(booked: Deadline[], memories: Memory[], timeZone:
 const data = (text: string) => `<<<${text.replace(/[<>]{3,}/g, "")}>>>`;
 // "No passwords or codes" (docs/PLAN-NOV.md): a sign-in code can be 4 digits or split ("482 913"), and a link or
 // address can carry one, a link without https too ("zoom.us/j/812?pwd=...").
-const scrub = (text: string) =>
+export const scrub = (text: string) =>
   text
     .replace(/https?:\/\/\S+|www\.\S+|\b[\w-]+(\.[\w-]+)+\/\S*/gi, "[link]")
     .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, "[email]")
