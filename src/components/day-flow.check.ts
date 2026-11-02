@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import type { FirstPick, Goal, Progress, Step, TalkAction } from "@/lib/day";
+import type { Fact } from "@/components/day-flow";
 
 registerHooks({
   resolve: (specifier, context, nextResolve) =>
@@ -58,6 +59,16 @@ assert.deepEqual(quickReplies(undefined), []);
 // The model's own "Something else" (its prompt even suggests it) and repeats would duplicate a chip's key.
 assert.deepEqual(quickReplies(["Start it", "Something else", "Start it", "Set up tomorrow", "something else."]), ["Start it", "Set up tomorrow"]);
 assert.equal(quickReplies(["x".repeat(200)])[0].length, 80);
+// Beside a booking offer (live, Nov 1): the offer chip is the one way to book, and three chips at most sit beside it.
+assert.deepEqual(quickReplies(["Yes, book it", "Pick later time", "Not now"], true), ["Pick later time", "Not now"]);
+assert.deepEqual(
+  quickReplies(["Sounds good!", "Do it", "Book it", "Yes", "Let's do it", "Sure, block it", "OK, sounds good, book it.", "Lock it in", "Add it to my calendar"], true),
+  [],
+);
+assert.deepEqual(quickReplies(["Yes, but later", "Not on my calendar", "Do it now"], true), ["Yes, but later", "Not on my calendar"], "not just a yes");
+assert.deepEqual(quickReplies(["Book 9 AM instead", "Book a later time"], true), ["Book 9 AM instead", "Book a later time"], "another time");
+assert.deepEqual(quickReplies(["Earlier", "Later tonight", "Not now"], true), ["Earlier", "Later tonight"]);
+assert.deepEqual(quickReplies(["Yes, book it", "Not now"]), ["Yes, book it", "Not now"], "no offer: a yes is the answer");
 assert.ok(SETUP.every((card) => card.answers.length >= 2 && card.answers.length <= 4));
 
 // Hands-free listens only after a question.
@@ -171,5 +182,11 @@ const grouped = groupFacts([
 ]);
 assert.deepEqual(grouped.map((g) => g.name), ["About you", "Routines", "How you work best"]);
 assert.equal(grouped[0].facts[0].device, true);
+// Setup's summary leads with what helps plan (projects, routines, how you work); About you last; ties keep their order.
+const fact = (id: string, group: string) => ({ id, text: id, group, device: false }) as Fact;
+assert.deepEqual(
+  flow.forPlanning([fact("a1", "about"), fact("p1", "people"), fact("r1", "routines"), fact("x", "nope"), fact("j1", "projects"), fact("w1", "work-style"), fact("i1", "interests"), fact("j2", "projects")]).map((f) => f.id),
+  ["j1", "j2", "r1", "w1", "i1", "p1", "a1", "x"],
+);
 
 console.log("day-flow self-check passed");

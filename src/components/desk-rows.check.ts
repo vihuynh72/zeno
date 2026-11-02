@@ -8,7 +8,7 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { markEvents, senderName, unescapeHtml } = await import("./desk-rows.ts");
+const { bookedEvents, markEvents, senderName, unescapeHtml } = await import("./desk-rows.ts");
 
 const event = (title: string, start: string, end: string, allDay = false): DayEvent => ({ title, start, end, allDay });
 const day = [
@@ -33,6 +33,21 @@ assert.deepEqual(markEvents([...day.slice(2), event("Office hours", "2026-10-31T
 ]);
 assert.deepEqual(markEvents([event("Broken", "", "")], at("10:00:00")), [null]);
 assert.deepEqual(markEvents([], at("10:00:00")), []);
+
+// Setup's batch booked (live, Nov 1: 3 deadlines and 5 to-dos): today's desk gets the timed blocks, as Zeno blocks;
+// an offer, a booking in flight, a failed one and an undone one (an offer again) add nothing.
+const todo = (title: string, start: string) => ({ title, kind: "todo" as const, start: `2026-11-02T${start}:00Z`, end: `2026-11-02T${start.slice(0, 3)}30:00Z`, eventId: `e-${title}` });
+const batch = [{ title: "Lab report", kind: "deadline" as const, date: "2026-11-06", eventId: "e-due" }, todo("Graphs", "02:00"), todo("Read ch 4", "03:00")];
+assert.deepEqual(
+  bookedEvents([
+    { state: "booked", blocks: batch },
+    ...(["offer", "busy", "failed"] as const).map((state) => ({ state, blocks: [todo(state, "05:00")] })),
+  ]),
+  [
+    { title: "Graphs", start: "2026-11-02T02:00:00Z", end: "2026-11-02T02:30:00Z", allDay: false, zeno: true },
+    { title: "Read ch 4", start: "2026-11-02T03:00:00Z", end: "2026-11-02T03:30:00Z", allDay: false, zeno: true },
+  ],
+);
 
 assert.equal(senderName("Dana Lee <dana@school.edu>"), "Dana Lee");
 assert.equal(senderName('"Lee, Dana" <dana@school.edu>'), "Lee, Dana");

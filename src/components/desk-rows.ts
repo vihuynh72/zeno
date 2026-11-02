@@ -1,8 +1,17 @@
 // Pure rules behind the desk's rows and the week grid. Only tz.ts besides types, so the checks run in plain node.
-import type { DayEvent } from "@/lib/day";
+import type { CalendarBlock, DayEvent } from "@/lib/day";
 import { formatTime, localIso } from "@/lib/tz";
 
 export type Mark = "past" | "now" | "next" | null;
+
+// The card's bookings (setup's batch, a plan step, a talk offer) join today's desk as the Week's do: only the timed
+// blocks Google confirmed. An undone booking is an offer again, so it drops out.
+export const bookedEvents = (bookings: { state: string; blocks: CalendarBlock[] }[]): DayEvent[] =>
+  bookings.flatMap((booking) =>
+    booking.state !== "booked"
+      ? []
+      : booking.blocks.flatMap((block) => (block.start && block.end ? [{ title: block.title, start: block.start, end: block.end, allDay: false, zeno: true }] : [])),
+  );
 
 // Events that ended go quiet; the one on now is marked, or else the next one. All-day events stay plain.
 export function markEvents(events: DayEvent[], now: number): Mark[] {

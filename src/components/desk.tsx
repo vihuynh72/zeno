@@ -33,12 +33,14 @@ const time = (event: DayEvent) => (event.allDay ? "All day" : formatTime(event.s
 type DeskTab = "today" | "week";
 const TABS: Record<DeskTab, string> = { today: "Today", week: "Week" };
 
-// tab is the view it opens on; the person switches between Today and Week inside. onBooked hears the Week's bookings.
+// tab is the view it opens on; the person switches between Today and Week inside. onBooked hears the Week's bookings;
+// booked is what the card booked since the day loaded, which Today shows like the Week's.
 type DeskProps = {
   open: boolean;
   tab?: DeskTab;
   today: Today | null;
   goal: Goal | null;
+  booked?: DayEvent[];
   onClose(): void;
   onSignIn(): void;
   onBooked?(change: Booked): void;
@@ -52,7 +54,7 @@ function onBackdrop(event: MouseEvent<HTMLDialogElement>) {
 }
 
 // Today's calendar and inbox in one wide view, unfolded from the card: the seed of the workstation.
-export default function Desk({ open, onClose, onBooked, ...rest }: DeskProps) {
+export default function Desk({ open, onClose, onBooked, booked: byCard = [], ...rest }: DeskProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const downOnBackdrop = useRef(false);
   // Blocks the Week booked since the day loaded, kept while the desk closes, so Today shows them and not their time as free.
@@ -91,7 +93,7 @@ export default function Desk({ open, onClose, onBooked, ...rest }: DeskProps) {
         if (downOnBackdrop.current && onBackdrop(event)) event.currentTarget.close();
       }}
     >
-      {open && <DeskBody {...rest} booked={booked} onBooked={onWeekBooked} />}
+      {open && <DeskBody {...rest} booked={[...byCard, ...booked]} onBooked={onWeekBooked} />}
     </dialog>
   );
 }
@@ -118,7 +120,7 @@ function unfold(dialog: HTMLDialogElement, from: DOMRect | undefined) {
   dialog.firstElementChild?.animate([{ opacity: 0.4 }, { opacity: 1 }], { duration: 120, easing: "ease-out" });
 }
 
-type DeskBodyProps = Omit<DeskProps, "open" | "onClose" | "onBooked"> & { booked: WeekEvent[]; onBooked(change: Booked): void };
+type DeskBodyProps = Omit<DeskProps, "open" | "onClose" | "onBooked"> & { booked: DayEvent[]; onBooked(change: Booked): void };
 
 function DeskBody({ tab: opensOn = "today", today, goal, onSignIn, booked, onBooked }: DeskBodyProps) {
   // Wall clock to the minute; 0 on the server, so nothing is marked before the browser knows the time.
@@ -233,16 +235,16 @@ function Roadmap({ goal }: { goal: Goal }) {
   );
 }
 
-function Calendar({ today, now, booked }: { today: Today; now: number; booked: WeekEvent[] }) {
+function Calendar({ today, now, booked }: { today: Today; now: number; booked: DayEvent[] }) {
   const { calendar } = today.sources;
   const zone = browserZone();
-  // Today's blocks booked from the Week join the list, in time order after the all-day ones.
+  // Today's blocks booked from the card or the Week join the list, in time order after the all-day ones.
   const added = booked.filter((event) => now && localDate(zone, new Date(event.start)) === localDate(zone, new Date(now)));
   const events = added.length
     ? [...today.events, ...added].sort((a, b) => Number(b.allDay) - Number(a.allDay) || Date.parse(a.start) - Date.parse(b.start))
     : today.events;
   const marks = now ? markEvents(events, now) : [];
-  // The rest of today's open time worth a step, soonest first: from now on, less what the Week just booked.
+  // The rest of today's open time worth a step, soonest first: from now on, less what was just booked.
   const busy = added.map((event) => ({ top: Date.parse(event.start), bottom: Date.parse(event.end) }));
   const free = (today.free ?? [])
     .flatMap((slot) => freeGaps(busy, Math.max(Date.parse(slot.start), now), Date.parse(slot.end), 15 * 60_000))

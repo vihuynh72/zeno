@@ -13,6 +13,16 @@ type ListenAfter = (said: string) => boolean;
 const LISTEN_LIMIT_MS = 30_000;
 const subscribeNever = () => () => {};
 
+// Sound on or off is remembered per browser, so muting at night outlasts a reload; blocked storage means sound on.
+const SOUND_KEY = "zeno:sound";
+function soundOff() {
+  try {
+    return localStorage.getItem(SOUND_KEY) === "off";
+  } catch {
+    return false;
+  }
+}
+
 function canListen(listen: Listen) {
   if (listen !== listenWeb) return Boolean(navigator.mediaDevices);
   return "SpeechRecognition" in window || "webkitSpeechRecognition" in window;
@@ -33,7 +43,10 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
   const listen = adapter?.listen ?? listenWeb;
   const [phase, setPhase] = useState<VoicePhase>("idle");
   const [partial, setPartial] = useState("");
-  const [muted, setMutedState] = useState(false);
+  // The saved choice from the first render after hydration on, the one that first shows the Sound button.
+  const mutedSaved = useSyncExternalStore(subscribeNever, soundOff, () => false);
+  const [mutedSet, setMutedState] = useState<boolean | null>(null);
+  const muted = mutedSet ?? mutedSaved;
   const [error, setError] = useState<VoiceError>(null);
   const levelRef = useRef(0);
   const latest = useRef({ ...options, listen });
@@ -46,7 +59,8 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
   const [voice] = useState(() => {
     let gen = 0; // bumped by every user action, so a stale async step stops where it is
     let current: VoicePhase = "idle";
-    let quiet = false;
+    let quietSet: boolean | null = null; // muted this visit; until then, the saved choice
+    const quiet = () => quietSet ?? soundOff();
     let session: Awaited<ReturnType<Listen>> | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -113,11 +127,11 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
     // Says the reply, then hands the mic back if the person was talking rather than typing.
     async function answer(reply: string | null, thenListen: boolean) {
       const mine = gen;
-      if (reply && !quiet) {
+      if (reply && !quiet()) {
         go("speaking");
         await say(reply);
         if (mine !== gen) return;
-        if (thenListen && !quiet && canListen(latest.current.listen)) return listenNow();
+        if (thenListen && !quiet() && canListen(latest.current.listen)) return listenNow();
       }
       stop();
     }
@@ -158,8 +172,13 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
         await turn(text.trim(), "typed");
       },
       setMuted(next: boolean) {
-        quiet = next;
+        quietSet = next;
         setMutedState(next);
+        try {
+          localStorage.setItem(SOUND_KEY, next ? "off" : "on");
+        } catch {
+          // Blocked storage: the choice lasts until the page reloads.
+        }
         if (next && current === "speaking") stopSpeaking();
       },
     };

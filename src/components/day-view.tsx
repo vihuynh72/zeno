@@ -9,6 +9,7 @@ import { cardSize, clock, dueLabel, openSteps, STAGE_OF, STAGES, whenLabel, type
 import AccountMenu from "@/components/account-menu";
 import BookingChip, { type Booking } from "@/components/booking-chip";
 import Desk from "@/components/desk";
+import { bookedEvents } from "@/components/desk-rows";
 import MemorySheet from "@/components/memory-sheet";
 import NotedLines, { type Quiet } from "@/components/noted-line";
 import type { Booked } from "@/components/week-grid";
@@ -591,6 +592,7 @@ export default function DayView(props: DayViewProps) {
         tab={props.sheet === "week" ? "week" : "today"}
         today={props.today}
         goal={goal}
+        booked={bookedEvents(Object.values(bookings))}
         onClose={() => on.sheet(null)}
         onSignIn={on.signIn}
         onBooked={on.booked}

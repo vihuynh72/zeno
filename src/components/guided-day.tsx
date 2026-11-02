@@ -35,6 +35,7 @@ import {
   dayPart,
   doneLine,
   draftGoal,
+  forPlanning,
   greeting,
   isDraft,
   isTomorrow,
@@ -237,6 +238,7 @@ export default function GuidedDay() {
   const saves = useRef<Promise<unknown>[]>([]); // setup answers and pasted notes still being saved
   const starting = useRef<Promise<Goal | null> | null>(null); // a plan from the first card still being saved
   const booking = useRef(new Set<string>()); // booking chips with a request in flight, so a double tap books once
+  const replied = useRef<string[]>([]); // the last talk turn's quick replies, which came with its booking offers
   const slotsAsked = useRef(""); // the plan whose free time was asked for
   const warned = useRef(new Set<string>()); // events already given a heads-up
   const cardAt = useRef(0); // when the card last changed, so the second tap of a double tap can't answer the next one
@@ -549,7 +551,8 @@ export default function GuidedDay() {
       setLine(res.reply);
       setScreen(next);
     }
-    setOptions(quickReplies(res.options));
+    replied.current = quickReplies(res.options, proposal.length > 0);
+    setOptions(replied.current);
     // The hook says the reply; hands-free listens again after a question.
     return res.reply;
   }
@@ -854,7 +857,8 @@ export default function GuidedDay() {
     setBookings((all) => ({ ...all, [key]: { ...entry, blocks: res.booked, state: "booked" } }));
     linkSteps(res.booked, true);
     if (key === "import") {
-      sayQuiet({ key: "import", text: `Added ${res.booked.length} to your Zeno calendar.` });
+      // Setup's own line, gone when setup ends; a batch booked after that (its notes read late) has Booked · Undo.
+      if (latest.current.screen === "setup") sayQuiet({ key: "import", text: `Added ${res.booked.length} to your Zeno calendar.` });
       // A booked to-do lives on the calendar now, so its "To do:" memory is gone.
       void getJson<MemoryResponse>("/api/memory").then((list) => {
         if (list.state === "ok") setLearned(list.memories);
@@ -863,6 +867,9 @@ export default function GuidedDay() {
       const said = res.booked[0].start && isTomorrow(res.booked[0].start, zone()) ? "Booked. Tomorrow's streak is planned." : "Booked. It's on your calendar.";
       setLine(said);
       speakLine(said);
+    } else if (offerKeys.includes(key) && options === replied.current) {
+      // Booking a turn's offer answers its question, so the quick replies that came with it go (a newer question's stay).
+      setOptions((shown) => (shown === options ? [] : shown));
     }
   }
 
@@ -1013,6 +1020,7 @@ export default function GuidedDay() {
     moved.current = false;
     setPasting(false);
     setOfferKeys([]);
+    dropQuiet("import");
     setScreen("ready");
     setLine(day?.opening || greeting(new Date().getHours(), day?.firstName ?? null));
     setOptions(quickReplies(day?.options));
@@ -1083,11 +1091,11 @@ export default function GuidedDay() {
   const setupCard = SETUP[setupAt];
   const name = day?.firstName ?? saved?.day.firstName;
   const setupFacts = [...learned].sort((a, b) => Number(a.source === "you") - Number(b.source === "you"));
-  const summary: Fact[] = [
+  const summary: Fact[] = forPlanning([
     ...setupFacts.filter((m) => m.source !== "you").map(asFact),
     ...setupDevice.map(asDeviceFact),
     ...setupFacts.filter((m) => m.source === "you").map(asFact),
-  ];
+  ]);
   const stillReading = [...(scanning ? ["Reading your calendar and email…"] : []), ...(reading ? ["Reading your notes…"] : [])];
   const setupLine =
     setupAt === 0
