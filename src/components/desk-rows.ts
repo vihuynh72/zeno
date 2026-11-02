@@ -77,11 +77,16 @@ export function instantAt(date: string, minutes: number, timeZone: string) {
 }
 
 type Timed = { start: string; end: string; allDay: boolean };
-export type Placed<T> = { event: T; top: number; bottom: number; col: number; cols: number };
+// indent: how many earlier events this one is drawn over; col of cols: its share of the width left after the indent.
+export type Placed<T> = { event: T; top: number; bottom: number; col: number; cols: number; indent: number };
 
-// A day's timed events as grid boxes, by start (longer first on a tie). Events that overlap share the width side by
-// side: each takes the first column free at its start. A short event still draws `minMinutes` tall, so overlap
-// counts that height too. Unreadable times are left out.
+// Events starting this close together share the width; later ones cascade, so the title above stays readable.
+export const CASCADE_MINUTES = 30;
+
+// A day's timed events as grid boxes, by start (longer first on a tie), laid out like Google Calendar: events that
+// start together sit side by side (each takes the first column free at its start); an event that starts later
+// is drawn over the right side of the ones it overlaps, one indent deeper, so a long event keeps its width.
+// A short event still draws `minMinutes` tall, so overlap counts that height too. Unreadable times are left out.
 export function layoutDay<T extends Timed>(events: T[], date: string, timeZone: string, minMinutes = 0): Placed<T>[] {
   const placed = events
     .flatMap((event) => {
@@ -92,25 +97,30 @@ export function layoutDay<T extends Timed>(events: T[], date: string, timeZone: 
       const wallEnd = wallMinutes(end, date, timeZone);
       // In the repeated hour as clocks fall back, an event can end "before" it starts on the wall clock.
       const bottom = wallEnd >= top ? wallEnd : Math.min(1440, top + (end - start) / MINUTE);
-      return [{ event, top, bottom, col: 0, cols: 1 }];
+      return [{ event, top, bottom, col: 0, cols: 1, indent: 0 }];
     })
     .sort((a, b) => a.top - b.top || b.bottom - a.bottom);
-  let cluster: Placed<T>[] = [];
-  let ends: number[] = [];
-  const close = () => {
-    for (const box of cluster) box.cols = ends.length;
-    cluster = [];
-    ends = [];
-  };
-  for (const box of placed) {
-    const drawnEnd = Math.max(box.bottom, box.top + minMinutes);
-    if (ends.length > 0 && box.top >= Math.max(...ends)) close();
-    const free = ends.findIndex((end) => end <= box.top);
-    box.col = free >= 0 ? free : ends.length;
-    ends[box.col] = drawnEnd;
-    cluster.push(box);
-  }
-  close();
+  const drawnEnd = (box: Placed<T>) => Math.max(box.bottom, box.top + minMinutes);
+  const groups: number[][] = []; // per side-by-side group: each column's drawn end
+  const groupOf: number[] = [];
+  placed.forEach((box, i) => {
+    const open = placed.slice(0, i).filter((other) => drawnEnd(other) > box.top);
+    const latest = open.findLast((other) => other.top === Math.max(...open.map((o) => o.top)));
+    let group: number;
+    if (latest && box.top - latest.top < CASCADE_MINUTES) {
+      group = groupOf[placed.indexOf(latest)];
+      box.indent = latest.indent;
+    } else {
+      group = groups.push([]) - 1;
+      box.indent = open.length > 0 ? Math.max(...open.map((o) => o.indent)) + 1 : 0;
+    }
+    const columns = groups[group];
+    const free = columns.findIndex((end) => end <= box.top);
+    box.col = free >= 0 ? free : columns.length;
+    columns[box.col] = drawnEnd(box);
+    groupOf[i] = group;
+  });
+  placed.forEach((box, i) => (box.cols = groups[groupOf[i]].length));
   return placed;
 }
 
@@ -143,6 +153,13 @@ export function planFrom(date: string, today: string, nowMinutes: number) {
 // A block of `minutes` tapped at `at` in a gap starts on the quarter hour at or before the tap, kept inside the gap.
 export const planStart = (gap: Gap, at: number, minutes: number) =>
   Math.max(gap.top, Math.min(Math.floor(at / 15) * 15, gap.bottom - minutes));
+
+// How a booking's day reads: today, tomorrow, the weekday in the week ahead, and the date as well after that.
+export function dayWord(date: string, today: string) {
+  if (date === today) return "today";
+  if (date === addDays(today, 1)) return "tomorrow";
+  return dateLabel(date, date <= addDays(today, 6) ? { weekday: "long" } : { weekday: "long", month: "short", day: "numeric" });
+}
 
 // "2:30 – 4:00 PM", or "11:30 AM – 1:00 PM" across noon.
 export function timeRange(start: string | number, end: string | number, timeZone: string) {

@@ -749,9 +749,53 @@ button:active .tap {
     height: calc(100dvh - var(--top, 32px) - 32px);
   }
 }
+/* A landscape phone has no height to spare under the card's top edge: the desk takes the whole screen there. */
+@media (max-height: 560px) {
+  .desk,
+  .desk:has(.week-scroll) {
+    width: 100%;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+}
 .week-step {
   width: 52px;
   padding: 0;
+}
+/* The toolbar: the week and its arrows, and the status line in space of its own (beside them on a laptop, a row
+   below them otherwise), so a booking's line never moves the arrows under the pointer. */
+.week-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "label nav" "status status";
+  align-items: start;
+  gap: 8px 16px;
+}
+.week-bar > h2 {
+  grid-area: label;
+  line-height: 52px;
+}
+.week-nav {
+  grid-area: nav;
+  display: flex;
+  gap: 8px;
+}
+.week-status {
+  grid-area: status;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  min-height: 52px;
+}
+@media (min-width: 1024px) {
+  .week-bar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "label status nav";
+  }
 }
 
 /* One ruled card: hours in the margin left of the red line, a day per column on the writing side, an hour per rule.
@@ -760,7 +804,8 @@ button:active .tap {
   --gutter: 72px;
   --days: 1;
   flex: 1;
-  min-height: 0;
+  /* Never squeezed to a strip: on a short screen the desk scrolls to show a few hours instead. */
+  min-height: 288px;
   overflow: auto;
   overscroll-behavior: contain;
   /* The day heads grow when all-day chips arrive; anchoring would scroll the morning under them. */
@@ -804,6 +849,12 @@ button:active .tap {
   grid-area: 1 / 1;
   top: 0;
   z-index: 5;
+}
+/* Ten Mono digits, measured so an event's time label is picked to fit whole. */
+.week-ch {
+  position: absolute;
+  visibility: hidden;
+  white-space: nowrap;
 }
 .week-hours {
   grid-area: 2 / 1;
@@ -866,6 +917,22 @@ button:active .tap {
   gap: 4px;
   margin-top: 4px;
 }
+/* A phone shows one day, so its all-day chips sit beside the date: a day without any shows no empty band. */
+@media (max-width: 639px) {
+  .week-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .week-allday {
+    display: flex;
+    min-width: 0;
+    margin-top: 0;
+  }
+  .week-chip {
+    min-width: 0;
+  }
+}
 .week-body {
   grid-row: 2;
   position: relative;
@@ -875,21 +942,23 @@ button:active .tap {
   inset: 0;
 }
 
-/* Other calendars tint the paper with their own Google color, like a highlighter; Zeno's blocks are small cards with
-   the red margin line. Text stays ink for contrast in both themes. */
+/* Other calendars tint the paper with their own Google color, like a highlighter over data: no stripe, no second
+   accent. Zeno's blocks are small cards with the 2px red margin line, so red on the grid always means Zeno. Text stays
+   ink for contrast in both themes. A card-colored rim separates an event cascaded over another, as Google's does. */
 .week-event,
 .week-chip {
   border-radius: 4px;
   background: light-dark(color-mix(in srgb, var(--cal) 20%, var(--card)), color-mix(in srgb, var(--cal) 32%, var(--card)));
-  box-shadow: inset 4px 0 0 color-mix(in srgb, var(--cal) 85%, var(--ink));
+  box-shadow: 0 0 0 1px var(--card);
 }
 .week-event[data-zeno],
 .week-chip[data-zeno] {
+  border-radius: 0 4px 4px 0; /* square on the margin side, so the red line runs straight */
   background: var(--card);
-  box-shadow: inset 4px 0 0 var(--red), var(--edge);
+  box-shadow: inset 2px 0 0 var(--red), 0 0 0 1px var(--card), var(--edge);
 }
 .week-chip {
-  padding: 4px 8px 4px 12px;
+  padding: 4px 8px 4px 10px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -898,33 +967,39 @@ button:active .tap {
   position: absolute;
   z-index: 1;
   margin-left: 2px;
-  padding: 2px 6px 2px 12px;
+  padding: 2px 6px 2px 10px;
   overflow: hidden;
 }
-/* What's over goes quiet: the color stays as a bar, the words turn pencil grey. */
+/* What's over goes quiet: the tint fades and the words turn pencil grey. */
 .week-event[data-past] {
-  background: var(--card);
+  background: color-mix(in srgb, var(--cal) 8%, var(--card));
   color: var(--ink-2);
+}
+.week-event[data-past][data-zeno] {
+  background: var(--card);
 }
 .week-event[data-status] {
   opacity: 0.7;
   outline: 2px dashed var(--ink-2);
   outline-offset: -2px;
 }
+/* Titles wrap only between words and end in an ellipsis; a narrow box keeps them to one line. */
 .week-title {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: var(--lines);
   overflow: hidden;
-  overflow-wrap: break-word;
-  hyphens: auto;
   font-weight: 500;
 }
-.week-time {
+.week-title[data-narrow] {
   display: block;
-  overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+/* The label is picked to fit whole (the range, else the start), so a time is never cut. */
+.week-time {
+  display: block;
+  white-space: nowrap;
 }
 .week-event-tap {
   position: absolute;
@@ -1020,10 +1095,11 @@ button:active .tap {
   width: 2px;
   background: var(--red);
 }
+/* The step being booked reads in full: its title wraps inside the pill. */
 .week-choice {
   justify-content: space-between;
   gap: 16px;
-  padding-inline: 24px;
+  padding: 12px 24px;
   text-align: left;
 }
 

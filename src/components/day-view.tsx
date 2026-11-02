@@ -5,6 +5,7 @@ import type { DayEmail, DayEvent, Deadline, FreeSlot, Goal, Memory, SourceState,
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
 import { cardSize, clock, openSteps, sayMode, STAGE_OF, STAGES, type SayMode, type Screen } from "@/components/day-flow";
 import Desk from "@/components/desk";
+import type { Booked } from "@/components/week-grid";
 import PrepPack from "@/components/prep-pack";
 import VoiceRing from "@/components/voice-ring";
 
@@ -61,6 +62,7 @@ export type DayViewProps = {
     mute(): void;
     signIn(): void;
     signOut(): void;
+    booked?(change: Booked): void; // a block booked or taken off in the desk's Week
   };
 };
 
@@ -396,6 +398,7 @@ export default function DayView(props: DayViewProps) {
         goal={goal}
         onClose={() => on.sheet(null)}
         onSignIn={on.signIn}
+        onBooked={on.booked}
       />
       <SheetPanel open={props.sheet === "memory"} title="Memory" onClose={() => on.sheet(null)}>
         {props.sheet === "memory" && (

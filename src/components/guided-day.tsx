@@ -595,6 +595,12 @@ export default function GuidedDay() {
           cache.current = null;
           void signOut({ redirectTo: "/" });
         },
+        // A step booked or taken off in the Week: the goal says so, so nothing offers to book it twice.
+        booked({ event, stepId, undone }) {
+          if (!stepId || !goal) return;
+          const at = undone ? { scheduledAt: null, eventId: null } : { scheduledAt: event.start, eventId: event.id };
+          setGoal({ ...goal, steps: goal.steps.map((s) => (s.id === stepId ? { ...s, ...at } : s)) });
+        },
       }}
     />
   );

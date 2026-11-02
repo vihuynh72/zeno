@@ -6,6 +6,7 @@ import {
   addDays,
   browserZone,
   dateLabel,
+  dayWord,
   freeGaps,
   type Gap,
   instantAt,
@@ -26,6 +27,9 @@ const MIN_BOX = 28;
 const MIN_MINUTES = (MIN_BOX / HOUR) * 60;
 const OPENS_AT = 7; // the grid opens scrolled to 7 AM
 const FOCUS_MINUTES = 30;
+const INDENT = 20; // px a cascaded event starts in from the one it is drawn over
+// A popover choice ignores the first moments after it opens, so the second half of a double tap is never a choice.
+const SETTLE_MS = 400;
 const HOURS = Array.from({ length: 23 }, (_, i) => i + 1);
 // Faint blocks where a week usually has something, while it loads.
 const SKELETON: [day: number, hour: number, hours: number][] = [
@@ -41,6 +45,9 @@ type Target = { kind: "book"; date: string; gap: Gap; at: number } | { kind: "un
 type Plan = Target & { x: number; y: number };
 // about: the block's title, said to screen readers only (it is right there in the grid).
 type Note = { text: string; about?: string; undo?: WeekEvent; signIn?: string };
+// What the Week booked or took off, so the desk's Today and the guided goal hear about it.
+export type Booked = { event: WeekEvent; stepId?: string; undone?: boolean };
+type Metrics = { column: number; ch: number }; // a day column's width and one Mono digit's, in px
 
 const clockLabel = (hour: number) => `${hour % 12 || 12} ${hour < 12 ? "AM" : "PM"}`;
 const px = (minutes: number) => (minutes / 60) * HOUR;
@@ -48,12 +55,14 @@ const motion = (): ScrollBehavior => (matchMedia("(prefers-reduced-motion: reduc
 
 // The desk's Week: seven days like Google Calendar, Zeno's blocks as small red-margined cards, and any open time a
 // tap away from a booking. Phones show one day (three on tablets) that swipes or steps, never a squeezed grid.
-export default function WeekGrid({ goal, now, onSignIn }: { goal: Goal | null; now: number; onSignIn(): void }) {
+type WeekGridProps = { goal: Goal | null; now: number; onSignIn(): void; onBooked?(change: Booked): void };
+
+export default function WeekGrid({ goal, now, onSignIn, onBooked }: WeekGridProps) {
   const [picked, setPicked] = useState<string | null>(null); // a Monday the person moved to; null is this week
   const [weeks, setWeeks] = useState<Record<string, WeekResponse>>({});
   const [attempt, setAttempt] = useState(0);
   const [extra, setExtra] = useState<Shown[]>([]); // booked here: shown at once, "Booking…" until Google confirms
-  const [mine, setMine] = useState<string[]>([]); // event ids booked here, which can be undone
+  const [mine, setMine] = useState<Record<string, string>>({}); // booked here (so it can be undone): event id to step id, "" for focus
   const [undone, setUndone] = useState<string[]>([]);
   const [undoing, setUndoing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -63,11 +72,15 @@ export default function WeekGrid({ goal, now, onSignIn }: { goal: Goal | null; n
   const [plan, setPlan] = useState<Plan | null>(null);
   const [ghost, setGhost] = useState<{ date: string; at: number } | null>(null);
   const [visible, setVisible] = useState(false);
+  const [metrics, setMetrics] = useState<Metrics>({ column: 0, ch: 0 });
   const scroller = useRef<HTMLDivElement | null>(null);
   const scrolled = useRef(false);
   const edge = useRef<"start" | "end" | "today" | null>("today");
   const pop = useRef<HTMLDivElement>(null);
   const invoker = useRef<HTMLElement | null>(null);
+  const openedAt = useRef(0);
+  const status = useRef<HTMLDivElement>(null);
+  const refocus = useRef(false); // a booking or undo settled: put focus lost with the popover or block on the status line
 
   // Before the browser knows the time (server render), the frame shows without days.
   const thisWeek = now ? mondayOf(localDate(browserZone(), new Date(now))) : null;
@@ -78,7 +91,9 @@ export default function WeekGrid({ goal, now, onSignIn }: { goal: Goal | null; n
   const dates = monday ? Array.from({ length: 7 }, (_, i) => addDays(monday, i)) : [];
   const canBook = week?.state === "ok" && week.write === "ok" && !writeLost;
   const needsPermission = week?.state === "ok" && (week.write === "needs-permission" || writeLost);
-  const step = goal?.steps.find((s) => s.status === "doing") ?? goal?.steps.find((s) => s.status === "todo");
+  const current = goal?.steps.find((s) => s.status === "doing") ?? goal?.steps.find((s) => s.status === "todo");
+  // A step already on the calendar is never offered again (a focus block still is).
+  const step = current && !current.scheduledAt && !Object.values(mine).includes(current.id) ? current : undefined;
 
   useEffect(() => {
     if (!monday) return;
@@ -94,10 +109,18 @@ export default function WeekGrid({ goal, now, onSignIn }: { goal: Goal | null; n
     scroller.current = el;
     if (!el) return;
     scrolled.current = false;
+    // Event boxes pick a time label that fits whole, so they need the column's width and the Mono's digit width.
+    const measure = () => {
+      const column = el.querySelector<HTMLElement>(".week-day")?.offsetWidth ?? 0;
+      const ch = (el.querySelector<HTMLElement>(".week-ch")?.offsetWidth ?? 0) / 10;
+      setMetrics((was) => (was.column === column && was.ch === ch ? was : { column, ch }));
+    };
     const observer = new ResizeObserver(() => {
       if (el.clientHeight > 0) setVisible(true);
+      measure();
     });
     observer.observe(el);
+    void document.fonts.ready.then(measure);
     return () => observer.disconnect();
   }, []);
 
@@ -122,11 +145,29 @@ export default function WeekGrid({ goal, now, onSignIn }: { goal: Goal | null; n
     const el = pop.current;
     if (!el || !plan) return;
     if (!el.matches(":popover-open")) el.showPopover();
-    const box = el.getBoundingClientRect();
-    el.style.left = `${Math.max(16, Math.min(plan.x + 12, innerWidth - box.width - 16))}px`;
-    el.style.top = `${Math.max(16, Math.min(plan.y - 24, innerHeight - box.height - 16))}px`;
+    openedAt.current = performance.now();
+    const { width, height } = el.getBoundingClientRect();
+    // Beside the tap, or else above or below it, so the popover never opens under the pointer; clamped as a last resort.
+    const left = Math.max(16, Math.min(plan.x + 12, innerWidth - width - 16));
+    const top = Math.max(16, Math.min(plan.y - 24, innerHeight - height - 16));
+    const fits = ([x, y]: number[]) => x >= 16 && y >= 16 && x + width <= innerWidth - 16 && y + height <= innerHeight - 16;
+    const [x, y] = [[plan.x + 12, top], [plan.x - 12 - width, top], [left, plan.y - 12 - height], [left, plan.y + 12]].find(fits) ?? [left, top];
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
     el.querySelector<HTMLElement>("button")?.focus();
   }, [plan]);
+
+  useEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    // Focus the person moved on purpose (the toolbar, the tabs) stays; focus that was lost, or left in the grid, moves.
+    const active = document.activeElement;
+    if (active && active.isConnected && active !== document.body && active.tagName !== "DIALOG" && !active.closest(".week-items")) return;
+    (status.current?.querySelector<HTMLElement>("button") ?? status.current)?.focus({ preventScroll: true });
+  }, [note]);
+
+  // The second click of a double click, or a tap the moment the popover opens, is never a choice.
+  const settled = (event: MouseEvent) => event.detail <= 1 && performance.now() - openedAt.current >= SETTLE_MS;
 
   const days = week?.state === "ok"
     ? week.days.map((day) => {
@@ -142,13 +183,14 @@ export default function WeekGrid({ goal, now, onSignIn }: { goal: Goal | null; n
   function go(to: string | null, scrollTo: "start" | "end" | "today") {
     edge.current = scrollTo;
     setPicked(to);
-    setPlan(null);
+    closePlan();
   }
 
   // Phones and tablets step a day at a time inside the week, then into the next; the full grid steps whole weeks.
   function move(direction: -1 | 1) {
     const el = scroller.current;
     if (!el || !monday) return;
+    closePlan();
     const column = el.querySelector<HTMLElement>(".week-day")?.offsetWidth ?? 0;
     const room = direction < 0 ? el.scrollLeft : el.scrollWidth - el.clientWidth - el.scrollLeft;
     if (column && room > column / 2) el.scrollBy({ left: direction * column, behavior: motion() });
@@ -163,10 +205,10 @@ export default function WeekGrid({ goal, now, onSignIn }: { goal: Goal | null; n
   }
 
   function closePlan() {
-    pop.current?.hidePopover();
+    if (pop.current?.matches(":popover-open")) pop.current.hidePopover();
   }
 
-  async function book(block: CalendarBlock, date: string, start: number) {
+  async function book(block: CalendarBlock, date: string, start: number, stepId?: string) {
     if (busyRef.current || !block.start || !block.end) return;
     busyRef.current = true;
     setBusy(true);
@@ -185,18 +227,20 @@ export default function WeekGrid({ goal, now, onSignIn }: { goal: Goal | null; n
     } catch {
       // Offline or an unreadable answer: nothing is claimed as booked.
     }
+    refocus.current = true;
     const booked = answer.state === "ok" ? answer.booked.find((b) => b.eventId && b.start && b.end) : undefined;
     if (booked?.eventId && booked.start && booked.end) {
       const event: WeekEvent = { id: booked.eventId, title: booked.title, start: booked.start, end: booked.end, allDay: false, zeno: true, color: null };
       setExtra((all) => all.map((e) => (e.id === pending.id ? event : e)));
-      setMine((ids) => [...ids, event.id]);
-      const tomorrow = today !== null && date === addDays(today, 1);
-      const when = `${tomorrow ? "tomorrow" : dateLabel(date, { weekday: "long" })} at ${formatTime(new Date(instantAt(date, start, zone)), zone)}`;
+      setMine((all) => ({ ...all, [event.id]: stepId ?? "" }));
+      const streak = Boolean(stepId) && today !== null && date === addDays(today, 1);
+      const when = `${dayWord(date, today ?? date)} at ${formatTime(new Date(instantAt(date, start, zone)), zone)}`;
       setNote({
-        text: block.stepId && tomorrow ? "Booked. Tomorrow's streak is planned." : `Booked for ${when}.`,
-        about: block.stepId && tomorrow ? `${booked.title}, ${when}` : booked.title,
+        text: streak ? "Booked. Tomorrow's streak is planned." : `Booked for ${when}.`,
+        about: streak ? `${booked.title}, ${when}` : booked.title,
         undo: event,
       });
+      onBooked?.({ event, stepId });
     } else {
       setExtra((all) => all.filter((e) => e.id !== pending.id));
       if (answer.state === "needs-permission") setWriteLost(true);
@@ -226,11 +270,13 @@ export default function WeekGrid({ goal, now, onSignIn }: { goal: Goal | null; n
     } catch {
       // Offline: the block stays, and the line says so.
     }
+    refocus.current = true;
     setUndoing(null);
     if (state === "ok") {
       setUndone((ids) => [...ids, event.id]);
-      setMine((ids) => ids.filter((id) => id !== event.id));
+      setMine((all) => Object.fromEntries(Object.entries(all).filter(([id]) => id !== event.id)));
       setNote({ text: "Taken off your calendar.", about: event.title });
+      onBooked?.({ event, stepId: mine[event.id] || undefined, undone: true });
     } else {
       setNote({ text: "I couldn't undo that just now. Try again?", undo: event });
     }
@@ -272,13 +318,14 @@ export default function WeekGrid({ goal, now, onSignIn }: { goal: Goal | null; n
 
   return (
     <>
-      {/* The status line rides in the toolbar's row, so a booking never pushes the grid down on a laptop. */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <h2 className="mr-auto text-[20px] leading-8 font-bold">
+      {/* The status line always has its own space (beside the week on a laptop, its own row below), so a booking's
+          line never moves the arrows under the pointer or the grid under the hand. */}
+      <div className="week-bar">
+        <h2 className="text-[20px] font-bold">
           <span className="sr-only">Week of </span>
           {monday ? weekLabel(monday) : "This week"}
         </h2>
-        <div role="status" className="flex flex-wrap items-center gap-x-4 gap-y-2 empty:hidden max-sm:order-last">
+        <div ref={status} role="status" tabIndex={-1} className="week-status">
           {!days && <p className="sr-only">Loading your week…</p>}
           {empty && !note && (
             <p className="text-ink-2">
@@ -302,7 +349,7 @@ export default function WeekGrid({ goal, now, onSignIn }: { goal: Goal | null; n
             </button>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="week-nav">
           {monday && thisWeek && monday !== thisWeek && (
             <button type="button" onClick={() => go(null, "today")} className="pill pill-small pill-quiet">
               This week
@@ -328,7 +375,9 @@ export default function WeekGrid({ goal, now, onSignIn }: { goal: Goal | null; n
 
       <div ref={attach} className="week-scroll" aria-busy={!days || undefined}>
         <div className="week-sheet" style={{ "--hour": `${HOUR}px` } as CSSProperties}>
-          <div className="week-corner" aria-hidden="true" />
+          <div className="week-corner" aria-hidden="true">
+            <span className="week-ch font-mono">0000000000</span>
+          </div>
           <div className="week-hours" aria-hidden="true">
             {HOURS.map((hour) => (
               <span key={hour} style={{ top: hour * HOUR }}>
@@ -340,7 +389,9 @@ export default function WeekGrid({ goal, now, onSignIn }: { goal: Goal | null; n
             const events = days?.[index]?.events ?? [];
             const placed = layoutDay(events, date, zone, MIN_MINUTES);
             const from = canBook && today ? planFrom(date, today, nowMinutes) : null;
-            const gaps = from === null ? [] : freeGaps(placed, from, PLAN_HOURS.to);
+            // Open time starts below a short event's drawn box, never under it.
+            const drawn = placed.map((box) => ({ top: box.top, bottom: Math.max(box.bottom, box.top + MIN_MINUTES) }));
+            const gaps = from === null ? [] : freeGaps(drawn, from, PLAN_HOURS.to);
             // Reading order: the day, its all-day chips, then events and open time by start.
             const items = [...placed.map((box) => ({ top: box.top, box })), ...gaps.map((gap) => ({ top: gap.top, gap }))].sort(
               (a, b) => a.top - b.top,
@@ -363,9 +414,9 @@ export default function WeekGrid({ goal, now, onSignIn }: { goal: Goal | null; n
                     <ul className="week-allday">
                       {events
                         .filter((event) => event.allDay)
-                        .map((event) => (
+                        .map((event, i) => (
                           <li
-                            key={event.id}
+                            key={`${event.id}:${i}`}
                             className="week-chip"
                             data-zeno={event.zeno || undefined}
                             style={{ "--cal": event.color ?? "var(--ink-2)" } as CSSProperties}
@@ -383,15 +434,18 @@ export default function WeekGrid({ goal, now, onSignIn }: { goal: Goal | null; n
                     <div key={hour} className="week-skeleton" aria-hidden="true" style={{ top: hour * HOUR, height: hours * HOUR - 2 }} />
                   ))}
                   <ol className="week-items">
-                    {items.map((item) =>
+                    {items.map((item, i) =>
                       "box" in item && item.box ? (
                         <EventBox
-                          key={`${item.box.event.id}:${item.box.top}`}
+                          key={`${item.box.event.id}:${item.box.top}:${i}`}
                           box={item.box}
                           zone={zone}
+                          metrics={metrics}
+                          // Text stops where the first event cascaded over this one starts, so nothing peeks out under it.
+                          covered={placed.find((other) => other.indent > item.box.indent && other.top >= item.box.top && other.top < item.box.bottom)?.top}
                           past={Boolean(today && (date < today || (isToday && item.box.bottom <= nowMinutes)))}
                           onUndo={
-                            mine.includes(item.box.event.id) && !item.box.event.status
+                            item.box.event.id in mine && !item.box.event.status
                               ? (event) => openPlan(event, { kind: "undo", event: item.box.event })
                               : undefined
                           }
@@ -426,7 +480,9 @@ export default function WeekGrid({ goal, now, onSignIn }: { goal: Goal | null; n
           setPlan(null);
           // Esc or Not now: back to the open time that was tapped.
           const active = document.activeElement;
-          if (!active || active === document.body || active.tagName === "DIALOG") invoker.current?.focus({ preventScroll: true });
+          const lost = !active || active === document.body || active.tagName === "DIALOG";
+          // A booked or undone block replaces what was tapped; the status line takes focus when that settles.
+          if (lost && invoker.current?.isConnected) invoker.current.focus({ preventScroll: true });
         }}
       >
         {plan?.kind === "book" && (
@@ -436,7 +492,9 @@ export default function WeekGrid({ goal, now, onSignIn }: { goal: Goal | null; n
             step={step}
             goal={goal}
             busy={busy}
-            onBook={(block, start) => void book(block, plan.date, start)}
+            onBook={(event, block, start, stepId) => {
+              if (settled(event)) void book(block, plan.date, start, stepId);
+            }}
             onClose={closePlan}
           />
         )}
@@ -445,7 +503,14 @@ export default function WeekGrid({ goal, now, onSignIn }: { goal: Goal | null; n
             <p className="text-[20px] leading-8 font-bold">{plan.event.title}</p>
             <p className="font-mono text-ink-2">{timeRange(plan.event.start, plan.event.end, zone)}</p>
             <div className="mt-4 flex flex-col gap-2">
-              <button type="button" aria-disabled={busy} onClick={() => void undo(plan.event)} className="pill pill-ink">
+              <button
+                type="button"
+                aria-disabled={busy}
+                onClick={(event) => {
+                  if (settled(event)) void undo(plan.event);
+                }}
+                className="pill pill-ink"
+              >
                 Undo booking
               </button>
               <button type="button" onClick={closePlan} className="pill pill-quiet">
@@ -467,25 +532,47 @@ function Chevron({ d }: { d: string }) {
   );
 }
 
-type Box = { event: Shown; top: number; bottom: number; col: number; cols: number };
+type Box = { event: Shown; top: number; bottom: number; col: number; cols: number; indent: number };
 
-function EventBox({ box, zone, past, onUndo }: { box: Box; zone: string; past: boolean; onUndo?: (event: MouseEvent<HTMLElement>) => void }) {
+type EventBoxProps = {
+  box: Box;
+  zone: string;
+  metrics: Metrics;
+  covered?: number; // where an event drawn over this one starts
+  past: boolean;
+  onUndo?: (event: MouseEvent<HTMLElement>) => void;
+};
+
+function EventBox({ box, zone, metrics, covered, past, onUndo }: EventBoxProps) {
   const { event } = box;
   const height = Math.max(MIN_BOX, px(box.bottom - box.top)) - 2;
-  // Room for the title's lines, plus one for the time when the box is tall and full width.
-  const lines = Math.max(1, Math.floor((height - 4) / 24));
-  const timed = (lines > 1 && box.cols === 1) || Boolean(event.status);
-  const time = event.status === "booking" ? "Booking…" : event.status === "undoing" ? "Taking it off…" : timeRange(event.start, event.end, zone);
+  // Room for the title's lines, plus one for the time when the box is tall, above anything cascaded over it.
+  const lines = Math.max(1, Math.floor((Math.min(height, covered === undefined ? height : px(covered - box.top)) - 4) / 24));
+  const status = event.status === "booking" ? "Booking…" : event.status === "undoing" ? "Taking it off…" : null;
+  const range = timeRange(event.start, event.end, zone);
+  const indent = box.indent * INDENT;
+  // The text's width: the box's share of the column, less its 2px margin, 4px gap and 18px of padding.
+  const room = (metrics.column - 1 - indent) / box.cols - 24;
+  // A time is shown whole or not at all: the range, else the start ("8:00 AM", then "8:00").
+  const start = formatTime(new Date(event.start), zone);
+  const time = metrics.ch > 0 ? [range, start, start.replace(/\s*[AP]M$/, "")].find((label) => label.length * metrics.ch <= room) : undefined;
+  // In a narrow box the title keeps to one line and ends in an ellipsis, never breaking a word.
+  const narrow = room < 88;
+  const titleLines = narrow ? 1 : lines > 1 ? lines - 1 : 1;
   const body = (
     <>
       {event.zeno && <span className="sr-only">Zeno block: </span>}
-      <span className="week-title" style={{ "--lines": timed ? Math.max(1, lines - 1) : lines } as CSSProperties}>
-        {event.title}
+      <span className="week-title" data-narrow={narrow || undefined} style={{ "--lines": titleLines } as CSSProperties}>
+        {/* A block too short for two lines says Booking… in place of its title, which screen readers still hear. */}
+        {status && lines < 2 && <span aria-hidden="true">{status}</span>}
+        <span className={status && lines < 2 ? "sr-only" : undefined}>{event.title}</span>
       </span>
-      <span className={timed ? "week-time font-mono" : "sr-only"}>
-        <span className="sr-only">, </span>
-        {time}
-      </span>
+      {lines > 1 && (status || time) && (
+        <span className="week-time font-mono" aria-hidden="true">
+          {status ?? time}
+        </span>
+      )}
+      <span className="sr-only">, {status ?? range}</span>
       {onUndo && <span className="sr-only">. Booked just now; open to undo.</span>}
     </>
   );
@@ -495,13 +582,14 @@ function EventBox({ box, zone, past, onUndo }: { box: Box; zone: string; past: b
       data-zeno={event.zeno || undefined}
       data-status={event.status}
       data-past={past || undefined}
-      title={event.title}
+      title={`${event.title}, ${range}`}
       style={
         {
           top: px(box.top),
           height,
-          left: `${(box.col / box.cols) * 100}%`,
-          width: `calc(${100 / box.cols}% - 4px)`,
+          // Cascaded events start one indent in per level, and share what's left with any that start with them.
+          left: `calc(${indent}px + (100% - ${indent}px) * ${box.col / box.cols})`,
+          width: `calc((100% - ${indent}px) / ${box.cols} - 4px)`,
           "--cal": event.color ?? "var(--ink-2)",
         } as CSSProperties
       }
@@ -561,7 +649,7 @@ type PlanCardProps = {
   step: Goal["steps"][number] | undefined;
   goal: Goal | null;
   busy: boolean;
-  onBook(block: CalendarBlock, start: number): void;
+  onBook(event: MouseEvent, block: CalendarBlock, start: number, stepId?: string): void;
   onClose(): void;
 };
 
@@ -578,7 +666,8 @@ function PlanCard({ plan, zone, step, goal, busy, onBook, onClose }: PlanCardPro
     kind: "step",
     start: iso(start),
     end: iso(start + minutes),
-    ...(stepId ? { stepId } : {}),
+    // A draft goal's steps have no saved id yet, and booking accepts only saved ones.
+    ...(stepId && !stepId.startsWith("draft") ? { stepId } : {}),
   });
   return (
     <>
@@ -592,17 +681,18 @@ function PlanCard({ plan, zone, step, goal, busy, onBook, onClose }: PlanCardPro
           <button
             type="button"
             aria-disabled={busy}
-            onClick={() => onBook(block(step.title, stepMinutes, step.id), start)}
+            onClick={(event) => onBook(event, block(step.title, stepMinutes, step.id), start, step.id)}
             className="pill pill-ink week-choice"
           >
-            <span className="line-clamp-2 min-w-0">{step.title}</span>
+            {/* The step is read in full before it is booked, so its title wraps instead of clipping. */}
+            <span className="min-w-0">{step.title}</span>
             <span className="shrink-0 font-mono font-normal">{stepMinutes} min</span>
           </button>
         )}
         <button
           type="button"
           aria-disabled={busy}
-          onClick={() => onBook(block(goal ? `Focus: ${goal.title}` : "Focus time", focusMinutes), start)}
+          onClick={(event) => onBook(event, block(goal ? `Focus: ${goal.title}` : "Focus time", focusMinutes), start)}
           className={`pill week-choice ${stepFits ? "" : "pill-ink"}`}
         >
           <span className="min-w-0">Focus block</span>

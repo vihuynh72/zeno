@@ -1,12 +1,24 @@
 // Sample weeks for the /preview gallery. Importing this answers the browser's /api/calendar/* requests from the
 // samples here, so the gallery never reads or books a real calendar, even when the browser is signed in.
-// Bookings and undos succeed after a short wait, so the Plan here flow can be tried in the gallery.
+// Bookings and undos succeed after a short wait, so the Plan here flow can be tried in the gallery; the week-book-*,
+// week-undo-error and week-booking states answer them with a failure, a lost permission, or never.
 import type { BookResponse, CalendarBlock, CalendarWrite, WeekEvent, WeekResponse } from "@/lib/day";
 import type { Today } from "@/components/day-view";
 import { addDays, browserZone, instantAt } from "@/components/desk-rows";
 import { localDate } from "@/lib/tz";
 
-export const WEEK_STATES = ["week-busy", "week-empty", "week-loading", "week-no-access", "week-permission", "week-error"];
+export const WEEK_STATES = [
+  "week-busy",
+  "week-empty",
+  "week-loading",
+  "week-no-access",
+  "week-permission",
+  "week-error",
+  "week-booking",
+  "week-book-error",
+  "week-book-permission",
+  "week-undo-error",
+];
 
 const CLASS = "#7986cb";
 const WORK = "#f6bf26";
@@ -103,9 +115,13 @@ if (typeof window !== "undefined") {
       return reply(sampleWeek(start, state === "week-empty", state === "week-permission" ? "needs-permission" : "ok"));
     }
     if (init?.method === "POST") {
+      if (state === "week-booking") return new Promise<Response>(() => {});
+      if (state === "week-book-error") return reply({ state: "error" }, 500);
+      if (state === "week-book-permission") return reply({ state: "needs-permission" }, 403);
       const { blocks } = JSON.parse(String(init.body)) as { blocks: CalendarBlock[] };
       return reply({ state: "ok", booked: blocks.map((block) => ({ ...block, eventId: `samplebooked${++booked}` })) });
     }
+    if (state === "week-undo-error") return reply({ state: "error" }, 500);
     return reply({ state: "ok", booked: [] });
   };
 }
