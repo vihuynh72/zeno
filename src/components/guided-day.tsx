@@ -354,12 +354,15 @@ export default function GuidedDay() {
     else if (!moved.current) setPick(pickFits(kept?.pick, data.goal) ? kept?.pick ?? null : null);
     if (moved.current) return false;
     setGoal(data.goal);
+    // An opening that already arrived is checked against this day, not the saved one, before the next render.
+    latest.current.goal = data.goal;
     if (data.isNew === true && !prior?.setupDone) {
       setScreen("setup");
       startScan(data.account);
       return false;
     }
     setScreen("ready");
+    latest.current.screen = "ready";
     // A saved model line for this part of the day stays until the new one lands; otherwise the quick line shows now.
     if (!kept) {
       setLine(data.opening);

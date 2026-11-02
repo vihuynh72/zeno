@@ -300,7 +300,15 @@ export default function DayView(props: DayViewProps) {
                     : cardSize(cardText)
             }
             // A step card only needs room for its title (and the timer, or a blank row for the stamp), so the roadmap fits under it.
-            style={top ? ({ "--rows": screen === "focus" ? (top.minutes ? 3 : 4) : 2 } as CSSProperties) : pick ? ({ "--rows": 3 } as CSSProperties) : undefined}
+            style={
+              top
+                ? ({ "--rows": screen === "focus" ? (top.minutes ? 3 : 4) : 2 } as CSSProperties)
+                : pick
+                  ? ({ "--rows": 3 } as CSSProperties)
+                  : finished
+                    ? ({ "--rows": 2 } as CSSProperties)
+                    : undefined
+            }
           >
             <div className="lines">
               {pick ? (
