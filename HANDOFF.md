@@ -1,14 +1,15 @@
 # Zeno handoff
 
-Last updated: 2026-11-01, 6:15 PM PT, by Claude (session 3, the follow-through build).
+Last updated: 2026-11-01, 8:10 PM PT, by Claude (session 3, the follow-through build and the live test).
 Read this first, then the Linear doc **"Zeno hackathon build plan (Nov 4)"** (project Zeno, team VI).
 
-## 0. Session 3 (2026-11-01): the follow-through build
+## 0. Session 3 (2026-11-01): the follow-through build and the live test
 
 Spec: `docs/PLAN-NOV.md` (Vi's 30 answers and the Nov 1 privacy rule). Memory benchmark: `docs/MEMORY-BENCH.md`.
-Linear: VI-319 and VI-321 Done; VI-315, VI-320, VI-322 In Progress until the real-Google test.
+Linear: VI-319, VI-321 and VI-315 Done; VI-320 and VI-322 In Progress until the daily re-scan, spoken heads-ups and
+hands-free are checked live.
 
-### Live on main (production, cf5a48a)
+### Live on main (production, 341dd7a)
 - **Backend** (a4eef78):
   - Calendar: a separate "Zeno" calendar, free time, booking with Undo, the week, and deadlines.
   - Brain: the first-card pick, deterministic plan saves (`POST /api/goal`), and booking proposals.
@@ -23,29 +24,70 @@ Linear: VI-319 and VI-321 Done; VI-315, VI-320, VI-322 In Progress until the rea
   - Focus check-ins, heads-ups and hands-free.
   - The Week grid.
   - **Private facts stay in the browser**: `zeno.vault.<account>`, cleared at sign out. Routes take them as `private: string[]` in the body and never save them.
+- **First-card fallback** (5e344c2): a new person whose only work is pasted to-dos still gets a first card with Start.
+- **Live-test fixes** (merges 3e478cb to be597a1 from a workflow's three tracks, then four follow-ups, 9ff2e36 to 341dd7a):
+  - Pasted to-dos: at most 30 minutes, 2 a day, 8 AM to 9 PM, 10 free minutes after each, in the part of the day
+    they focus best, looking 5 days ahead.
+  - A deadline their own calendar already shows that day is not added again. Today, the opening and the first-card
+    pick still list it, because they read deadline memories too.
+  - Code and bank mail never reaches the model (judged by its text, not only its subject), and the day saved in the
+    browser keeps only that it came.
+  - Today lists the card's bookings and takes them out of Free. A booking offer has one Book chip. Sound off is
+    remembered. The setup summary leads with plans. "Added N" clears after setup.
+  - A five-line first card fits a 14-inch laptop (the compact rhythm now starts at 900px tall), and answers that land
+    under the dock scroll clear of it.
 
 ### How it was verified
-- All checks pass: typegen, tsc, eslint, build, 15 self-checks, and listen-check. day-flow and week-grid also pass in LA and Tokyo time.
-- Memory bench run mvyldzj5: overall 100.0, privacy 100.0, no leaks.
-- Headless walkthrough as a new fake user: 21/21 at 1440 and 20/21 at 390. In the miss, the opening returned no pick.
-- Before the deploy, the only memory rows in the database were Vi's (1 row), and none matched the private or never lists. `listMemories` now deletes such rows on read, so that read deleted nothing.
+- All checks pass on 341dd7a: typegen, tsc, eslint, build, 15 self-checks and listen-check; day-flow and week-grid
+  also in LA and Tokyo time.
+- Memory bench on the integrated build (run mvyplle4): overall 100.0, privacy 100.0, no leaks.
+- **Live on the demo account dotcainha@gmail.com** (Nov 1, 6:30 to 8:05 PM PT), seeded as a student, Maya: 18
+  calendar events and 8 self-sent emails, including a fake verification code and a doctor's reminder.
+  - Sign-in with every scope; the scan learned her classes, shifts, deadlines and focus habits.
+  - The doctor visit was kept only in the browser vault, without the diagnosis. The medicine name and the code were
+    never stored (database checked directly).
+  - Booking and Undo on real Google: the setup batch, a plan chip, a talk offer. The first booking created the Zeno
+    calendar.
+  - After the fixes, five pasted to-dos landed Mon 8:00 and 8:40, Tue 8:00 and 10:15, Wed 8:00. The first run had
+    crammed them into Sunday 6:35 to 9:30 PM.
+  - Start, focus, Done (a Day 1 streak), Stop for now offering the next step for tomorrow, the Week grid, Today and
+    the Memory sheet.
 
 ### Not verified yet
-- Real Google: booking on the Zeno calendar, freeBusy, the week view, and the Gmail profile scan. These wait on the demo sign-in as dotcainha@gmail.com.
-- A real microphone with hands-free, Safari and iOS, and dark mode in a live run (only checked in the gallery).
+- Tomorrow's daily re-scan, the spoken heads-up before an event, the halfway and end check-ins, and hands-free
+  listening (the mic stayed off at night).
+- Safari and iOS, dark mode in a live run, and 390x844 since the answers scroll fix.
 
 ### Known issues
-- **Undo of a Noted fact is guarded only in the browser.** The model can replay the undone request from the history, and its reply can still say it saved it.
+- **Talk and Stop-for-now offers ignore the to-do spacing**: they can sit right after another block (8:50 after an
+  8:40 to 8:50 block).
+- **A talk or plan offer can book a to-do the import already booked.**
+- **A 60-minute to-do becomes one 30-minute block**, and booking it drops its "To do:" memory, so the rest is not
+  tracked.
+- **Near-duplicate facts** between the paste or setup answers and the scan ("Lab report 3, due Friday" and "Owes BIO
+  lab report 3 due November 6").
+- **On Sunday the Week grid shows the week that is ending.**
+- **The greeting uses the Google first name**: the demo account says "Hi De" (its name is De Bruyne).
+- **The mail filter is broad**: mail whose text says "pin", "password" or "code 48291", even in a footer, is left
+  out of the scan, and subjects with "code", "security" or "payment" hide ordinary school mail from the opening.
+- **Undo of a Noted fact is guarded only in the browser.** The model can replay the undone request from the history,
+  and its reply can still say it saved it.
 - **Reload shows the saved line for 2.5-4 s** before the new pick.
-- **Mute is not remembered across reloads.**
-- **"Hear Zeno" can push the pick's chips under the dock at 390x844.**
-- **About 1 in 4 new-user openings returned no pick**, and the rule had none either.
-- **The Google access token is readable from `/api/auth/session`** (pre-existing). It can now also write the Zeno calendar.
+- **The Google access token is readable from `/api/auth/session`** (pre-existing). It can now also write the Zeno
+  calendar.
 - **Once about 120 facts are in the person's own words, scanned facts and patterns stop saving.**
 - **Undated "To do:" memories never clear.**
 
+### The demo account now
+- Its own calendar holds the seeded semester. The Zeno calendar holds 5 to-do blocks and 2 "Due:" days from the
+  second run. Zeno has its memories, a 1-day streak, and 1 vault fact in Chrome.
+- To start fresh before recording: undo each Zeno event (`DELETE /api/calendar/book/{id}` for the `zeno` events in
+  `/api/calendar/week`, both weeks), delete that email's rows in steps, goals, tasks, memories and user_state, and
+  clear the browser's localStorage keys that start with "zeno".
+
 ### Next steps
-1. Vi signs in as dotcainha@gmail.com (all boxes ticked), then a live test of scan, free time, booking, week and Undo.
+1. Vi decides: reset the demo account before recording, keep or remove the seeded test data, rename the Google
+   account.
 2. The demo video and submission (VI-317), due Nov 4, 6 PM PT.
 3. After Nov 4: rotate the Meta and Google keys.
 
@@ -151,7 +193,7 @@ Zeno is a voice-first daily helper: it gives a short spoken brief from your cale
 
 ## 5. In flight
 
-Nothing. Everything through cf5a48a is merged into `main`. Workflow worktrees under `.claude/worktrees/` and old local branches (`feat/*`, `integrate/*`, `design/finish`, `fix/foundation`) can be deleted.
+Nothing. Everything through 341dd7a is merged into `main`. Workflow worktrees under `.claude/worktrees/` and old local branches (`feat/*`, `integrate/*`, `design/finish`, `fix/foundation`) can be deleted.
 
 ## 6. Remaining work
 
