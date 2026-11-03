@@ -461,6 +461,9 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
           signIn: noop,
           signOut: noop,
           canvasSynced: noop,
+          openGoal: () => {},
+          openDeadline: () => {},
+          reply: () => {},
         }}
       />
     </div>

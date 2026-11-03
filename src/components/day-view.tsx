@@ -36,6 +36,7 @@ export type DayViewProps = {
   line: string; // Zeno's latest line
   you: string; // the person's words: live while listening, then what they sent
   goal: Goal | null;
+  goals?: Goal[]; // every open plan, for the home's options and the Desk (Vi, Nov 3)
   today: Today | null; // null when the day couldn't load
   memories: Memory[] | "loading" | "error";
   sheet: Sheet;
@@ -84,6 +85,10 @@ export type DayViewProps = {
     signIn(): void;
     signOut(): void;
     canvasSynced(assignments: CanvasAssignment[]): void; // Canvas linked in its sheet (what it found), or unlinked ([])
+    // The Desk's working cards (Vi, Nov 3): open a plan's desk, plan a deadline and open its desk, answer an email.
+    openGoal(goalId: string): void;
+    openDeadline(deadline: Deadline): void;
+    reply(email: DayEmail): void;
   };
 };
 
@@ -446,6 +451,11 @@ export default function DayView(props: DayViewProps) {
         booked={bookedEvents(Object.values(bookings))}
         onClose={() => on.sheet(null)}
         onSignIn={on.signIn}
+        goals={props.goals}
+        progress={props.progress ?? undefined}
+        onGoal={on.openGoal}
+        onDeadline={on.openDeadline}
+        onReply={on.reply}
       />
       <SheetPanel open={props.sheet === "memory"} title="Memory" onClose={() => on.sheet(null)}>
         {props.sheet === "memory" && (

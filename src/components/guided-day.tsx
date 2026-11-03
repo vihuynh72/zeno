@@ -1205,6 +1205,7 @@ export default function GuidedDay() {
       line={screen === "setup" ? setupLine : line}
       you={voice.phase === "listening" ? voice.partial : heard}
       goal={goal}
+      goals={day?.goals}
       today={
         day && { events: day.events, emails: day.emails, unreadEmail: day.unreadEmail, sources: day.sources, free: day.free, deadlines: day.deadlines, mailUrl: day.mailUrl }
       }
@@ -1276,6 +1277,10 @@ export default function GuidedDay() {
           void signOut({ redirectTo: "/" });
         },
         canvasSynced: (assignments) => void canvasSynced(assignments),
+        // Contract stubs for the Nov 3 round (docs/PLAN-NOV3.md), filled by the flow-ui track.
+        openGoal: () => {},
+        openDeadline: () => {},
+        reply: () => {},
       }}
     />
   );

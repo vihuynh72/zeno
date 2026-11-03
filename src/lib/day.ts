@@ -47,7 +47,9 @@ export type SourceState = "ok" | "no-access" | "error" | "not-configured";
 // zeno marks a block on the person's Zeno calendar.
 export type DayEvent = { title: string; start: string; end: string; allDay: boolean; zeno?: boolean };
 
-export type DayEmail = { from: string; subject: string; snippet: string; unread: boolean };
+// id opens the email in full (GET /api/mail/[id]), address is the sender's, for a reply draft's To, and asks marks mail
+// that asks the person something (a question or a request, by rule). All three are missing from days saved before Nov 3.
+export type DayEmail = { from: string; subject: string; snippet: string; unread: boolean; id?: string; address?: string; asks?: boolean };
 
 // A free gap in the person's calendars, ISO start and end.
 export type FreeSlot = { start: string; end: string };
@@ -100,6 +102,9 @@ export type DayResponse =
       // Up to 3 things the person can tap instead of typing, worded as they would say them.
       options: string[];
       goal: Goal | null;
+      // Every open plan (the current one first, then by due date, at most 5): the home's goal options, the Desk's Goals
+      // card and the Week (Vi, Nov 3). Missing from days saved before Nov 3.
+      goals?: Goal[];
       sources: { calendar: SourceState; email: SourceState; goals: SourceState };
       // Today's events from all of the person's calendars, Zeno blocks marked.
       events: DayEvent[];
@@ -276,3 +281,25 @@ export type CanvasResponse =
 // What the browser sends back with the opening, talk and prep (like `private`): the soonest assignments' instructions,
 // so Zeno can find the first step without the server keeping them.
 export type CanvasBrief = { title: string; course: string; due: string | null; instructions: string };
+
+// One of the home's goal options (Vi, Nov 3: she picks the goal, Zeno picks the step): an open plan, a deadline with no
+// plan yet, or an email that asks her something.
+export type Choice =
+  | { kind: "plan"; goal: Goal }
+  | { kind: "deadline"; deadline: Deadline }
+  | { kind: "mail"; email: DayEmail };
+
+// POST /api/goal/activate body: { id }: that open plan becomes the current one; the old current plan is paused, not lost.
+// Answers with GoalResponse.
+export type ActivateRequest = { id: string };
+
+// POST /api/goal/plan body: Muse breaks a deadline into small steps (the first about 5 minutes) and saves them as the
+// current plan. canvas is the matching assignment from this device's Canvas list, when there is one. Answers with
+// GoalResponse.
+export type PlanRequest = { title: string; due: string | null; canvas?: CanvasBrief };
+
+// GET /api/mail/[id]: one email from the person's own inbox, read in full for the Desk and an email's goal desk. The
+// text is cleaned and capped in memory; Zeno never stores, logs or sends it to the model.
+export type MailResponse =
+  | { state: "ok"; from: string; address: string; subject: string; date: string; text: string }
+  | { state: "signed-out" | "bad-request" | "not-found" | "error" };

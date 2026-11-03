@@ -1,7 +1,7 @@
 "use client";
 
 import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { DayEvent, Deadline, Goal, SourceState, Step } from "@/lib/day";
+import type { DayEmail, DayEvent, Deadline, Goal, Progress, SourceState, Step } from "@/lib/day";
 import type { Today } from "@/components/day-view";
 import { browserZone, freeGaps, httpsOnly, markEvents, senderName, timeRange } from "@/components/desk-rows";
 import WeekGrid from "@/components/week-grid";
@@ -43,6 +43,13 @@ type DeskProps = {
   booked?: DayEvent[];
   onClose(): void;
   onSignIn(): void;
+  // The working cards (Vi, Nov 3): every open plan, this week's days for the Week, and taps that leave the Desk for a
+  // plan's desk, a deadline's new plan, or an email's reply.
+  goals?: Goal[];
+  progress?: Progress;
+  onGoal?(goalId: string): void;
+  onDeadline?(deadline: Deadline): void;
+  onReply?(email: DayEmail): void;
 };
 
 // Only the backdrop: a click on the dialog's own scrollbar lands inside its box.
