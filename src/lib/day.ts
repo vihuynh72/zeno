@@ -29,8 +29,9 @@ export type Goal = { id: string; title: string; steps: Step[]; due?: string | nu
 // The grouped profile, in the order Memory shows it.
 export const MEMORY_GROUPS = ["about", "routines", "projects", "interests", "people", "work-style", "patterns"] as const;
 export type MemoryGroup = (typeof MEMORY_GROUPS)[number];
-// Where a memory came from: what the person said, a calendar or email scan, or a pattern in what they did.
-export type MemorySource = "you" | "calendar" | "email" | "pattern";
+// Where a memory came from: what the person said, a calendar or email scan, a pattern in what they did, or their
+// Canvas assignments (POST /api/canvas replaces all of an account's "canvas" memories on each sync).
+export type MemorySource = "you" | "calendar" | "email" | "pattern" | "canvas";
 
 export type Memory = { id: string; text: string; createdAt: string; group: MemoryGroup; source: MemorySource };
 
@@ -106,8 +107,13 @@ export type DayResponse =
       free: FreeSlot[];
       deadlines: Deadline[];
       calendarWrite: CalendarWrite;
+      // Only important mail (Vi, Nov 2): people and school, never promotions, social, updates, forums or no-reply
+      // senders. unreadEmail counts the unread ones among them.
       emails: DayEmail[];
       unreadEmail: number;
+      // Gmail for this account (https://mail.google.com/mail/?authuser=<email>), for the subtle "Open Gmail" link.
+      // Optional: days saved in the browser before Nov 2 lack it.
+      mailUrl?: string;
       // Nothing remembered and no goal yet: the screens run the first-time setup.
       isNew: boolean;
       // Same as progress.streak, kept for older saved days.
@@ -128,12 +134,13 @@ export type FirstPick = {
 };
 
 // The model-written opening, fetched after /api/day so the first screen never waits on the model.
-// POST /api/day/opening body { private?: string[] } uses the device's private facts; GET is the same without them.
+// POST /api/day/opening body { private?: string[]; canvas?: CanvasBrief[] } uses the device's private facts and Canvas
+// briefs; GET is the same without them.
 export type OpeningResponse =
   | { state: "ok"; opening: string; options: string[]; pick: FirstPick | null }
   | { state: "signed-out" | "error" };
 
-// POST /api/talk body: { message: string; history: Turn[]; proposals?: boolean; private?: string[] }
+// POST /api/talk body: { message: string; history: Turn[]; proposals?: boolean; private?: string[]; canvas?: CanvasBrief[] }
 export type TalkAction = {
   // "kept-private": a private fact went to the device (it is in the response's `private`), never to Zeno's servers.
   type: "goal-set" | "roadmap-changed" | "step-started" | "step-finished" | "remembered" | "kept-private" | "forgot";
@@ -156,8 +163,15 @@ export type TalkResponse =
       progress?: Progress;
       // Private facts from this turn, for the device only (see PrivateFact).
       private?: PrivateFact[];
+      // An email Zeno drafted when asked ("draft the email to Prof Patel"); the page shows "Open in Gmail".
+      draft?: EmailDraft | null;
     }
   | { state: "signed-out" | "no-key" | "bad-request" | "model-error" };
+
+// An email Zeno wrote for the person to send themselves (Vi, Nov 2: no sending service). `to` is empty or an address
+// from their own recent mail, never one the model made up. `url` opens it in Gmail's compose window for this account,
+// where they press Send.
+export type EmailDraft = { to: string; subject: string; body: string; url: string };
 
 // POST /api/goal body: { title, due?, steps: { title, minutes }[], start?: boolean }. Saves the plan without
 // the model; start: true also starts step 1, so a tap starts the timer at once.
@@ -165,7 +179,8 @@ export type GoalResponse =
   | { state: "ok"; goal: Goal }
   | { state: "signed-out" | "bad-request" | "error" };
 
-// POST /api/prep body: { stepId }; up to 3 sources, found from the goal and step titles alone.
+// POST /api/prep body: { stepId; canvas?: CanvasBrief }; up to 3 sources, found from the goal and step titles, and the
+// assignment's instructions when the step is for a Canvas assignment.
 export type PrepResponse =
   | { state: "ok"; sources: PrepSource[] }
   | { state: "signed-out" | "not-found" | "bad-request" | "error" };
@@ -186,11 +201,8 @@ export type SaveMemoryResponse =
   | { state: "ok"; memories: Memory[]; private?: PrivateFact[] }
   | { state: "signed-out" | "bad-request" | "not-kept" | "error" };
 
-// POST /api/import body { text }: pasted notes become grouped memories (every to-do as a "To do: …" memory, dropped
-// once it is booked), plus, when calendarWrite is "ok", a proposal to book their deadlines (all-day, unless their
-// calendar already shows one that day) and their to-dos as short blocks in free time in 5 days (timed: at most 30
-// minutes, two a day, 8 AM to 9 PM, 10 free minutes after each, in the part of the day they focus best when they
-// said). Nothing is booked until the person taps; an unbooked proposal loses nothing.
+// POST /api/import body { text }: pasted notes become grouped memories (every to-do as a "To do: …" memory).
+// proposal is always empty since Nov 2: Vi does not want small to-dos or Due: days written to the calendar.
 export type ImportResponse =
   | { state: "ok"; memories: Memory[]; proposal: CalendarBlock[]; private?: PrivateFact[] }
   | { state: "signed-out" | "bad-request" | "error" };
@@ -205,6 +217,8 @@ export type WeekEvent = {
   zeno: boolean;
   // The calendar's color from Google, when it has one.
   color: string | null;
+  // The event in Google Calendar (its htmlLink): the Week view is read-only and a tap opens this.
+  link?: string | null;
 };
 
 export type WeekResponse =
@@ -227,3 +241,33 @@ export type BookResponse =
 export type ProfileResponse =
   | { state: "ok"; learned: Memory[]; scannedAt: string; private?: PrivateFact[] }
   | { state: "signed-out" | "no-access" | "error" };
+
+// ---------- Canvas (Vi, Nov 2) ----------
+// The person's Canvas link (school address and personal access token) stays only in their browser
+// (src/lib/canvas-store.ts). POST /api/canvas body { base, token }: the server uses the token for that one request and
+// never stores or logs it. It reads the next 14 days of unsubmitted work, replaces the account's "canvas" deadline
+// memories with it (so Today, the first card and the opening see them), and returns the list. Zeno never submits,
+// writes answers or changes anything in Canvas.
+export type CanvasAssignment = {
+  id: string;
+  course: string;
+  title: string;
+  // ISO due time, null when the work has no due date.
+  due: string | null;
+  kind: "assignment" | "quiz" | "discussion" | "exam";
+  submitted: boolean;
+  // The assignment's page in Canvas.
+  url: string;
+  // Its instructions as plain text (at most 800 characters), filled for the 3 soonest unsubmitted ones; null otherwise.
+  instructions: string | null;
+};
+
+export type CanvasResponse =
+  | { state: "ok"; courses: number; assignments: CanvasAssignment[] }
+  // bad-url: not an https://<school>.instructure.com address. bad-token: Canvas refused the token.
+  // not-allowed: the school turned off personal access tokens or this API.
+  | { state: "signed-out" | "bad-request" | "bad-url" | "bad-token" | "not-allowed" | "error" };
+
+// What the browser sends back with the opening, talk and prep (like `private`): the soonest assignments' instructions,
+// so Zeno can find the first step without the server keeping them.
+export type CanvasBrief = { title: string; course: string; due: string | null; instructions: string };
