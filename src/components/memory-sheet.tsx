@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import type { Memory } from "@/lib/day";
 import type { VaultFact } from "@/lib/vault";
 import { groupFacts, type Fact } from "@/components/day-flow";
@@ -9,30 +9,44 @@ import { groupFacts, type Fact } from "@/components/day-flow";
 const CANVAS = "canvas";
 
 // What Zeno remembers, grouped, with this device's private facts in their groups. Forget is a quiet × per row.
-// Canvas deadlines are summed up in one line at the end of Projects & deadlines; onCanvas opens the sheet that lists them.
+// Canvas deadlines fold into one line at the end of Projects & deadlines, which opens them there, one line each.
 export default function MemorySheet({
   memories,
   device,
   onForget,
   onAdd,
   onRetry,
-  onCanvas,
 }: {
   memories: Memory[] | "loading" | "error";
   device: VaultFact[];
   onForget(fact: Fact): void;
   onAdd(text: string): Promise<boolean>;
   onRetry(): void;
-  onCanvas?: () => void;
 }) {
   const box = useRef<HTMLTextAreaElement>(null);
+  const [canvasOpen, setCanvasOpen] = useState(false);
   const saved = Array.isArray(memories) ? memories : [];
-  const fromCanvas = saved.filter((memory) => memory.source === "canvas").length;
+  const fromMemory = (memory: Memory): Fact => ({ id: memory.id, text: memory.text, group: memory.group, device: false });
+  const fromCanvas = saved.filter((memory) => memory.source === "canvas").map(fromMemory);
   const facts: Fact[] = [
     ...device.map((fact) => ({ id: fact.id, text: fact.text, group: fact.group, device: true })),
-    ...saved.filter((memory) => memory.source !== "canvas").map((memory) => ({ id: memory.id, text: memory.text, group: memory.group, device: false })),
-    ...(fromCanvas > 0 ? [{ id: CANVAS, text: "", group: "projects" as const, device: false }] : []),
+    ...saved.filter((memory) => memory.source !== "canvas").map(fromMemory),
+    ...(fromCanvas.length > 0 ? [{ id: CANVAS, text: "", group: "projects" as const, device: false }] : []),
   ];
+  // A row and its ×; a Canvas one stays on one line.
+  const row = (fact: Fact, oneLine = false) => (
+    <li key={fact.id} className="flex items-start gap-2">
+      <p className={`min-w-0 flex-1 ${oneLine ? "truncate" : "wrap-break-word"}`}>
+        {fact.text}
+        {fact.device && <span className="block text-[18px] text-ink-2">Only on this device</span>}
+      </p>
+      <button type="button" onClick={() => onForget(fact)} className="forget" aria-label={`Forget: ${fact.text}`}>
+        <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M6 6l12 12M18 6L6 18" />
+        </svg>
+      </button>
+    </li>
+  );
   const add = () => {
     const text = box.current?.value.trim();
     if (!box.current || !text) return box.current?.focus();
@@ -92,33 +106,15 @@ export default function MemorySheet({
           <section key={entry.group} aria-label={entry.name} className="mini">
             <h3 className="text-[20px] leading-8 font-bold">{entry.name}</h3>
             <ul className="lines mt-2">
-              {entry.facts.filter((fact) => fact.id !== CANVAS).map((fact) => (
-                <li key={fact.id} className="flex items-start gap-2">
-                  <p className="min-w-0 flex-1 wrap-break-word">
-                    {fact.text}
-                    {fact.device && <span className="block text-[18px] text-ink-2">Only on this device</span>}
-                  </p>
-                  <button type="button" onClick={() => onForget(fact)} className="forget" aria-label={`Forget: ${fact.text}`}>
-                    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <path d="M6 6l12 12M18 6L6 18" />
-                    </svg>
+              {entry.facts.filter((fact) => fact.id !== CANVAS).map((fact) => row(fact))}
+              {entry.group === "projects" && fromCanvas.length > 0 && (
+                <li>
+                  <button type="button" aria-expanded={canvasOpen} onClick={() => setCanvasOpen(!canvasOpen)} className="text-ink-2 underline underline-offset-4">
+                    {fromCanvas.length} Canvas {fromCanvas.length === 1 ? "assignment" : "assignments"}
                   </button>
                 </li>
-              ))}
-              {entry.group === "projects" && fromCanvas > 0 && (
-                <li className="text-ink-2">
-                  {entry.facts.length > 1 ? "Plus " : ""}
-                  {fromCanvas} {fromCanvas === 1 ? "assignment" : "assignments"} from Canvas
-                  {onCanvas && (
-                    <>
-                      <span aria-hidden="true"> · </span>
-                      <button type="button" onClick={onCanvas} className="underline underline-offset-4">
-                        See them
-                      </button>
-                    </>
-                  )}
-                </li>
               )}
+              {entry.group === "projects" && canvasOpen && fromCanvas.map((fact) => row(fact, true))}
             </ul>
           </section>
         ))

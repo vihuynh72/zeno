@@ -8,7 +8,7 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { bookedEvents, canvasHost, dueDays, httpsOnly, markEvents, senderName } = await import("./desk-rows.ts");
+const { bookedEvents, canvasHost, dueDays, dueTime, httpsOnly, markEvents, senderName } = await import("./desk-rows.ts");
 
 const event = (title: string, start: string, end: string, allDay = false): DayEvent => ({ title, start, end, allDay });
 const day = [
@@ -72,27 +72,32 @@ assert.equal(canvasHost("http://canvas.school.edu/"), "canvas.school.edu");
 const work = (id: string, due: string | null) => ({ id, due });
 const monday = Date.parse("2026-11-02T20:00:00Z");
 const list = [
-  work("hw22", "2026-11-10T07:59:00Z"),
-  work("journal", "2026-11-03T07:59:00Z"),
-  work("quiz11", "2026-11-05T18:15:00Z"),
-  work("reading", null),
-  work("thesis", "2026-11-07T07:59:00Z"),
+  work("lab-report", "2026-11-09T20:00:00Z"),
+  work("reading-notes", "2026-11-03T07:59:00Z"),
+  work("essay-outline", "2026-11-05T23:00:00Z"),
+  work("bonus-reading", null),
+  work("problem-set", "2026-11-07T01:00:00Z"),
   work("late-lab", "2026-11-02T07:59:00Z"),
-  work("participation", "2026-11-03T18:00:00Z"),
+  work("lab-quiz", "2026-11-03T21:30:00Z"),
   work("sunday", "2026-11-09T07:00:00Z"),
   work("this-morning", "2026-11-02T17:00:00Z"),
 ];
 const days = (zone: string, items = list) => dueDays(items, zone, monday).map(({ day, items }) => [day, items.map((item) => item.id)]);
 assert.deepEqual(days("America/Los_Angeles"), [
-  ["Today", ["this-morning", "journal"]],
-  ["Tomorrow", ["participation"]],
-  ["Thursday", ["quiz11"]],
-  ["Friday", ["thesis"]],
+  ["Today", ["this-morning", "reading-notes"]],
+  ["Tomorrow", ["lab-quiz"]],
+  ["Thursday", ["essay-outline"]],
+  ["Friday", ["problem-set"]],
   ["Sunday", ["sunday"]],
-  ["Mon, Nov 9", ["hw22"]],
-  ["No due date", ["reading"]],
+  ["Mon, Nov 9", ["lab-report"]],
+  ["No due date", ["bonus-reading"]],
 ]);
-assert.deepEqual(days("UTC", [work("journal", "2026-11-03T07:59:00Z")]), [["Tomorrow", ["journal"]]]);
+assert.deepEqual(days("UTC", [work("reading-notes", "2026-11-03T07:59:00Z")]), [["Tomorrow", ["reading-notes"]]]);
 assert.deepEqual(days("America/Los_Angeles", []), []);
+
+// A row shows its time only when it isn't 11:59 PM on the person's clock (to the second, as Canvas often writes it).
+const times = (zone: string) => ["2026-11-03T07:59:00Z", "2026-11-03T07:59:59Z", "2026-11-03T21:30:00Z", null].map((due) => dueTime(due, zone)?.replace(/\s/g, " ") ?? null);
+assert.deepEqual(times("America/Los_Angeles"), [null, null, "1:30 PM", null]);
+assert.deepEqual(times("UTC"), ["7:59 AM", "7:59 AM", "9:30 PM", null]);
 
 console.log("desk-rows self-check passed");

@@ -213,6 +213,15 @@ body {
   line-height: 0;
   font-weight: 400;
 }
+/* The goal under a step: that writing as one row, the goal cut with an ellipsis so its due part stays whole. Its own
+   line box, lowered onto the rule as .write is. */
+.goal-line {
+  display: flex;
+  font-size: var(--fs2);
+  font-weight: 400;
+  padding-top: calc((var(--fs) - var(--fs2)) * var(--k));
+  margin-bottom: calc((var(--fs) - var(--fs2)) * var(--k) * -1);
+}
 .timer {
   font-family: var(--font-atkinson-mono);
   font-size: var(--timer);

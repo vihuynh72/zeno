@@ -12,15 +12,19 @@ fit and checked on `nov2/integrate`. `nov2/fix` added music for deep work (decis
 fixes from three reviews. **All of it is on `main` and in production** (Nov 2, 9:25 PM PT: `401c81c`), with the fixes
 from the live test below.
 
-### Nov 2 evening: the tidy round (on `tidy/integrate`, not yet on `main`)
+### Nov 2 evening: the tidy round (on `tidy/integrate` and `tidy/fix`, not yet on `main`)
 Vi connected the real SJSU Canvas on production: "It looks kind of messy… It doesn't have the context. I think it needs
 some sort of AI to organize it a little bit." Spec and details: the last section of `docs/PLAN-NOV2.md`.
-- **Canvas reads clean at the source**: course codes ("HIST 110"), titles without proctoring notes, deadlines saved
-  whole; the next sync replaces the old rows. Disconnect deletes the saved Canvas deadlines (`DELETE /api/canvas`).
-- **One line per row**: the Canvas screen lists all work due in 2 weeks by day; Memory folds Canvas into "Plus N
-  assignments from Canvas · See them"; Today's deadlines take one line each.
-- **Focus keeps the context** ("<goal> · due <when>" under the step) and Sources is one compact card that scrolls clear
-  of the dock. Connect re-plans the home card when Canvas found work due (with a plan open, the card keeps that plan).
+- **Canvas reads clean at the source**: course codes ("HIST 110", also after a term like "FA 2026" or "AU26"), titles
+  without proctoring notes, a title with a password or code kept as its kind ("Quiz"), deadlines saved whole; the next
+  sync replaces the old rows. Disconnect deletes the saved Canvas deadlines (`DELETE /api/canvas`) and says so if that
+  fails, with Try again; it re-plans the home card, as Connect does when it found work due.
+- **Calm rows**: the Canvas screen lists all work due in 2 weeks by day, a title on two lines at most and a time only
+  when it isn't 11:59 PM; Memory folds Canvas into "11 Canvas assignments", which opens them there with the usual ×;
+  Today's deadlines take two lines at most. On a phone the links under the big button drop their "·".
+- **Focus keeps the context** ("<goal> · due <when>" on one line under the step, in the card's old blank row, so the
+  title stays on screen) and Sources is one compact card that scrolls clear of the dock but never past the card's top.
+  With a plan open, Connect leaves the card on that plan.
 - Gallery: `/preview?state=` `focus-canvas`, `focus-sources`, `canvas-connected`, `memory-canvas`, `desk-deadlines`.
   Typegen, tsc, eslint, build and every self-check pass, and `DELETE /api/canvas` worked on a local production build
   for a throwaway @zeno.local user; not tried in a browser or with a real Canvas yet.
@@ -106,11 +110,13 @@ Fixed during the test (all on `main`):
 - **Focus check-ins follow Sound only**: the old check-ins mute (`zeno:checkins`) has had no switch since Nov 2 and is
   no longer read. A separate switch under Sound is Vi's call.
 - **Canvas:** only `<school>.instructure.com` addresses; a slow Canvas can pass the route's 30 s. A course name without
-  a code, or one written "2026FA_CS_146_07" or "cs 146", shows as its first 28 characters. Memory can't forget one
-  Canvas deadline (they go at Disconnect, or once due). The Canvas screen's list, kept in the browser, can hold a course
-  title that names a condition ("Quiz 3: Anxiety Disorders"); hiding it would hide real work, so that is Vi's call.
-  With a plan open, Connect doesn't move the card to a sooner Canvas deadline (one plan at a time; Vi's call). A cut
-  Today deadline shows whole only on hover.
+  a code, or one written "2026FA_CS_146_07" or "cs 146", shows as its first 28 characters; a two-word department
+  ("COMP SCI 300") shows as "SCI 300". A Canvas deadline forgotten in Memory on production before the tidy round was
+  saved with the raw course name, so the first sync after it saves the clean one again; forgetting it once more holds.
+  The Canvas screen's list, kept in the browser, can hold a course title that names a condition ("Quiz 3: Anxiety
+  Disorders"); hiding it would hide real work, so that is Vi's call. With a plan open, Connect doesn't move the card to
+  a sooner Canvas deadline (one plan at a time; Vi's call). A Canvas row or Today deadline past two lines is cut, whole
+  only on hover.
 - **Week:** a one-hour event's title is cut on a laptop ("CS 146 Data…"); hover or keyboard focus shows it whole, and on
   touch only Google Calendar does. On a short window the 28px minimum row can leave about 15px of scroll.
 - **Demo inbox**: Maya's 8 emails are self-sent, so every sender reads "De Bruyne" and a draft to Prof Patel has no To
@@ -121,9 +127,9 @@ Fixed during the test (all on `main`):
   patterns stop saving at about 120 facts in the person's own words.
 
 ### Next steps
-1. Merge `tidy/integrate` (the tidy round, above; it branches from `a93aae2`, and `main`'s later `e716f09` merges
-   clean), then look at the Canvas screen, Memory, Today and Focus on production with Canvas connected (VI-324). The
-   first page load's sync rewrites the old raw Canvas rows.
+1. Merge `tidy/fix` (the tidy round, above, with its review fixes; it branches from `a93aae2`, and `main`'s later
+   `e716f09` merges clean), then look at the Canvas screen, Memory, Today and Focus on production with Canvas connected
+   (VI-324). The first page load's sync rewrites the old raw Canvas rows.
 2. The demo account was reset on Nov 2 at 9:25 PM PT (no Zeno rows, no Zeno calendar blocks, no device keys; Maya's 18
    events and 8 emails kept). Reset again on the morning of Nov 4 if it is used before then (VI-326; the steps are in
    section 0a "The demo account now"). Sound is off in that Chrome: turn it on in the account menu for the video.

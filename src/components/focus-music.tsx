@@ -137,9 +137,11 @@ export default function FocusMusic({ active }: { active: boolean }) {
   const label = STATIONS.find((station) => station.id === choice)?.label;
   return (
     <>
-      {/* The "·" travels with Music, as with day-view's links, so a wrapped row never ends in one. */}
+      {/* The "·" travels with Music, as with day-view's links, and goes on a phone, where the row wraps. */}
       <span className="flex items-center gap-2">
-        <span aria-hidden="true">·</span>
+        <span aria-hidden="true" className="max-sm:hidden">
+          ·
+        </span>
         <button type="button" className="link" aria-expanded={open} onClick={() => setOpen(!open)}>
           {label ? `Music: ${label}` : "Music"}
         </button>

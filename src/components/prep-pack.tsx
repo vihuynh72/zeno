@@ -43,9 +43,14 @@ export default function PrepPack({ step, canvas }: { step: Step; canvas?: Canvas
     };
   }, [status, step.id, canvas]);
 
-  // Opened or answered: the pack scrolls clear of the sticky dock (html's scroll-padding-bottom), as the answers do.
+  // Opened or answered: the pack scrolls clear of the sticky dock, as the answers do, but never so far that the step's
+  // card leaves the top of the screen.
   useEffect(() => {
-    pack.current?.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    const bottom = pack.current?.getBoundingClientRect().bottom ?? 0;
+    const dockTop = document.querySelector(".dock")?.getBoundingClientRect().top ?? innerHeight;
+    const cardTop = document.querySelector(".card")?.getBoundingClientRect().top ?? 0;
+    const by = Math.min(bottom - (dockTop - 16), cardTop - 16);
+    if (by > 0) scrollBy({ top: by, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   }, [status]);
 
   return (

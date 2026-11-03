@@ -69,10 +69,13 @@ const tidy = (text: string, max: number) => short(words(text).replace(ENDS, ""),
 const TERM = /\b(?:(?:fa|sp|su|wi)(?:\d{4}|\d{2})|(?:fall|spring|summer|winter|autumn) ?'?(?:\d{4}|\d{2})|\d{4} ?(?:fall|spring|summer|winter|autumn|fa|sp|su|wi))\b/gi;
 const SECTION = /\b(?:sec(?:tion)?|sect)\.? ?\d+\w*|\(\d+\)/gi;
 // "HIST-110", "CHEM 1A", "CS146", and a department ending in a digit before a space ("BUS1 170").
-const CODE = /\b([A-Z]{2,5}(?:\d(?=[ _-]))?)[ _-]?(\d{1,4}[A-Z]{0,2})(?![A-Za-z\d])/;
+const CODE = /\b([A-Z]{2,5}(?:\d(?=[ _-]))?)[ _-]?(\d{1,4}[A-Z]{0,2})(?![A-Za-z\d])/g;
+// A term TERM leaves, like "FA 2026" or "AU26", reads as a code; it is passed over when a real code comes after it.
+const termLike = ([, letters, number]: RegExpMatchArray) => /^(?:FA|FL|SP|SPR|SU|SUM|WI|WIN|AU|AUT)$/.test(letters) && /^(?:\d{2}|\d{4})$/.test(number);
 export function courseLabel(name: string): string {
   const plain = name.replace(TERM, " ").replace(SECTION, " ").replace(/\(\s*\)|\[\s*\]/g, " ");
-  const code = CODE.exec(plain);
+  const codes = [...plain.matchAll(CODE)];
+  const code = codes.find((match, i) => i === codes.length - 1 || !termLike(match));
   return code ? `${code[1]} ${code[2]}` : tidy(plain, 28) || tidy(name, 28);
 }
 
@@ -133,7 +136,8 @@ function assignmentOf(item: PlannerItem, base: string): CanvasAssignment | null 
   return {
     id: `${item.plannable_type}-${item.plannable_id}`,
     course: courseLabel(words(item.context_name)),
-    title,
+    // A password or code in a title ("Quiz 3 - Password: owl26") is kept nowhere, the device included: just the kind.
+    title: SECRETS.test(title) ? kind[0].toUpperCase() + kind.slice(1) : title,
     due: typeof due === "string" ? new Date(due).toISOString() : null,
     kind,
     submitted: Boolean(item.submissions && (item.submissions.submitted || item.submissions.excused)),

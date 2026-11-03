@@ -44,7 +44,7 @@ PREPPED.steps[1].prep = [
   },
 ];
 
-// Focus on a Canvas assignment's plan: the goal line says what the step is for, here on two lines.
+// Focus on a Canvas assignment's plan: the goal line says what the step is for, here cut to one line, its due part whole.
 const CANVAS_PLAN: Goal = {
   id: "sample-canvas-goal",
   title: "ENGL 1A: Peer review: Argument essay draft and comments on two classmates' theses",
@@ -333,18 +333,18 @@ const STATES: Record<string, Fixture> = {
     sheet: "today",
     today: { events: [], emails: [], unreadEmail: 0, sources: { calendar: "ok", email: "error", goals: "ok" } },
   },
-  // Canvas deadlines with long titles: one line each, cut with an ellipsis.
+  // Canvas deadlines with long titles: two lines at most each, cut with an ellipsis.
   "desk-deadlines": { line: "Good afternoon, Sam.", sheet: "today", today: { ...TODAY, deadlines: CANVAS_DEADLINES } },
   memory: { line: "Good afternoon, Sam.", sheet: "memory", device: DEVICE },
-  // Canvas deadlines fold into one line at the end of Projects & deadlines.
-  "memory-canvas": { line: "Good afternoon, Sam.", sheet: "memory", memories: [...MEMORIES, ...CANVAS_MEMORIES], canvas: SAMPLE_CANVAS },
+  // Canvas deadlines fold into one line at the end of Projects & deadlines, which opens them there, each with its ×.
+  "memory-canvas": { line: "Good afternoon, Sam.", sheet: "memory", memories: [...MEMORIES, ...CANVAS_MEMORIES] },
   "memory-empty": { line: "Good afternoon, Sam.", sheet: "memory", memories: [] },
   // The account menu: Sound, Connect Canvas (or Canvas · connected), Privacy, Sign out.
   account: { line: "Good afternoon, Sam.", chips: chips("Work on my essay"), menuOpen: true, progress: progress() },
   "account-canvas": { line: "Good afternoon, Sam.", chips: chips("Work on my essay"), menuOpen: true, progress: progress(), canvas: { ...CANVAS, linked: true } },
   // Connect Canvas, opened from the account menu.
   canvas: { line: "Good afternoon, Sam.", sheet: "canvas" },
-  // Connected: the last sync's work by the day it is due, one line each.
+  // Connected: the last sync's work by the day it is due, a line or two each, with a time only when it isn't 11:59 PM.
   "canvas-connected": { line: "Good afternoon, Sam.", sheet: "canvas", canvas: SAMPLE_CANVAS },
   error: { screen: "talk", line: "I couldn't think that through just now. Try again?" },
   blocked: {

@@ -27,10 +27,7 @@ export default function Privacy() {
       <h2 className="mt-10 text-[22px] font-bold">What Zeno keeps</h2>
       <ul className="mt-3 list-disc pl-6">
         <li>Your goals and steps, and short facts Zeno remembers about you (like your classes, how you like to work, or a Canvas due date).</li>
-        <li>
-          You can see every remembered fact in Memory and delete any of them, any time. Canvas due dates are listed on
-          Zeno&apos;s Canvas screen instead.
-        </li>
+        <li>You can see every remembered fact in Memory and delete any of them, any time.</li>
         <li>
           Zeno&apos;s servers do not save your emails, calendar events or Canvas instructions. Zeno reads them when it needs
           them. This browser keeps today&apos;s calendar, so Zeno opens fast. Until you disconnect Canvas, it also keeps the

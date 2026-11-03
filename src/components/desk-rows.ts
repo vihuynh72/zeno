@@ -52,6 +52,10 @@ export function dueDays<T extends { due: string | null }>(work: T[], timeZone: s
   return [...days].map(([day, items]) => ({ day, items }));
 }
 
+// A row's time, only when it isn't 11:59 PM: Canvas work is nearly always due then, and the day heading says the day.
+export const dueTime = (due: string | null, timeZone: string) =>
+  due && localIso(due, timeZone).slice(11, 16) !== "23:59" ? formatTime(due, timeZone) : null;
+
 function dayName(date: string, today: string) {
   const ahead = Math.round((Date.parse(date) - Date.parse(today)) / DAY);
   if (ahead === 0) return "Today";

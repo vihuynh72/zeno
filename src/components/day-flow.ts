@@ -114,10 +114,11 @@ export function stepCard(goal: Goal | null): FirstPick | null {
   return goal && step ? { goal: goal.title, due: goal.due ?? null, stepId: step.id, steps: [{ title: step.title, minutes: step.minutes ?? 5 }], why: "" } : null;
 }
 
-// Connect Canvas re-plans the home card with what it found, only when some of it is still due and only on that card
-// (never mid-focus, after a Done, in talk or after stopping); a Disconnect reports nothing ([]).
-export const replanOnConnect = (screen: Screen | null, found: Pick<CanvasAssignment, "submitted">[]) =>
-  screen === "ready" && found.some((item) => !item.submitted);
+// Canvas linked or unlinked in its sheet re-plans the home card, only on that card (never mid-focus, after a Done, in
+// talk or after stopping): a Connect when some of what it found is still due, a Disconnect always, since the card may
+// hold one of the deadlines it took away.
+export const replanOnCanvas = (screen: Screen | null, linked: boolean, found: Pick<CanvasAssignment, "submitted">[]) =>
+  screen === "ready" && (!linked || found.some((item) => !item.submitted));
 
 // What the screen after Done says: the next step, or that the plan is finished.
 export function doneLine(goal: Goal | null): string {

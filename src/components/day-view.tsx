@@ -195,13 +195,14 @@ export default function DayView(props: DayViewProps) {
   const offerChip = (booking: Booking, isBig = false) => (
     <BookingChip key={booking.key} booking={booking} big={isBig} onBook={() => on.book(booking.key)} onUndo={() => on.unbook(booking.key)} />
   );
-  // What a step is for, small on the rule under it: "<goal> · due <when>" (the due part waits for the browser's clock).
+  // What a step is for, small on one rule under it: "<goal> · due <when>", a long goal cut so the due part stays whole
+  // (the due part waits for the browser's clock).
   const goalLine = (title: string, due: string | null | undefined) => (
-    <p>
-      <span className="hand text-ink-2">
+    <p className="goal-line text-ink-2">
+      <span className="truncate" title={title}>
         {title}
-        {due && today ? <span className="whitespace-nowrap"> · {dueLabel(due, today)}</span> : null}
       </span>
+      {due && today ? <span className="shrink-0 whitespace-pre"> · {dueLabel(due, today)}</span> : null}
     </p>
   );
 
@@ -262,17 +263,9 @@ export default function DayView(props: DayViewProps) {
             className="card rise z-10"
             // Sized by the step and its goal on the ready card and in Focus alike, so Start keeps the hand's size.
             data-size={cardSize(pick ? `${pick.steps[0].title} ${pick.goal}` : top && goal ? `${top.title} ${goal.title}` : props.line)}
-            // A step card: its title, its goal line, a blank row (the stamp lands there, clear of the words) and the
-            // timer; after a Done the line sits over the streak row and Keep going.
-            style={
-              top
-                ? ({ "--rows": 4 } as CSSProperties)
-                : pick
-                  ? ({ "--rows": 3 } as CSSProperties)
-                  : screen === "checkin"
-                    ? ({ "--rows": 2 } as CSSProperties)
-                    : undefined
-            }
+            // A step card: its title, its goal line and the timer (the stamp lands right of the timer, clear of the
+            // words), so Focus keeps the title on screen; after a Done the line sits over the streak row and Keep going.
+            style={top || pick ? ({ "--rows": 3 } as CSSProperties) : screen === "checkin" ? ({ "--rows": 2 } as CSSProperties) : undefined}
           >
             <div className="lines">
               {pick ? (
@@ -288,7 +281,7 @@ export default function DayView(props: DayViewProps) {
                   <p>{top.title}</p>
                   {goal && goalLine(goal.title, goal.due)}
                   {top.minutes ? (
-                    <p className="mt-(--lh)">
+                    <p>
                       <Countdown minutes={props.timer ?? top.minutes} startedAt={top.startedAt} />
                     </p>
                   ) : null}
@@ -368,10 +361,14 @@ export default function DayView(props: DayViewProps) {
           {otherOffers.length > 0 && <div className="flex flex-wrap justify-center gap-2">{otherOffers.map((offer) => offerChip(offer))}</div>}
           {(links.length > 0 || hear) && (
             <div className="links">
-              {/* Each "·" travels with the link after it, so a row that wraps on a phone never ends in one. */}
+              {/* Each "·" travels with the link after it; on a phone, where the row wraps, space alone sets them apart. */}
               {links.map((label, i) => (
                 <span key={i} className="flex items-center gap-2">
-                  {i > 0 && <span aria-hidden="true">·</span>}
+                  {i > 0 && (
+                    <span aria-hidden="true" className="max-sm:hidden">
+                      ·
+                    </span>
+                  )}
                   <button type="button" data-answer aria-disabled={props.busy} onClick={() => answer(firstLink + i)} className="link">
                     {label}
                   </button>
@@ -379,7 +376,11 @@ export default function DayView(props: DayViewProps) {
               ))}
               {hear && (
                 <span className="flex items-center gap-2">
-                  {links.length > 0 && <span aria-hidden="true">·</span>}
+                  {links.length > 0 && (
+                    <span aria-hidden="true" className="max-sm:hidden">
+                      ·
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
@@ -440,14 +441,7 @@ export default function DayView(props: DayViewProps) {
       <SheetPanel open={props.sheet === "memory"} title="Memory" onClose={() => on.sheet(null)}>
         {props.sheet === "memory" && (
           <>
-            <MemorySheet
-              memories={props.memories}
-              device={props.device ?? []}
-              onForget={on.forget}
-              onAdd={on.add}
-              onRetry={on.retryMemory}
-              onCanvas={props.canvas?.linked ? () => on.sheet("canvas") : undefined}
-            />
+            <MemorySheet memories={props.memories} device={props.device ?? []} onForget={on.forget} onAdd={on.add} onRetry={on.retryMemory} />
             {/* A failed Forget or save says so here, where the person is looking. */}
             <p role="status">{props.note}</p>
           </>
@@ -578,8 +572,7 @@ function SheetPanel({ open, title, onClose, children }: { open: boolean; title: 
       ref={ref}
       aria-label={title}
       className="sheet"
-      // A close because `open` went false (Memory's See them opening Canvas) must not shut the sheet that replaced it.
-      onClose={() => open && onClose()}
+      onClose={onClose}
       onClick={(event) => event.target === event.currentTarget && onClose()}
     >
       <div className="flex min-h-full flex-col gap-4 p-6">

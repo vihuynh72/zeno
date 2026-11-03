@@ -91,6 +91,14 @@ for (const [name, label] of [
   ["CS146 Data Structures", "CS 146"],
   ["BUS1 170 Sec 02 - Financial Accounting", "BUS1 170"],
   ["Data Structures (CS 146-07)", "CS 146"],
+  // A term with a space, or one TERM doesn't list, is passed over for the code after it (review, Nov 2).
+  ["FA 2026 CS 146", "CS 146"],
+  ["FA 26 HIST 110", "HIST 110"],
+  ["SP 2027 - MATH 30", "MATH 30"],
+  ["WI 2027 PHYS 7B", "PHYS 7B"],
+  ["AU26 CSE 142", "CSE 142"],
+  ["SPR26 PHYS 2A", "PHYS 2A"],
+  ["FA 26", "FA 26"],
   ["HIST 110", "HIST 110"],
   ["Intro to Psychology", "Intro to Psychology"],
   ["Writing Center Workshops", "Writing Center Workshops"],
@@ -121,9 +129,9 @@ for (const [raw, title] of [
   ["Quiz 5 - Requires Respondus LockDown Browser - Chapters 5-6", "Quiz 5 - Chapters 5-6"],
   ["Reading Quiz 3 – Chapter 4 – LockDown Browser", "Reading Quiz 3 – Chapter 4"],
   ["Homework 7 - Binary Search Trees", "Homework 7 - Binary Search Trees"],
-  ["Participation Points 10/28", "Participation Points 10/28"],
+  ["Lab check-in 10/29", "Lab check-in 10/29"],
   ["Project 2: Linked Lists", "Project 2: Linked Lists"],
-  ["Thesis Card #2", "Thesis Card #2"],
+  ["Concept Map #3", "Concept Map #3"],
   // Coursework about a lockdown or a webcam is no proctoring note, and a title that is only a note keeps its words.
   ["Essay: Life in Lockdown", "Essay: Life in Lockdown"],
   ["Lab 3 - Webcam Image Processing", "Lab 3 - Webcam Image Processing"],
@@ -291,14 +299,15 @@ try {
   ], "the whole label and title; with no course, the title alone");
 
   // ---- A next page on another host is never read; an exam's instructions come with it, and a failed read leaves none.
+  // A title holding a password or code keeps only its kind, on the device and in the deadline alike (review, Nov 2).
   calls.length = 0;
   answer = (url) =>
     url.pathname === "/api/v1/planner/items"
       ? json(
           [
             { ...PAGE_1[3], plannable: { title: "Final exam", description: "<p>Bring a calculator.</p>" } },
-            work("assignment", CS, 71, "Lab 7", "2026-11-12T07:59:00Z"),
-            work("quiz", BIO, 72, "Quiz 5", "2026-11-12T08:59:00Z"),
+            work("assignment", CS, 71, "Lab 7 - Password: owl26", "2026-11-12T07:59:00Z"),
+            work("quiz", BIO, 72, "Quiz 5 (access code 4821)", "2026-11-12T08:59:00Z"),
           ],
           links(page(2, "https://evil.example")),
         )
@@ -308,8 +317,12 @@ try {
   const other = await canvasAssignments(SJSU, TOKEN, NOW);
   assert.deepEqual(other.assignments.map((item) => [item.kind, item.title, item.instructions]), [
     ["exam", "Final exam", "Bring a calculator."],
-    ["assignment", "Lab 7", null],
-    ["quiz", "Quiz 5", null],
+    ["assignment", "Assignment", null],
+    ["quiz", "Quiz", null],
+  ]);
+  assert.deepEqual(canvasDeadlines(other.assignments.slice(1), LA, NOW).map((deadline) => deadline.text), [
+    "CS 146: Assignment, due Wednesday, November 11.",
+    "BIO 101: Quiz, due Thursday, November 12.",
   ]);
   assert.deepEqual(
     calls.map((call) => call.url.pathname),

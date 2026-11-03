@@ -12,14 +12,15 @@ Object.assign(globalThis, {
 });
 let answer = () => {};
 let reply: object = { state: "ok", courses: 1, assignments: [] };
+let dropped = async () => Response.json({ state: "ok" });
 const methods: string[] = [];
 globalThis.fetch = (async (_url: string, init?: RequestInit) => {
   methods.push(init?.method ?? "GET");
-  if (init?.method === "DELETE") return Response.json({ state: "ok" });
+  if (init?.method === "DELETE") return dropped();
   await new Promise<void>((resolve) => (answer = resolve));
   return Response.json(reply);
 }) as typeof fetch;
-const { canvasBriefs, canvasList, clearCanvas, readCanvas, syncCanvas } = await import("./canvas-store.ts");
+const { canvasBriefs, canvasList, clearCanvas, dropCanvasDeadlines, readCanvas, syncCanvas } = await import("./canvas-store.ts");
 
 const link = { base: "https://sjsu.instructure.com", token: "1234~abcdefghijklmnopqrstuvwxyz" };
 const connecting = syncCanvas("acct", link);
@@ -51,7 +52,7 @@ const essay = {
   url: "https://sjsu.instructure.com/courses/1/assignments/1",
   instructions: "Argue one claim in 600 words.",
 };
-const quiz = { ...essay, id: "quiz-2", course: "BIO 101", title: "Quiz 11", kind: "quiz", submitted: true, instructions: null };
+const quiz = { ...essay, id: "quiz-2", course: "BIO 101", title: "Quiz 5", kind: "quiz", submitted: true, instructions: null };
 reply = { state: "ok", courses: 2, assignments: [essay, quiz] };
 const synced = syncCanvas("old");
 answer();
@@ -60,5 +61,14 @@ assert.deepEqual(canvasList("old"), [{ id: "assignment-1", course: "HIST 110", t
 assert.deepEqual(canvasBriefs("old"), [{ title: "Essay 2", course: "HIST 110", due: essay.due, instructions: essay.instructions }]);
 clearCanvas("old");
 assert.equal(canvasList("old"), null, "Disconnect clears the list with the link");
+
+// Disconnect's DELETE says whether the saved Canvas deadlines are gone, so the sheet can offer to try again.
+assert.equal(await dropCanvasDeadlines(), true);
+dropped = async () => Response.json({ state: "error" }, { status: 500 });
+assert.equal(await dropCanvasDeadlines(), false, "the database failed");
+dropped = async () => {
+  throw new TypeError("Failed to fetch");
+};
+assert.equal(await dropCanvasDeadlines(), false, "offline");
 
 console.log("canvas-store self-check passed");

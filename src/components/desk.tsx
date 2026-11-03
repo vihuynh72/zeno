@@ -296,7 +296,7 @@ function Deadlines({ deadlines }: { deadlines: Deadline[] }) {
       <ul className="lines mt-2">
         {deadlines.slice(0, 5).map((deadline, i) => (
           <li key={`${deadline.date}:${deadline.title}:${i}`} className="flex items-baseline gap-4">
-            <span className={`min-w-0 flex-1 truncate ${deadline.daysLeft === 0 ? "font-bold" : ""}`} title={deadline.title}>
+            <span className={`min-w-0 flex-1 line-clamp-2 ${deadline.daysLeft === 0 ? "font-bold" : ""}`} title={deadline.title}>
               {deadline.title}
             </span>
             <span className="shrink-0 text-ink-2">

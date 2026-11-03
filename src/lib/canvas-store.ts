@@ -39,6 +39,8 @@ export const canvasList = (account: string): CanvasItem[] | null => {
   return Array.isArray(list) ? list : null;
 };
 export const clearCanvas = (account: string) => write(account, null);
+// DELETE /api/canvas (Disconnect): the account's Canvas deadlines go on the server; false when they may still be there.
+export const dropCanvasDeadlines = async () => (await fetch("/api/canvas", { method: "DELETE" }).catch(() => null))?.ok === true;
 
 // Reads Canvas through POST /api/canvas. A link is saved only once Canvas accepted it, with the briefs of the 3
 // soonest unsubmitted assignments and the list of all of them; a refused token (bad-token, bad-url, not-allowed)
@@ -65,7 +67,7 @@ export async function syncCanvas(account: string, connect?: CanvasLink): Promise
     write(account, { v: 1, link, briefs, list, syncedAt: new Date().toISOString() });
   } else if (res.state === "ok" && !readCanvas(account)) {
     // Disconnected while this sync ran: the deadlines it saved after Disconnect's DELETE are deleted again.
-    await fetch("/api/canvas", { method: "DELETE" }).catch(() => null);
+    await dropCanvasDeadlines();
   } else if (res.state === "bad-token" || res.state === "bad-url" || res.state === "not-allowed") {
     if (readCanvas(account)?.token === link.token) clearCanvas(account);
   }

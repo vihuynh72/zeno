@@ -2,9 +2,8 @@
 
 import { type FormEvent, Fragment, useState } from "react";
 import type { CanvasAssignment, CanvasResponse } from "@/lib/day";
-import { canvasList, clearCanvas, readCanvas, syncCanvas } from "@/lib/canvas-store";
-import { formatTime } from "@/lib/tz";
-import { browserZone, canvasHost, dueDays, httpsOnly } from "@/components/desk-rows";
+import { canvasList, clearCanvas, dropCanvasDeadlines, readCanvas, syncCanvas } from "@/lib/canvas-store";
+import { browserZone, canvasHost, dueDays, dueTime, httpsOnly } from "@/components/desk-rows";
 
 const REFUSED: Partial<Record<CanvasResponse["state"], string>> = {
   "bad-url": "Use your school's Canvas address, like sjsu.instructure.com.",
@@ -32,6 +31,7 @@ export default function CanvasSheet({ account, onSynced }: { account: string; on
   const [now] = useState(Date.now); // when the sheet opened, for Today and Tomorrow
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState("");
+  const [kept, setKept] = useState(false); // Disconnect couldn't delete the Canvas deadlines Zeno saved
   const [moved, setMoved] = useState(false); // connected or disconnected here, so focus follows the new view
 
   async function connect(event: FormEvent<HTMLFormElement>) {
@@ -50,12 +50,18 @@ export default function CanvasSheet({ account, onSynced }: { account: string; on
     onSynced(res.assignments);
   }
 
-  // Undone here at once; then, best effort, the Canvas deadlines Zeno saved are deleted too before the day is read again.
+  // Undone here at once (first, so a sync still running deletes what it saves too); then the Canvas deadlines Zeno saved
+  // are deleted before the day is read again, and a failed delete says so with Try again.
   async function disconnect() {
     clearCanvas(account);
     setHost(null);
     setMoved(true);
-    await fetch("/api/canvas", { method: "DELETE" }).catch(() => null);
+    await dropDeadlines();
+  }
+
+  async function dropDeadlines() {
+    setKept(false);
+    setKept(!(await dropCanvasDeadlines()));
     onSynced([]);
   }
 
@@ -104,7 +110,12 @@ export default function CanvasSheet({ account, onSynced }: { account: string; on
         <button type="submit" aria-disabled={busy} className="pill pill-ink">
           {busy ? "Connecting…" : "Connect"}
         </button>
-        <p role="status">{refused}</p>
+        <p role="status">{refused || (kept ? "Couldn't delete the Canvas due dates Zeno saved." : "")}</p>
+        {kept && !refused && (
+          <button type="button" onClick={dropDeadlines} className="quiet-x self-start">
+            Try again
+          </button>
+        )}
       </form>
     );
 
@@ -126,6 +137,7 @@ export default function CanvasSheet({ account, onSynced }: { account: string; on
                 <ul>
                   {items.map((item) => {
                     const name = [item.course, item.title, dueLabel(item.due)].filter(Boolean).join(" · ");
+                    const time = dueTime(item.due, zone);
                     return (
                       <li key={item.id}>
                         <a
@@ -136,11 +148,12 @@ export default function CanvasSheet({ account, onSynced }: { account: string; on
                           aria-label={name}
                           className="group flex items-baseline gap-4"
                         >
-                          <span className="min-w-0 flex-1 truncate">
+                          {/* The title takes the row, on two lines at most; a time shows only when it isn't 11:59 PM. */}
+                          <span className="min-w-0 flex-1 line-clamp-2">
                             {item.course && <span className="mr-2 text-ink-2">{item.course}</span>}
                             <span className="underline-offset-4 group-hover:underline">{item.title}</span>
                           </span>
-                          {item.due && <span className="shrink-0 font-mono leading-none text-ink-2">{formatTime(item.due, zone)}</span>}
+                          {time && <span className="shrink-0 font-mono leading-none text-ink-2">{time}</span>}
                         </a>
                       </li>
                     );

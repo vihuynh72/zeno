@@ -113,11 +113,15 @@ and Sources pushed the timer off screen. Built on `tidy/canvas-data`, `tidy/shee
   1865" → "HIST 110"; a name without one keeps at most 28 characters, cut at a word), a title loses its proctoring note
   ("Quiz 4 (Ch. 4) - Requires Respondus LockDown Browser + Webcam" → "Quiz 4 (Ch. 4)"), and a deadline is saved whole
   ("HIST 110: Essay 2, due Friday, November 6."). The next sync replaces the old rows.
-- **One line per row**: the Canvas screen lists every assignment due in the next 2 weeks by day (Today, Tomorrow, the
-  weekday, then the date), as course · title · time, each opening in Canvas. Memory sums Canvas up in one line ("Plus 11
-  assignments from Canvas · See them", which opens that screen). Today's deadlines take one line each.
-- **Focus keeps the context**: "<goal> · due <when>" sits under the step, and Sources is one small ruled card (a title
-  and a why per source, a line each) that scrolls clear of the dock.
-- **Connect re-plans the home card** at once when Canvas found work still due, on the home card only. An open plan
-  stays first (one plan at a time); letting a sooner Canvas deadline take over the card is Vi's call. Disconnect deletes
-  the Canvas deadlines Zeno saved (`DELETE /api/canvas`), also when a page-load sync ends after it.
+- **A row or two per item**: the Canvas screen lists every assignment due in the next 2 weeks by day (Today, Tomorrow,
+  the weekday, then the date), as course and title on two lines at most, with a time only when it isn't 11:59 PM, each
+  opening in Canvas. Memory folds Canvas into one line ("11 Canvas assignments") that opens them there, one line each
+  with the usual × (a forgotten one stays forgotten at the next sync). Today's deadlines take two lines at most.
+- **Focus keeps the context**: "<goal> · due <when>" sits on one line under the step (a long goal is cut, never the due
+  part), and Sources is one small ruled card (a title and a why per source, a line each) that scrolls clear of the dock
+  without pushing the step's card off the top.
+- **Connect re-plans the home card** at once when Canvas found work still due, on the home card only, and Disconnect
+  re-plans it too. An open plan stays first (one plan at a time); letting a sooner Canvas deadline take over the card is
+  Vi's call. Disconnect deletes the Canvas deadlines Zeno saved (`DELETE /api/canvas`), also when a page-load sync ends
+  after it; when that fails the Canvas screen says so with Try again.
+- **No codes anywhere**: a title holding a password or code ("Quiz 3 - Password: …") is kept as its kind ("Quiz").

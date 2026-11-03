@@ -51,7 +51,7 @@ import {
   openSteps,
   pickFits,
   quickReplies,
-  replanOnConnect,
+  replanOnCanvas,
   slotLabel,
   soonEvent,
   stepCard,
@@ -1004,17 +1004,18 @@ export default function GuidedDay() {
     return mine && title ? canvasBriefs(mine).find((brief) => brief.title.trim() !== "" && title.includes(brief.title.trim().toLowerCase())) : undefined;
   }
 
-  // Linked or unlinked in its sheet: the day (its deadlines) is read again, and the home card re-plans at once when a
-  // Connect found work due.
+  // Linked or unlinked in its sheet: the day (its deadlines) is read again, and the home card re-plans at once after a
+  // Disconnect or a Connect that found work due.
   async function canvasSynced(assignments: CanvasAssignment[]) {
     const mine = account();
     if (!mine) return;
-    setCanvasOn(Boolean(readCanvas(mine)));
+    const linked = Boolean(readCanvas(mine));
+    setCanvasOn(linked);
     nextOpening.current = null;
     const data = await getJson<DayResponse>("/api/day");
     if (data.state === "signed-out") return showSignedOut();
     takeDay(data);
-    if (replanOnConnect(latest.current.screen, assignments)) await refreshOpening();
+    if (replanOnCanvas(latest.current.screen, linked, assignments)) await refreshOpening();
   }
 
   // ---------- The screen's answers ----------
