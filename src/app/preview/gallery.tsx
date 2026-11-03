@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useSyncExternalStore } from "react";
 import type { CalendarBlock, FirstPick, Goal, Memory, Progress, Step } from "@/lib/day";
 import type { VaultFact } from "@/lib/vault";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
 import { foundLine, slotLabel } from "@/components/day-flow";
 import type { Booking } from "@/components/booking-chip";
 import DayView, { type DayViewProps, type Today } from "@/components/day-view";
+import { CANVAS_DEADLINES, CANVAS_MEMORIES, SAMPLE_CANVAS } from "./canvas-samples";
 
 // Sample data only: no network calls, nothing real.
 const step = (id: string, title: string, minutes: number, status: Step["status"], extra: Partial<Step> = {}): Step => ({
@@ -31,12 +32,25 @@ const roadmap = (...statuses: Step["status"][]): Goal => ({
   ],
 });
 
-// Focus with sources already found for its step.
+// Focus with sources already found for its step (the server finds at most 3); a long one ends in an ellipsis.
 const PREPPED = roadmap("done", "doing", "todo", "todo");
 PREPPED.steps[1].prep = [
   { title: "How to brainstorm essay points", url: "https://example.com/brainstorm", why: "Three quick ways to find points worth arguing" },
   { title: "Outlining a history essay", url: "https://example.com/outline", why: "Shows how each point maps to one paragraph" },
+  {
+    title: "Reconstruction and the long road to civil rights: a primary source reader for students",
+    url: "https://example.com/reader",
+    why: "Short primary sources by date, each with two questions that could become an essay point",
+  },
 ];
+
+// Focus on a Canvas assignment's plan: the goal line says what the step is for, here cut to one line, its due part whole.
+const CANVAS_PLAN: Goal = {
+  id: "sample-canvas-goal",
+  title: "ENGL 1A: Peer review: Argument essay draft and comments on two classmates' theses",
+  due: dayFrom(3),
+  steps: [step("c1", "Read the first thesis and note one question", 5, "doing"), step("c2", "Write two comments for each draft", 15, "todo")],
+};
 
 // Around the real clock (to the half hour), so the desk shows a past, a current and a later event.
 const at = (minutes: number) => new Date(Math.floor(Date.now() / 1_800_000) * 1_800_000 + minutes * 60_000).toISOString();
@@ -243,7 +257,8 @@ const STATES: Record<string, Fixture> = {
     line: "Timer's on. Just five minutes.",
     chips: ["Done", "Stuck?", "Stop for now", "Draft it in Gmail"],
   },
-  // The Sources link opened the step's sources.
+  "focus-canvas": { screen: "focus", goal: CANVAS_PLAN, line: "Timer's on. Just five minutes.", chips: FOCUS_CHIPS },
+  // The Sources link opened the step's sources: one ruled card, a title and a why on a line each.
   "focus-sources": { screen: "focus", goal: PREPPED, line: "Timer's on. 10 minutes, one thing.", chips: FOCUS_CHIPS.slice(0, 3), sources: true },
   // Stuck in focus: Zeno's question leads with its answers; Done stays one tap away.
   "focus-question": {
@@ -318,13 +333,19 @@ const STATES: Record<string, Fixture> = {
     sheet: "today",
     today: { events: [], emails: [], unreadEmail: 0, sources: { calendar: "ok", email: "error", goals: "ok" } },
   },
+  // Canvas deadlines with long titles: two lines at most each, cut with an ellipsis.
+  "desk-deadlines": { line: "Good afternoon, Sam.", sheet: "today", today: { ...TODAY, deadlines: CANVAS_DEADLINES } },
   memory: { line: "Good afternoon, Sam.", sheet: "memory", device: DEVICE },
+  // Canvas deadlines fold into one line at the end of Projects & deadlines, which opens them there, each with its ×.
+  "memory-canvas": { line: "Good afternoon, Sam.", sheet: "memory", memories: [...MEMORIES, ...CANVAS_MEMORIES] },
   "memory-empty": { line: "Good afternoon, Sam.", sheet: "memory", memories: [] },
   // The account menu: Sound, Connect Canvas (or Canvas · connected), Privacy, Sign out.
   account: { line: "Good afternoon, Sam.", chips: chips("Work on my essay"), menuOpen: true, progress: progress() },
   "account-canvas": { line: "Good afternoon, Sam.", chips: chips("Work on my essay"), menuOpen: true, progress: progress(), canvas: { ...CANVAS, linked: true } },
-  // Connect Canvas, opened from the account menu (the desk-ui track fills it).
+  // Connect Canvas, opened from the account menu.
   canvas: { line: "Good afternoon, Sam.", sheet: "canvas" },
+  // Connected: the last sync's work by the day it is due, a line or two each, with a time only when it isn't 11:59 PM.
+  "canvas-connected": { line: "Good afternoon, Sam.", sheet: "canvas", canvas: SAMPLE_CANVAS },
   error: { screen: "talk", line: "I couldn't think that through just now. Try again?" },
   blocked: {
     screen: "talk",
@@ -335,10 +356,13 @@ const STATES: Record<string, Fixture> = {
 };
 
 const noop = () => {};
+const subscribeNever = () => noop;
 
 export default function Gallery({ state, theme }: { state: string; theme?: "light" | "dark" }) {
   const { phase = "idle", level = 0, error = null, ...view } = STATES[state] ?? {};
   const levelRef = useRef(level);
+  // Sheets open once hydrated, as in the app (on a tap), so one read from this browser (Canvas) matches the server's HTML.
+  const hydrated = useSyncExternalStore(subscribeNever, () => true, () => false);
 
   if (!STATES[state]) {
     return (
@@ -366,7 +390,6 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
         goal={null}
         today={TODAY}
         memories={MEMORIES}
-        sheet={null}
         typing={false}
         stamping={false}
         leaving={null}
@@ -380,6 +403,7 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
         account="S"
         canvas={CANVAS}
         {...view}
+        sheet={hydrated ? (view.sheet ?? null) : null}
         voice={{ phase, levelRef, muted: false, supported: true, error }}
         on={{
           chip: noop,

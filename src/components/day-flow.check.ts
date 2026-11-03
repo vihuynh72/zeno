@@ -9,7 +9,7 @@ registerHooks({
 });
 const flow = await import("./day-flow.ts");
 const { asks, cardSize, clock, dayPart, doneLine, draftGoal, dueLabel, foundLine, greeting, groupFacts, isEmailStep, isNotes, laterBlock, laterMinutes } = flow;
-const { nextScreen, openSteps, pickFits, quickReplies, slotLabel, soonEvent, stepCard, streakLine, withStatus } = flow;
+const { nextScreen, openSteps, pickFits, quickReplies, replanOnCanvas, slotLabel, soonEvent, stepCard, streakLine, withStatus } = flow;
 
 const step = (id: string, status: Step["status"], extra: Partial<Step> = {}): Step => ({
   id,
@@ -116,6 +116,18 @@ assert.equal(pickFits(pickStep, goal(step("2", "done"))), false, "its step is fi
 assert.equal(pickFits(pickNew, null), true);
 assert.equal(pickFits(pickNew, goal(step("1", "todo"))), false, "a plan is open now");
 assert.equal(pickFits(null, null), false);
+
+// Connect Canvas re-plans the home card only when it found work still due; Disconnect (unlinked, []) always does, so the
+// card drops a Canvas pick; neither touches any other screen.
+const due = { submitted: false };
+assert.equal(replanOnCanvas("ready", true, [{ submitted: true }, due]), true);
+assert.equal(replanOnCanvas("ready", true, [{ submitted: true }]), false, "all of it handed in");
+assert.equal(replanOnCanvas("ready", true, []), false, "nothing in the next 2 weeks");
+assert.equal(replanOnCanvas("ready", false, []), true, "a Disconnect");
+for (const screen of ["focus", "checkin", "talk", "wrap", "setup", null] as const) {
+  assert.equal(replanOnCanvas(screen, true, [due]), false, String(screen));
+  assert.equal(replanOnCanvas(screen, false, []), false, `${screen}, disconnected`);
+}
 
 // A new plan shows at once, step 1 running.
 const now = new Date("2026-11-02T17:00:00Z");

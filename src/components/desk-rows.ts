@@ -1,6 +1,6 @@
 // Pure rules behind the desk's rows and the week grid. Only tz.ts besides types, so the checks run in plain node.
 import type { CalendarBlock, DayEvent } from "@/lib/day";
-import { formatTime, localIso } from "@/lib/tz";
+import { formatTime, localDate, localIso } from "@/lib/tz";
 
 export type Mark = "past" | "now" | "next" | null;
 
@@ -35,6 +35,33 @@ export const httpsOnly = (url?: string | null) => (url?.startsWith("https://") ?
 
 // "https://SJSU.instructure.com/courses/1" reads as sjsu.instructure.com.
 export const canvasHost = (base: string) => base.trim().replace(/^https?:\/\//i, "").split(/[/?#]/)[0].toLowerCase();
+
+// The Canvas sheet's work by the day it is due on the zone's clock, soonest first, under "Today", "Tomorrow", the
+// weekday for the rest of the week ahead, then a short date ("Mon, Nov 16"); undated work comes last under "No due
+// date", and work due before today (a list kept since yesterday) is left out.
+export function dueDays<T extends { due: string | null }>(work: T[], timeZone: string, now: number): { day: string; items: T[] }[] {
+  const today = localDate(timeZone, new Date(now));
+  const at = (item: T) => Date.parse(item.due ?? "") || Infinity;
+  const days = new Map<string, T[]>();
+  for (const item of [...work].sort((a, b) => at(a) - at(b))) {
+    const date = at(item) < Infinity ? localDate(timeZone, new Date(at(item))) : "";
+    if (date && date < today) continue;
+    const day = date ? dayName(date, today) : "No due date";
+    days.set(day, [...(days.get(day) ?? []), item]);
+  }
+  return [...days].map(([day, items]) => ({ day, items }));
+}
+
+// A row's time, only when it isn't 11:59 PM: Canvas work is nearly always due then, and the day heading says the day.
+export const dueTime = (due: string | null, timeZone: string) =>
+  due && localIso(due, timeZone).slice(11, 16) !== "23:59" ? formatTime(due, timeZone) : null;
+
+function dayName(date: string, today: string) {
+  const ahead = Math.round((Date.parse(date) - Date.parse(today)) / DAY);
+  if (ahead === 0) return "Today";
+  if (ahead === 1) return "Tomorrow";
+  return dateLabel(date, ahead < 7 ? { weekday: "long" } : { weekday: "short", month: "short", day: "numeric" });
+}
 
 // ---- The week grid (week-grid.check.ts covers these) ----
 // Grid positions are minutes on the zone's wall clock, 0 to 1440, as Google Calendar draws them: on the day clocks

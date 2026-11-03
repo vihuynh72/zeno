@@ -101,3 +101,27 @@ Owns `src/lib/goals.ts` (+check), `profile.ts` (+check), `patterns.ts` (+check),
 (+check), `canvas.ts` (+ a new check), `scripts/memory-bench.mjs`, and the routes `src/app/api/canvas`, `goal`, `prep`,
 `profile/scan`, `memory`, `steps`. Decisions 6 (tidy memory, learning from use), 9 (Canvas server side, prep with
 instructions) and 10.
+
+## Nov 2 evening: the tidy round
+Vi connected their real school Canvas on production and said: "it looks kind of messed up a little bit. It looks kind
+of messy… It doesn't have the context. I think it needs some sort of AI to organize it a little bit… It looks so messy,
+as you can tell." Every screen showed Canvas's raw text (a term, a section and the long course name before each title,
+a proctoring note after it), Memory listed each Canvas deadline on 2-3 lines, Focus didn't say what the step was for,
+and Sources pushed the timer off screen. Built on `tidy/canvas-data`, `tidy/sheets` and `tidy/focus`, merged on
+`tidy/integrate`:
+- **Clean at the source** (`src/lib/canvas.ts`): a course shows as its code ("FA26: HIST-110 Sec 02 - US History Since
+  1865" → "HIST 110"; a name without one keeps at most 28 characters, cut at a word), a title loses its proctoring note
+  ("Quiz 4 (Ch. 4) - Requires Respondus LockDown Browser + Webcam" → "Quiz 4 (Ch. 4)"), and a deadline is saved whole
+  ("HIST 110: Essay 2, due Friday, November 6."). The next sync replaces the old rows.
+- **A row or two per item**: the Canvas screen lists every assignment due in the next 2 weeks by day (Today, Tomorrow,
+  the weekday, then the date), as course and title on two lines at most, with a time only when it isn't 11:59 PM, each
+  opening in Canvas. Memory folds Canvas into one line ("11 Canvas assignments") that opens them there, one line each
+  with the usual × (a forgotten one stays forgotten at the next sync). Today's deadlines take two lines at most.
+- **Focus keeps the context**: "<goal> · due <when>" sits on one line under the step (a long goal is cut, never the due
+  part), and Sources is one small ruled card (a title and a why per source, a line each) that scrolls clear of the dock
+  without pushing the step's card off the top.
+- **Connect re-plans the home card** at once when Canvas found work still due, on the home card only, and Disconnect
+  re-plans it too. An open plan stays first (one plan at a time); letting a sooner Canvas deadline take over the card is
+  Vi's call. Disconnect deletes the Canvas deadlines Zeno saved (`DELETE /api/canvas`), also when a page-load sync ends
+  after it; when that fails the Canvas screen says so with Try again.
+- **No codes anywhere**: a title holding a password or code ("Quiz 3 - Password: …") is kept as its kind ("Quiz").

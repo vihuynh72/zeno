@@ -315,6 +315,8 @@ try {
   );
   const [{ expires }] = await sql`SELECT expires_on::text AS expires FROM memories WHERE user_email = ${canvasEmail} AND source = 'canvas'`;
   assert.equal(expires, day(4), "kept until the day after it is due");
+  await replaceCanvasDeadlines(canvasEmail, []);
+  assert.deepEqual((await listMemories(canvasEmail)).map((memory) => memory.text), [own?.text], "Disconnect (DELETE /api/canvas) deletes every Canvas one, never theirs");
 } finally {
   await sql`DELETE FROM memories WHERE user_email = ${canvasEmail}`;
   await sql`DELETE FROM user_state WHERE user_email = ${canvasEmail}`;

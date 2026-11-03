@@ -42,3 +42,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ state } satisfies CanvasResponse, { status: state === "bad-token" ? 400 : state === "not-allowed" ? 403 : 502 });
   }
 }
+
+// Disconnect: the account's Canvas deadline memories go too ({ state: "ok" }); the device forgets the link itself.
+export async function DELETE() {
+  const session = await auth();
+  if (!session?.user?.email) {
+    return NextResponse.json({ state: "signed-out" } satisfies CanvasResponse, { status: 401 });
+  }
+  if (!databaseConfigured()) {
+    return NextResponse.json({ state: "error" } satisfies CanvasResponse, { status: 503 });
+  }
+
+  try {
+    await replaceCanvasDeadlines(session.user.email, []);
+    return NextResponse.json({ state: "ok" });
+  } catch (error) {
+    console.error("Canvas disconnect failed:", error instanceof Error ? error.message.slice(0, 120) : "unknown");
+    return NextResponse.json({ state: "error" } satisfies CanvasResponse, { status: 500 });
+  }
+}
