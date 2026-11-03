@@ -142,9 +142,16 @@ export default function FocusMusic({ active }: { active: boolean }) {
         {label ? `Music: ${label}` : "Music"}
       </button>
       {open && (
-        <div role="group" aria-label="Music" className="flex basis-full flex-wrap items-center justify-center gap-x-6">
+        <div role="group" aria-label="Music" className="flex basis-full flex-wrap items-center justify-center gap-x-2">
           {OPTIONS.map((option) => (
-            <button key={option.id} type="button" className="quiet-x" aria-pressed={choice === option.id} onClick={() => choose(option.id)}>
+            <button
+              key={option.id}
+              type="button"
+              className="link"
+              aria-pressed={choice === option.id}
+              data-lead={choice === option.id || undefined}
+              onClick={() => choose(option.id)}
+            >
               {option.label}
             </button>
           ))}
