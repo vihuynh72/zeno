@@ -623,7 +623,7 @@ try {
   }));
   await extractFacts({ name: null, email: "maya@example.com", timeZone: zone, known: [], removed: [], events: sources.events, emails: bulky, max: 8, now });
   const sentContent = JSON.parse(calls.find((call) => call.url.hostname === "api.meta.ai")?.body ?? "{}").messages[1].content as string;
-  assert.ok(sentContent.length <= 40_000, `content capped (${sentContent.length})`);
+  assert.ok(sentContent.length <= 20_000, `content capped (${sentContent.length})`);
   assert.match(sentContent, /Email 1 \(received\):\n<<<\nFrom: Jess Kim <jess@example.com>\nTo: maya@example.com\nSubject: Notes 49\n/, "newest first");
   assert.ok(!sentContent.includes("Subject: Notes 0\n"), "the oldest left out");
 

@@ -8,7 +8,7 @@ import { scanProfile } from "@/lib/profile";
 import { timeZoneFrom } from "@/lib/tz";
 import { cleanPrivate } from "@/lib/vault";
 
-// Reading up to 50 emails, then one model call over all of it with a 45-second deadline.
+// Reading up to 31 emails, then one model call over the newest that fit, with a 45-second deadline.
 export const maxDuration = 60;
 
 // Body { first?: boolean; private?: string[]; removed?: string[] } (first is true from setup; private holds the

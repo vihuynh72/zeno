@@ -15,8 +15,8 @@ export type ProfileFact = { text: string; group: Exclude<MemoryGroup, "patterns"
 const FACT_GROUPS = MEMORY_GROUPS.filter((group) => group !== "patterns");
 const FIRST_CAP = 20;
 const DAILY_CAP = 8;
-// About 10k tokens of calendar and mail per call.
-const CONTENT_CAP = 40_000;
+// About 5k tokens of calendar and mail per call (live, Nov 2: 40k characters made a 20k-token first scan).
+const CONTENT_CAP = 20_000;
 
 // Two lists (Vi, Nov 1; docs/PLAN-NOV.md). Private facts are fine for Zeno to know but live only on the person's
 // device; never-list facts are kept nowhere. The prompts say the same; these patterns are the server's backstop, so
@@ -414,8 +414,8 @@ export async function scanProfile(
     const sources = await readSources(accessToken, timeZone, {
       after: isFirst ? null : previous,
       zenoCalendarId: claim.zeno_calendar_id ? String(claim.zeno_calendar_id) : null,
-      inbox: isFirst ? 40 : 20,
-      sent: isFirst ? 10 : 5,
+      inbox: isFirst ? 25 : 15,
+      sent: isFirst ? 6 : 4,
     });
     if (sources.calendar !== "ok" && sources.email !== "ok") {
       await release();
