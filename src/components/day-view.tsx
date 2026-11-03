@@ -1,7 +1,7 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
-import type { CanvasBrief, DayEmail, DayEvent, Deadline, FirstPick, FreeSlot, Goal, Memory, Progress, SourceState, Step } from "@/lib/day";
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import type { CanvasAssignment, CanvasBrief, DayEmail, DayEvent, Deadline, FirstPick, FreeSlot, Goal, Memory, Progress, SourceState, Step } from "@/lib/day";
 import { localDate } from "@/lib/tz";
 import type { VaultFact } from "@/lib/vault";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
@@ -81,7 +81,7 @@ export type DayViewProps = {
     mute(): void;
     signIn(): void;
     signOut(): void;
-    canvasSynced(): void; // Canvas linked or unlinked in its sheet
+    canvasSynced(assignments: CanvasAssignment[]): void; // Canvas linked in its sheet (what it found), or unlinked ([])
   };
 };
 
@@ -195,6 +195,15 @@ export default function DayView(props: DayViewProps) {
   const offerChip = (booking: Booking, isBig = false) => (
     <BookingChip key={booking.key} booking={booking} big={isBig} onBook={() => on.book(booking.key)} onUndo={() => on.unbook(booking.key)} />
   );
+  // What a step is for, small on the rule under it: "<goal> · due <when>" (the due part waits for the browser's clock).
+  const goalLine = (title: string, due: string | null | undefined) => (
+    <p>
+      <span className="hand text-ink-2">
+        {title}
+        {due && today ? <span className="whitespace-nowrap"> · {dueLabel(due, today)}</span> : null}
+      </span>
+    </p>
+  );
 
   return (
     <div className="flex min-h-dvh flex-col overflow-x-clip bg-desk text-ink">
@@ -251,12 +260,13 @@ export default function DayView(props: DayViewProps) {
                   : screen ?? "ready"
             }
             className="card rise z-10"
-            data-size={pick ? cardSize(`${pick.steps[0].title} ${pick.goal}`) : cardSize(top ? top.title : props.line)}
-            // A step card only needs room for its title and the timer (or a blank row for the stamp); after a Done the
-            // line sits over the streak row and Keep going.
+            // Sized by the step and its goal on the ready card and in Focus alike, so Start keeps the hand's size.
+            data-size={cardSize(pick ? `${pick.steps[0].title} ${pick.goal}` : top && goal ? `${top.title} ${goal.title}` : props.line)}
+            // A step card: its title, its goal line, a blank row (the stamp lands there, clear of the words) and the
+            // timer; after a Done the line sits over the streak row and Keep going.
             style={
               top
-                ? ({ "--rows": top.minutes ? 3 : 4 } as CSSProperties)
+                ? ({ "--rows": 4 } as CSSProperties)
                 : pick
                   ? ({ "--rows": 3 } as CSSProperties)
                   : screen === "checkin"
@@ -271,16 +281,12 @@ export default function DayView(props: DayViewProps) {
                     <span className="mins">{pick.steps[0].minutes} min</span>
                     {pick.steps[0].title}
                   </p>
-                  <p>
-                    <span className="hand text-ink-2">
-                      {pick.goal}
-                      {pick.due && today ? <span className="whitespace-nowrap"> · {dueLabel(pick.due, today)}</span> : null}
-                    </span>
-                  </p>
+                  {goalLine(pick.goal, pick.due)}
                 </>
               ) : top ? (
                 <>
                   <p>{top.title}</p>
+                  {goal && goalLine(goal.title, goal.due)}
                   {top.minutes ? (
                     <p className="mt-(--lh)">
                       <Countdown minutes={props.timer ?? top.minutes} startedAt={top.startedAt} />
@@ -362,16 +368,17 @@ export default function DayView(props: DayViewProps) {
           {otherOffers.length > 0 && <div className="flex flex-wrap justify-center gap-2">{otherOffers.map((offer) => offerChip(offer))}</div>}
           {(links.length > 0 || hear) && (
             <div className="links">
+              {/* Each "·" travels with the link after it, so a row that wraps on a phone never ends in one. */}
               {links.map((label, i) => (
-                <Fragment key={i}>
+                <span key={i} className="flex items-center gap-2">
                   {i > 0 && <span aria-hidden="true">·</span>}
                   <button type="button" data-answer aria-disabled={props.busy} onClick={() => answer(firstLink + i)} className="link">
                     {label}
                   </button>
-                </Fragment>
+                </span>
               ))}
               {hear && (
-                <>
+                <span className="flex items-center gap-2">
                   {links.length > 0 && <span aria-hidden="true">·</span>}
                   <button
                     type="button"
@@ -383,7 +390,7 @@ export default function DayView(props: DayViewProps) {
                   >
                     Hear Zeno
                   </button>
-                </>
+                </span>
               )}
               <FocusMusic active={screen === "focus"} />
             </div>

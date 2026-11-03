@@ -5,6 +5,7 @@ import { signIn, signOut } from "next-auth/react";
 import type {
   BookResponse,
   CalendarBlock,
+  CanvasAssignment,
   CanvasBrief,
   DayResponse,
   EmailDraft,
@@ -50,6 +51,7 @@ import {
   openSteps,
   pickFits,
   quickReplies,
+  replanOnConnect,
   slotLabel,
   soonEvent,
   stepCard,
@@ -1002,8 +1004,9 @@ export default function GuidedDay() {
     return mine && title ? canvasBriefs(mine).find((brief) => brief.title.trim() !== "" && title.includes(brief.title.trim().toLowerCase())) : undefined;
   }
 
-  // Linked or unlinked in its sheet: the day (its deadlines) and the card's opening are read again.
-  async function canvasSynced() {
+  // Linked or unlinked in its sheet: the day (its deadlines) is read again, and the home card re-plans at once when a
+  // Connect found work due.
+  async function canvasSynced(assignments: CanvasAssignment[]) {
     const mine = account();
     if (!mine) return;
     setCanvasOn(Boolean(readCanvas(mine)));
@@ -1011,7 +1014,7 @@ export default function GuidedDay() {
     const data = await getJson<DayResponse>("/api/day");
     if (data.state === "signed-out") return showSignedOut();
     takeDay(data);
-    if (latest.current.screen === "ready") await refreshOpening();
+    if (replanOnConnect(latest.current.screen, assignments)) await refreshOpening();
   }
 
   // ---------- The screen's answers ----------
@@ -1162,7 +1165,7 @@ export default function GuidedDay() {
           cache.current = null;
           void signOut({ redirectTo: "/" });
         },
-        canvasSynced: () => void canvasSynced(),
+        canvasSynced: (assignments) => void canvasSynced(assignments),
       }}
     />
   );
