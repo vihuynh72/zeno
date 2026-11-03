@@ -13,6 +13,27 @@ const TINY = "Steps of 10 minutes or less work best for you.";
 const partOfDay = (hour: number) =>
   hour < 5 || hour >= 22 ? "late at night" : hour < 12 ? "in the morning" : hour < 17 ? "in the afternoon" : "in the evening";
 
+// Of numbers sorted ascending.
+const median = (sorted: number[]) => {
+  const half = sorted.length / 2;
+  return sorted.length % 2 ? sorted[Math.floor(half)] : (sorted[half - 1] + sorted[half]) / 2;
+};
+
+// How long steps really take this person against Muse's plan, for Focus's one check-in (Vi, Nov 3: "it's got to learn
+// from the user over time"): the median of real/planned minutes over their last 20 finished steps with a start, a
+// finish and planned minutes, timed between 1 minute and 6 hours; within 0.75-2, to the nearest 0.05. Undefined
+// below 3 such steps (Focus then uses the plan as is).
+export function paceOf(steps: StepRecord[]): number | undefined {
+  const ratios = steps
+    .flatMap(({ status, minutes, startedAt, doneAt }) => {
+      const real = startedAt ? (Date.parse(doneAt) - Date.parse(startedAt)) / 60_000 : NaN;
+      return status === "done" && minutes && real >= 1 && real <= 360 ? [real / minutes] : [];
+    })
+    .slice(-20)
+    .sort((a, b) => a - b);
+  return ratios.length < 3 ? undefined : Math.round(Math.min(2, Math.max(0.75, median(ratios))) * 20) / 20;
+}
+
 // Patterns that hold in these steps, each one short sentence, in a fixed order. Deterministic, no model, and each
 // kind needs a minimum number of steps before it says anything. A pattern in `kept` (already saved) holds on a
 // looser line than a new one, so a share that wobbles around the line is said once, not saved again and again.
@@ -43,14 +64,13 @@ export function patternsIn(steps: StepRecord[], timeZone: string, kept: string[]
     })
     .sort((a, b) => a - b);
   if (ratios.length >= 4) {
-    const half = ratios.length / 2;
-    const median = ratios.length % 2 ? ratios[Math.floor(half)] : (ratios[half - 1] + ratios[half]) / 2;
+    const middle = median(ratios);
     // To the half, up to 3x: a bigger number would only stretch plans past the 5-minute start.
-    const multiple = Math.min(Math.round(median * 2) / 2, 3);
+    const multiple = Math.min(Math.round(middle * 2) / 2, 3);
     const slow = kept.some((text) => multipleOf(text) > 0);
-    if (median >= (slow ? 1.25 : 1.5)) {
+    if (middle >= (slow ? 1.25 : 1.5)) {
       found.push(multiple < 3 ? `Steps take you about ${multiple}x as long as you plan.` : "Steps take you 3x as long as you plan, or more.");
-    } else if (median <= line(QUICKER, 0.7, 0.8)) found.push(QUICKER);
+    } else if (middle <= line(QUICKER, 0.7, 0.8)) found.push(QUICKER);
   }
 
   // Long steps skipped: 3 skips or more of steps planned at 30 minutes or more, and at least half of those steps.

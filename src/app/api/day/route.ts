@@ -5,7 +5,8 @@ import { ruleOpening, ruleOptions } from "@/lib/brief";
 import { loadUserContext, scrub } from "@/lib/context";
 import type { DayResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
-import { hasAnyGoal } from "@/lib/goals";
+import { hasAnyGoal, recentSteps } from "@/lib/goals";
+import { paceOf } from "@/lib/patterns";
 import { sensitiveEmail } from "@/lib/profile";
 import { accountKey } from "@/lib/session-json";
 import { timeZoneFrom } from "@/lib/tz";
@@ -22,10 +23,12 @@ export async function GET() {
   const email = session.user.email;
   const firstName = session.user.name?.trim().split(/\s+/)[0] || null;
   const timeZone = timeZoneFrom((await cookies()).get("tz")?.value);
-  const [context, anyGoal] = await Promise.all([
+  const [context, anyGoal, steps] = await Promise.all([
     loadUserContext(email, session, timeZone),
     // A failed read counts as having goals, so an error never restarts the first-time setup.
     databaseConfigured() ? hasAnyGoal(email).catch(() => true) : true,
+    // shortcut: the pace reads the last 30 days of steps (recentSteps), not the last 20 ever; add a query if month-old steps should count.
+    databaseConfigured() ? recentSteps(email).catch(() => []) : [],
   ]);
 
   return NextResponse.json({
@@ -51,5 +54,6 @@ export async function GET() {
     isNew: context.tasksState === "ok" && context.memories.length === 0 && !anyGoal,
     streak: context.progress.streak,
     progress: context.progress,
+    pace: paceOf(steps),
   } satisfies DayResponse);
 }

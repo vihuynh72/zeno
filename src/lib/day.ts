@@ -119,6 +119,9 @@ export type DayResponse =
       // Same as progress.streak, kept for older saved days.
       streak: number;
       progress: Progress;
+      // How long this person's steps really take against Muse's planned minutes (src/lib/patterns.ts paceOf), which
+      // times Focus's one check-in. Missing until Zeno has seen 3 timed steps, and in days saved before Nov 3: then 1.
+      pace?: number;
     }
   | { state: "signed-out" | "error" };
 

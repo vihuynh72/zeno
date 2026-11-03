@@ -55,7 +55,9 @@ export type DayViewProps = {
   celebrate?: boolean; // a Done just happened: show the streak row
   bookings?: Record<string, Booking>; // booking chips by key
   offers?: Booking[]; // booking chips that answer Zeno's line
-  timer?: number | null; // the focus timer's minutes when the tap said so ("Start · 5 min")
+  timer?: number | null; // Focus's planned minutes when the tap said so ("Start · 5 min"), shown beside the stopwatch
+  quiet?: boolean; // the line under the Focus card is one of Zeno's quiet ones (calm, check-in, welcome back): muted
+  canvasUrl?: string; // the Canvas assignment the focus plan is for, offered as Open in Canvas
   sources?: boolean; // Focus shows the step's sources (its Sources link was tapped)
   brief?: CanvasBrief; // the Canvas assignment the plan is for, so the sources search uses its instructions
   device?: VaultFact[]; // this device's private facts, for Memory
@@ -263,8 +265,9 @@ export default function DayView(props: DayViewProps) {
             className="card rise z-10"
             // Sized by the step and its goal on the ready card and in Focus alike, so Start keeps the hand's size.
             data-size={cardSize(pick ? `${pick.steps[0].title} ${pick.goal}` : top && goal ? `${top.title} ${goal.title}` : props.line)}
-            // A step card: its title, its goal line and the timer (the stamp lands right of the timer, clear of the
-            // words), so Focus keeps the title on screen; after a Done the line sits over the streak row and Keep going.
+            // A step card: its title, its goal line and the stopwatch, each on its own rule (the stamp lands right of
+            // the stopwatch on a laptop), so Focus keeps the title on screen; after a Done the line sits over the streak
+            // row and Keep going.
             style={top || pick ? ({ "--rows": 3 } as CSSProperties) : screen === "checkin" ? ({ "--rows": 2 } as CSSProperties) : undefined}
           >
             <div className="lines">
@@ -280,11 +283,7 @@ export default function DayView(props: DayViewProps) {
                 <>
                   <p>{top.title}</p>
                   {goal && goalLine(goal.title, goal.due)}
-                  {top.minutes ? (
-                    <p>
-                      <Countdown minutes={props.timer ?? top.minutes} startedAt={top.startedAt} />
-                    </p>
-                  ) : null}
+                  <Stopwatch startedAt={top.startedAt} planned={props.timer ?? top.minutes} />
                 </>
               ) : (
                 <>
@@ -338,7 +337,7 @@ export default function DayView(props: DayViewProps) {
         {!lineOnCard && (
           <div className="caption mt-2 w-full max-w-[640px] text-center text-[20px] leading-8 empty:hidden">
             {top && props.line && (
-              <p>
+              <p className={props.quiet ? "text-ink-2" : undefined}>
                 <Said key={props.line} text={props.line} fade={props.line !== firstLine} />
               </p>
             )}
@@ -391,6 +390,16 @@ export default function DayView(props: DayViewProps) {
                   >
                     Hear Zeno
                   </button>
+                </span>
+              )}
+              {top && props.canvasUrl && (
+                <span className="flex items-center gap-2">
+                  <span aria-hidden="true" className="max-sm:hidden">
+                    ·
+                  </span>
+                  <a href={props.canvasUrl} target="_blank" rel="noopener noreferrer" className="link">
+                    Open in Canvas
+                  </a>
                 </span>
               )}
               <FocusMusic active={screen === "focus"} />
@@ -454,15 +463,22 @@ export default function DayView(props: DayViewProps) {
   );
 }
 
-function Countdown({ minutes, startedAt }: { minutes: number; startedAt: string | null }) {
+// Counts up from the step's saved start, never down, with no alarm, chime or speech at any point (Vi, Nov 3); Muse's
+// planned minutes sit beside it, small and muted, and drop to the next rule only on a very narrow screen.
+function Stopwatch({ startedAt, planned }: { startedAt: string | null; planned: number | null }) {
   const now = useNow();
   const started = startedAt ? Date.parse(startedAt) : NaN;
-  const left = now && !Number.isNaN(started) ? Math.min(minutes * 60, minutes * 60 - (now - started) / 1000) : minutes * 60;
   return (
-    <>
-      <span className="timer">{clock(left)}</span>
-      <span className="sr-only"> left</span>
-    </>
+    <p>
+      <span className="timer">{clock(now && !Number.isNaN(started) ? (now - started) / 1000 : 0)}</span>
+      <span className="sr-only"> so far</span>
+      <wbr />
+      {planned ? (
+        <span className="planned">
+          planned <span className="font-mono">{planned} min</span>
+        </span>
+      ) : null}
+    </p>
   );
 }
 
