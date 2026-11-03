@@ -8,7 +8,7 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { bookedEvents, canvasHost, dueDays, dueTime, httpsOnly, markEvents, senderName } = await import("./desk-rows.ts");
+const { bookedEvents, canvasHost, dueDays, dueTime, httpsOnly, markEvents, senderName, snippetLine } = await import("./desk-rows.ts");
 
 const event = (title: string, start: string, end: string, allDay = false): DayEvent => ({ title, start, end, allDay });
 const day = [
@@ -54,6 +54,13 @@ assert.equal(senderName('"Lee, Dana" <dana@school.edu>'), "Lee, Dana");
 assert.equal(senderName("dana@school.edu"), "dana@school.edu");
 assert.equal(senderName("<dana@school.edu>"), "dana@school.edu");
 assert.equal(senderName("Unknown sender"), "Unknown sender");
+
+// Asking mail shows its snippet's first line as plain text: Gmail's escapes decode; unknown or broken ones stay as sent.
+assert.equal(snippetLine("I&#39;d cite the second source &amp; fix page 3."), "I'd cite the second source & fix page 3.");
+assert.equal(snippetLine("&quot;Lab&quot; &lt;3 &#x27;ok&#X27; caf&#233;&nbsp;now"), "\"Lab\" <3 'ok' café now");
+assert.equal(snippetLine("Does Wednesday at 2 work?\nThanks, Dana"), "Does Wednesday at 2 work?");
+assert.equal(snippetLine("&bogus; &#0; &#xFFFFFFF; & plain"), "&bogus; &#0; &#xFFFFFFF; & plain");
+assert.equal(snippetLine("  "), "");
 
 // Event and Gmail links open only as https pages; anything else (a script URL, plain http, nothing) is no link.
 assert.equal(httpsOnly("https://www.google.com/calendar/event?eid=abc"), "https://www.google.com/calendar/event?eid=abc");

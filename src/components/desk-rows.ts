@@ -30,6 +30,18 @@ export function senderName(from: string) {
   return name || from.replace(/[<>]/g, "").trim();
 }
 
+const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+
+// An email's snippet as one line of plain text: Gmail sends snippets HTML-escaped ("I&#39;ll be there").
+export const snippetLine = (snippet: string) =>
+  snippet
+    .replace(/&(?:#x([0-9a-f]+)|#(\d+)|([a-z]+));/gi, (entity, hex?: string, decimal?: string, name?: string) => {
+      const code = hex ? Number.parseInt(hex, 16) : decimal ? Number(decimal) : NaN;
+      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : (ENTITIES[name?.toLowerCase() ?? ""] ?? entity);
+    })
+    .split("\n")[0]
+    .trim();
+
 // Links from the routes (Google's event pages, the Gmail inbox) open only as https pages, never as script URLs.
 export const httpsOnly = (url?: string | null) => (url?.startsWith("https://") ? url : undefined);
 
