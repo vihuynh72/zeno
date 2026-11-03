@@ -45,6 +45,29 @@ export function audioContext() {
   return context;
 }
 
+// The DONE stamp's small sound (Vi): two soft sine notes a fifth apart, about 210 ms, made here so no file loads.
+export function playDone() {
+  try {
+    const ctx = audioContext();
+    // Done always follows a tap, so the browser lets a context still suspended since page load run now.
+    ctx.resume().catch(() => {});
+    [660, 880].forEach((frequency, i) => {
+      const start = ctx.currentTime + i * 0.09;
+      const note = ctx.createOscillator();
+      const level = ctx.createGain();
+      note.frequency.value = frequency;
+      level.gain.setValueAtTime(0.0001, start);
+      level.gain.exponentialRampToValueAtTime(0.08, start + 0.01);
+      level.gain.exponentialRampToValueAtTime(0.0001, start + 0.12);
+      note.connect(level).connect(ctx.destination);
+      note.start(start);
+      note.stop(start + 0.12);
+    });
+  } catch {
+    // No Web Audio means no sound; Done itself must still go on.
+  }
+}
+
 // RMS of the analyser's latest window, scaled so ordinary speech reads about 0.3 to 0.8.
 export function levelOf(node: AnalyserNode) {
   node.getFloatTimeDomainData(samples);

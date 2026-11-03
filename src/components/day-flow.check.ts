@@ -8,7 +8,7 @@ registerHooks({
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
 const flow = await import("./day-flow.ts");
-const { asks, canvasFor, cardSize, checkinMinute, clock, dayPart, doneLine, draftGoal, dueLabel, FOCUS, foundLine, greeting, groupFacts } = flow;
+const { addHeard, asks, canvasFor, cardSize, checkinMinute, clock, dayPart, doneLine, draftGoal, dueLabel, FOCUS, foundLine, greeting, groupFacts } = flow;
 const { isEmailStep, isNotes, laterBlock, laterMinutes, nextScreen, openingReusable, openingSig, openSteps, pickFits, quickReplies } = flow;
 const { replanOnCanvas, slotLabel, soonEvent, stepCard, streakLine, withStatus } = flow;
 
@@ -177,6 +177,15 @@ assert.equal(openingReusable(opening, sig, at0 + 18 * 60_000, [event(15, 90)]), 
 assert.equal(openingReusable(opening, sig, at0 + 18 * 60_000, [event(-60, 10)]), false, "the lecture ended");
 assert.equal(openingReusable(opening, sig, at0 + 18 * 60_000, [event(30, 90), event(-30, 60), event(5, 6, true)]), true);
 assert.equal(openingReusable(opening, sig, at0 + 18 * 60_000, [event(18, 90)]), false, "beginning right now");
+
+// The pattern ids an opening named join this device's heard list once, newest last, the last 20 kept.
+assert.deepEqual(addHeard(["a", "b"], ["c"]), ["a", "b", "c"]);
+assert.deepEqual(addHeard(["a", "b"], ["a"]), ["b", "a"], "said again: moves to the end, never twice");
+assert.deepEqual(addHeard(["a"], undefined), ["a"]);
+assert.deepEqual(addHeard([], ["a", 7, null, "b"]), ["a", "b"], "storage or a reply can hold anything");
+assert.deepEqual(addHeard([], "a"), []);
+const many = Array.from({ length: 20 }, (_, i) => `p${i}`);
+assert.deepEqual(addHeard(many, ["new"]), [...many.slice(1), "new"]);
 
 // The Canvas item a plan is for: its title holds the item's as whole words, any case; an empty title never matches.
 const items = [{ title: " ", url: "a" }, { title: "Essay 2", url: "b" }, { title: "Quiz 4 (Ch. 4)", url: "c" }];

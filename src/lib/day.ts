@@ -137,10 +137,11 @@ export type FirstPick = {
 };
 
 // The model-written opening, fetched after /api/day so the first screen never waits on the model.
-// POST /api/day/opening body { private?: string[]; canvas?: CanvasBrief[] } uses the device's private facts and Canvas
-// briefs; GET is the same without them.
+// POST /api/day/opening body { private?: string[]; canvas?: CanvasBrief[]; heard?: string[] } uses the device's private
+// facts, Canvas briefs and the pattern memory ids its openings already named; GET is the same without them. noticed: the
+// pattern memory this opening names (learned on an earlier day, not in heard), for the browser to add to heard.
 export type OpeningResponse =
-  | { state: "ok"; opening: string; options: string[]; pick: FirstPick | null }
+  | { state: "ok"; opening: string; options: string[]; pick: FirstPick | null; noticed?: string[] }
   | { state: "signed-out" | "error" };
 
 // POST /api/talk body: { message: string; history: Turn[]; proposals?: boolean; private?: string[]; canvas?: CanvasBrief[] }

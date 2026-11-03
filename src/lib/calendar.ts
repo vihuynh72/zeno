@@ -354,15 +354,17 @@ export async function ensureZenoCalendar(accessToken: string, email: string, tim
   return winner;
 }
 
-// Deadlines are all-day "Due:" events that never block free time; steps and to-dos are timed, with a 10-minute popup.
+// Deadlines are all-day "Due:" events that never block free time; steps and to-dos are timed. None ever notifies (Vi).
 export function eventFor(block: CalendarBlock, timeZone: string) {
   const extendedProperties = { private: { zenoKind: block.kind, ...(block.stepId ? { zenoStepId: block.stepId } : {}) } };
+  const reminders = { useDefault: false, overrides: [] };
   if (block.kind === "deadline" && block.date) {
     return {
       summary: `Due: ${block.title}`,
       start: { date: block.date },
       end: { date: nextDate(block.date) },
       transparency: "transparent",
+      reminders,
       extendedProperties,
     };
   }
@@ -370,7 +372,7 @@ export function eventFor(block: CalendarBlock, timeZone: string) {
     summary: block.title,
     start: { dateTime: block.start, timeZone },
     end: { dateTime: block.end, timeZone },
-    reminders: { useDefault: false, overrides: [{ method: "popup", minutes: 10 }] },
+    reminders,
     extendedProperties,
   };
 }

@@ -24,8 +24,8 @@ registerHooks({
   load: (url, context, nextLoad) => (url in FAKES ? { format: "module", source: FAKES[url], shortCircuit: true } : nextLoad(url, context)),
 });
 const {
-  ASKS_FOR_BLOCK, checkCall, checkPick, checkPlan, cleanCanvas, cleanHistory, draftUrl, extractNotes, goalText, isDate, keepNotes,
-  notesFrom, openingPrompt, parseOpening, parseReply, roundSlots, slotsText, systemPrompt, talk, TOOLS,
+  ASKS_FOR_BLOCK, checkCall, checkPick, checkPlan, cleanCanvas, cleanHeard, cleanHistory, draftUrl, extractNotes, goalText, isDate, keepNotes,
+  newPattern, notesFrom, openingPrompt, parseOpening, parseReply, roundSlots, slotsText, systemPrompt, talk, TOOLS,
 } = await import("./agent.ts");
 const { rulePick, ruleOpening, ruleOptions, senderName } = await import("./brief.ts");
 const { dayToText, knownDeadlines } = await import("./context.ts");
@@ -85,6 +85,15 @@ assert.match(system, /Never ask questions to learn about them, like when they fo
 assert.match(system, /Offer a calendar block only when they ask for one or for work of 60 minutes or more; never offer to book a small to-do\./);
 assert.match(system, /help them find the first small step, prep or untangle the task; never write answers, essays or the work itself\./);
 assert.match(system, /call draft_email\. You never send mail/);
+// Direct by default (Vi, Nov 3: "I hate whenever it sugarcoats"): it pushes and names putting things off, blunt but
+// never cruel, and asks only a yes or no it needs; the soft friend is gone, the no-pet-names line stays.
+assert.match(system, /be direct and unfiltered: straight to the point, no sugarcoating, no filler\. Never use pet names like love, babe or sweetie\./);
+assert.match(system, /Push them toward the next step: say what to do and why[^"]*If they're putting something off, say so plainly; if they're stuck, give one concrete way in\./);
+assert.match(system, /No softeners like 'Want to\.\.\.\?' or 'How about\.\.\.\?', and no cheerleading\. When you point them to a next step, end with one short yes or no question, like 'Start now\?', so they can answer with a tap\./);
+assert.match(system, /Be blunt about the work, never cruel to them: never shame, mock, guilt-trip or use sarcasm about them\./);
+// Measured live: the direct tone said "I held one forty five" for a time only suggested.
+assert.match(system, /A time you suggest is free, not theirs yet: say it like 'Four thirty is open\. Book it\?', never that you held or set it\./);
+assert.doesNotMatch(system, /warm, candid friend|kind, sharp friend|Offer, don't order|kindly/);
 
 // Memories show under readable headings in MEMORY_GROUPS order, freshest first within a group, refs in that order.
 const grouped = systemPrompt(
@@ -750,10 +759,46 @@ assert.match(risky, /how they work best or the patterns you noticed in what they
 assert.match(risky, /and goal, due and steps are empty\. The card shows that step as it is saved, so name it as written and never reword it\./);
 assert.doesNotMatch(risky, /way into it|5-minute way in/);
 // Learn from use: the opening's question offers the pick, never asks about them.
-assert.match(risky, /one soft question that offers it\.[^\n]*Never ask a question to learn about them, like when they focus best or what feels hard\./);
+assert.match(risky, /one short, direct question that offers it, like "Start now\?"\.[^\n]*Never ask a question to learn about them, like when they focus best or what feels hard\./);
 // Canvas: a new plan can break an assignment into steps from its instructions, which the prompt carries.
 assert.match(night, /from their deadlines, Canvas assignments, calendar or what you remember \(a Canvas assignment's steps come from its instructions\)/);
 assert.match(openingPrompt({ ...context, canvas: briefs }, "Vi", [], new Map(), at), /\nTheir Canvas assignments[^\n]*\n- <<<Essay 2[^\n]*Write 1500 words on the New Deal/);
+
+// Day 2 names what Zeno learned, once: the newest pattern from the 7 days before the person's today that this browser
+// hasn't heard. One learned today waits for tomorrow. Now is Wed Nov 4, 9:10 AM in Los Angeles (17:10 UTC).
+const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const learnedAt = (n: number, createdAt: string, source = "pattern") => ({ id: uuid(n), text: `Pattern ${n}.`, group: "patterns", source, createdAt });
+const wed = new Date("2026-11-04T17:10:00Z");
+const today1am = learnedAt(1, "2026-11-04T09:00:00Z"); // today in LA and in UTC
+const ownWords = learnedAt(2, "2026-11-04T07:00:00Z", "you"); // the person's own words are never a pattern Zeno noticed
+const yesterday = learnedAt(3, "2026-11-03T23:00:00Z");
+const monday = learnedAt(4, "2026-11-02T18:00:00Z");
+const patterns = [today1am, ownWords, monday, yesterday];
+assert.equal(newPattern(patterns, [], zone, wed)?.id, yesterday.id, "before today only, the newest wins");
+assert.equal(newPattern(patterns, [yesterday.id], zone, wed)?.id, monday.id, "a heard one is never news again");
+assert.equal(newPattern(patterns, [yesterday.id, monday.id], zone, wed), null);
+assert.equal(newPattern([], [], zone, wed), null);
+// The window is the 7 days before LA's today, which starts at 08:00 UTC; UTC's today starts at midnight.
+const weekEdge = learnedAt(5, "2026-10-28T08:00:00Z");
+const tooOld = learnedAt(6, "2026-10-28T07:59:00Z");
+assert.equal(newPattern([weekEdge], [], zone, wed)?.id, weekEdge.id);
+assert.equal(newPattern([tooOld], [], zone, wed), null);
+assert.equal(newPattern([tooOld], [], "UTC", wed)?.id, tooOld.id);
+const tuesdayNight = learnedAt(7, "2026-11-04T05:00:00Z"); // Tue 9 PM in LA, already Wed in UTC
+assert.equal(newPattern([tuesdayNight], [], zone, wed)?.id, tuesdayNight.id);
+assert.equal(newPattern([tuesdayNight], [], "UTC", wed), null);
+// heard comes from the browser: only ids count, the last 20 of them.
+assert.deepEqual(cleanHeard([uuid(1), "not-an-id", 42, null, { id: uuid(2) }, uuid(3)]), [uuid(1), uuid(3)]);
+assert.deepEqual(cleanHeard(Array.from({ length: 25 }, (_, i) => uuid(i))), Array.from({ length: 20 }, (_, i) => uuid(i + 5)));
+assert.deepEqual(cleanHeard("ids"), []);
+assert.deepEqual(cleanHeard(undefined), []);
+assert.equal(newPattern(patterns, cleanHeard(["junk", 7, [yesterday.id]]), zone, wed)?.id, yesterday.id, "junk heard hides nothing");
+// The opening says it first, in its own words, and lets it shape the pick; with no new pattern there is no line.
+assert.match(
+  openingPrompt(context, "Vi", [], new Map(), wed, "Works best in the morning."),
+  /\nNew since their last day, a pattern you noticed in what they did: "Works best in the morning\." Say it once at the start of say, in a few words of your own [^\n]*, and let it shape the pick when it fits\.\n/,
+);
+assert.doesNotMatch(openingPrompt(context, "Vi", [], new Map(), wed), /New since their last day/);
 
 // Rule options come only from real context: the open step, one unread email (only important mail is read), the next
 // event worth prepping.

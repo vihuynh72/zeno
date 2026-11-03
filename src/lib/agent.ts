@@ -22,6 +22,7 @@ import {
   deadlineMemory,
   dueDay,
   forgetMemory,
+  isId,
   replaceRemainingSteps,
   setGoal,
   todoMemory,
@@ -30,7 +31,7 @@ import {
 import { learnFromSteps } from "@/lib/patterns";
 import { factVerdict } from "@/lib/profile";
 import { progressFor } from "@/lib/progress";
-import { formatDate, localDate, localHour, localIso } from "@/lib/tz";
+import { dayBounds, formatDate, localDate, localHour, localIso } from "@/lib/tz";
 import { sameFact } from "@/lib/vault";
 
 // The client sends history, so trust only plain user and assistant turns, never a system role.
@@ -54,6 +55,19 @@ export function cleanCanvas(raw: unknown): CanvasBrief[] {
     const brief = { title: cut(title, 120), course: cut(course, 80), due, instructions: cut(instructions, 800) };
     return brief.title ? [brief] : [];
   });
+}
+
+// The pattern ids the browser says its openings already named, from a request body (untrusted): the last 20 ids.
+export const cleanHeard = (raw: unknown): string[] => (Array.isArray(raw) ? raw.filter(isId).slice(-20) : []);
+
+// What a later day's first opening names once: the newest pattern from the 7 days before today, not yet heard here.
+export function newPattern(memories: Memory[], heard: string[], timeZone: string, now = new Date()): Memory | null {
+  const today = dayBounds(timeZone, now).start.getTime();
+  const fits = (memory: Memory) => {
+    const at = Date.parse(memory.createdAt);
+    return memory.source === "pattern" && !heard.includes(memory.id) && at < today && at >= today - 7 * 86_400_000;
+  };
+  return memories.filter(fits).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null;
 }
 
 // The model sees short refs (s1 for steps, m1 for memories), never ids. A ref keeps
@@ -286,12 +300,13 @@ export function openingPrompt(
   finished: string[],
   refs: Refs,
   now = new Date(),
+  pattern: string | null = null,
 ): string {
   const hour = localHour(context.timeZone, now);
   const { atRisk, streak } = context.progress;
   return [
     `Write what Zeno says when ${firstName ?? "the person"} opens the app, and pick the one thing to start with.`,
-    `say: one or two short spoken sentences, at most 25 words in all, that name the pick and end with one soft question that offers it. Greet them${firstName ? " by first name" : ""} for the time of day. Never ask a question to learn about them, like when they focus best or what feels hard.`,
+    `say: one or two short spoken sentences, at most 25 words in all, that name the pick and end with one short, direct question that offers it, like "Start now?". Greet them${firstName ? " by first name" : ""} for the time of day. Never ask a question to learn about them, like when they focus best or what feels hard.`,
     hour < 5
       ? "It is late at night: greet them as still up, never good morning, and offer to wind down or set up tomorrow's first step, not to start new work, so pick nothing."
       : hour >= 17
@@ -301,6 +316,11 @@ export function openingPrompt(
           : "It is afternoon: help them pick one thing to move forward now.",
     ...(atRisk
       ? [`Their streak is at risk tonight: lead with saving it, like "One small step keeps your ${streak}-day streak going".`]
+      : []),
+    ...(pattern
+      ? [
+          `New since their last day, a pattern you noticed in what they did: "${pattern}" Say it once at the start of say, in a few words of your own (for "Works best in the morning.", like "You get more done before noon, so the hard one first."), and let it shape the pick when it fits.`,
+        ]
       : []),
     'options: two or three short answers to your question they could tap, at most four words each, worded the way they would say them, like "Start it", "Something else" or "Set up tomorrow". Any option that names a task, event, email or person must come from their calendar, inbox, goal, steps finished yesterday or what you remember.',
     "pick: the one most urgent thing, ready to start with one tap.",

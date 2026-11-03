@@ -133,6 +133,12 @@ export function openingReusable(opening: { at?: string; sig?: string } | null | 
   return now - at >= 0 && now - at < 20 * 60_000 && opening?.sig === sig && !changed;
 }
 
+// The pattern ids this device's openings named, newest last and at most 20, with the ids in `noticed` added.
+export function addHeard(heard: string[], noticed: unknown): string[] {
+  const added = Array.isArray(noticed) ? noticed.filter((id): id is string => typeof id === "string") : [];
+  return [...heard.filter((id) => !added.includes(id)), ...added].slice(-20);
+}
+
 const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // The Canvas item a plan is for: the plan's title holds the item's as whole words, any case ("Essay 2", or "HIST 110:

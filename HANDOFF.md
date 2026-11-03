@@ -12,6 +12,43 @@ fit and checked on `nov2/integrate`. `nov2/fix` added music for deep work (decis
 fixes from three reviews. **All of it is on `main` and in production** (Nov 2, 9:25 PM PT: `401c81c`), with the fixes
 from the live test below.
 
+### Before recording (Nov 3, branch `rec/build` from `7354108`; not merged)
+Vi's four "do it now" answers (PRD OQ-2 to OQ-5; stories US0010 to US0013 on `sdlc/backlog`):
+- **Reminders off**: Zeno's timed blocks and all-day "Due:" events carry `reminders: { useDefault: false, overrides: [] }`
+  (`eventFor`, `src/lib/calendar.ts`). Blocks booked before keep their 10-minute popup.
+- **Direct by default**: the persona lines of `ZENO_VOICE_PROMPT` (`src/lib/ai.ts`) push to the next step, name putting
+  things off plainly, no "Want to...?" or cheerleading, blunt but never cruel; a reply that points to a next step ends
+  in one short yes or no question so the chips stay ("Start now?"). A suggested time is said as open, never as held.
+  `RULES`, `NEVER_KEEP` and every tool line are unchanged. The opening's "soft question" is now "one short, direct
+  question".
+- **Done sound**: with Sound on, a tapped or spoken Done (only a real done, never a skip or a failed save) plays two soft
+  sine notes made with Web Audio, about 210 ms (`playDone`, `src/lib/speak.ts`), with the DONE stamp. Without Web
+  Audio it stays silent and Done goes on.
+- **Day 2 names what Zeno learned**: `POST /api/day/opening` takes `heard` (pattern ids this browser already heard, kept
+  in `zeno:heard:<account>`, at most 20). The newest pattern memory made in the 7 days before the person's today and
+  not heard gets one prompt line ("say it once at the start, in your own words, let it shape the pick") and comes back
+  as `noticed: [id]`; the browser adds it to `heard` when that opening shows (`newPattern`/`cleanHeard` in
+  `src/lib/agent.ts`). A pattern learned today waits for tomorrow; after midnight already counts as tomorrow.
+- **Verified**: typegen, tsc, eslint (src and scripts), build and every self-check, with new asserts (no reminders on
+  both kinds of event; the sound's notes, length and level; the persona's wording; the pattern window, heard ids, the
+  newest wins and UTC vs Los Angeles day starts; the heard list). Real Muse lines on made-up data, old prompt vs new,
+  ten moments: `/private/tmp/claude-501/-Users-vihuynh--superset-projects-zeno/8e7b8375-f54c-4c12-82ec-e4f4bc614514/scratchpad/tone-samples.md`
+  (every day-2 run named the pattern first). On a local build as a throwaway @zeno.local user (rows deleted), the real
+  route named yesterday's pattern with its id ("You do your best work before noon, so start with Outline claim 2."),
+  then, with that id heard, did not; junk `heard` was ignored and a pattern learned today waited. Memory bench, two
+  runs on that build (Nov 2: overall 96.1, privacy 96.9): overall 88.6 and 98.6, privacy 96.9 and 100.0, no leaks, no
+  false claims, rows deleted. Each run missed a different single turn (run 1 the update, which kept the old Tue/Thu
+  shift row; run 2 the remember + set_goal turn), and both missed one import fact (import has no persona). The update
+  turn alone, six times each through `talk()`, forgot and saved 6 of 6 on the old prompt and 6 of 6 on the new. Not
+  tried in a browser: the sound by ear, the heard list in local storage, a booked event in Google Calendar.
+- **For the video**: turn Sound on for the Done sound. Shot 6 needs a pattern from Nov 3 in Memory; the first opening on
+  Nov 4 in that Chrome uses it up, so to take it again delete the `zeno:heard:…` key in DevTools > Application > Local
+  Storage (keep `zeno.canvas.…`) and reload.
+- **Revert one item**: reminders: put back `overrides: [{ method: "popup", minutes: 10 }]` on timed blocks in `eventFor`.
+  Tone: restore the six persona lines and "one soft question" from `git show 7354108:src/lib/ai.ts` and
+  `7354108:src/lib/agent.ts`. Sound: delete the two `playDone()` calls in `src/components/guided-day.tsx`. Day 2: make
+  `newPattern` in `src/lib/agent.ts` return `null`. Each needs its asserts adjusted.
+
 ### Nov 4 sprint (on `main` and in production since Nov 3, 1:15 AM PT: `e0e7ac6`)
 From Vi's answers on the night of Nov 2 (product brief sections 2 and 8): "I don't want any alarm… It's annoying",
 check-ins "even quieter", and "I pause two seconds, just think about what to talk next, and then the voice just
@@ -351,7 +388,7 @@ Zeno is a voice-first daily helper: it gives a short spoken brief from your cale
 ## 3. Decisions Vi made (2026-10-29)
 
 - Layout **"Guided day"**: one step per screen (brief, pick one thing, first step or roadmap, focus, check-in). Calendar and email appear inside what Zeno says, not as panels.
-- Persona **warm, candid friend**: short, offers instead of orders, one question at a time, honest when a plan will not fit. ("Sounds like a dictator" meant both the bossy prompt and the dictation-style voice flow.)
+- Persona **warm, candid friend**: short, offers instead of orders, one question at a time, honest when a plan will not fit. ("Sounds like a dictator" meant both the bossy prompt and the dictation-style voice flow.) Replaced on `rec/build` by the direct tone Vi chose on Nov 3 (section 0, "Before recording").
 - Voice: Google Chirp 3 HD **Achernar**, speakingRate 1.
 - Extras, all wanted, in build order: Meta voice input (done, see 4), roadmap editable by voice, memory per account ("what Zeno remembers", with delete; no embeddings since Meta has no embedding model), remembers yesterday, **calendar block** (write the first step to Google Calendar after confirmation), **prep pack** (sources for the first step; first to cut if late).
 - Visual world: **Index Card** (white ruled study card, blue rules, red margin line, the roadmap as a stack beneath, Atkinson Hyperlegible Next and Mono) fused with the **On Air dot ring** as the voice indicator around the Talk button. Light and dark follow the system. Vi: "simple, human, very ADHD friendly, not overwhelming". The card world must later grow into a workstation (calendar, inbox, AI as cards) without cluttering the guided flow.
