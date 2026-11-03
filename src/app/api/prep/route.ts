@@ -8,13 +8,15 @@ import { findSources } from "@/lib/prep";
 
 export const maxDuration = 30;
 
-// Body { stepId }: one of the person's steps; Muse searches the web for it and the result is kept on the step.
+// Body { stepId, canvas? }: one of the person's steps; Muse searches the web for it and the result is kept on the step.
+// canvas is the device's brief (src/lib/day.ts CanvasBrief) when the step is for a Canvas assignment: its instructions
+// help find sources for preparing, never the work itself, and are never saved.
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ state: "signed-out" } satisfies PrepResponse, { status: 401 });
   }
-  const body = (await request.json().catch(() => null)) as { stepId?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { stepId?: unknown; canvas?: { instructions?: unknown } | null } | null;
   const stepId = body?.stepId;
   if (!isId(stepId)) {
     return NextResponse.json({ state: "bad-request" } satisfies PrepResponse, { status: 400 });
@@ -29,7 +31,8 @@ export async function POST(request: Request) {
     if (!titles) {
       return NextResponse.json({ state: "not-found" } satisfies PrepResponse, { status: 404 });
     }
-    const sources = await findSources(titles.goal, titles.step);
+    const instructions = body?.canvas?.instructions;
+    const sources = await findSources(titles.goal, titles.step, typeof instructions === "string" ? instructions : "");
     await savePrep(email, stepId, sources);
     return NextResponse.json({ state: "ok", sources } satisfies PrepResponse);
   } catch (error) {

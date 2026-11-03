@@ -3,7 +3,7 @@ import { addMemory, dropMemories, forgottenMemories, listMemories, recentSteps, 
 import { localHour } from "@/lib/tz";
 
 // The opening words of each kind of pattern, so a real-length multiple is only ever compared with its own kind.
-const KINDS = ["You finish most steps", "Steps take you", "You often skip", "Steps of 10 minutes"];
+const KINDS = ["Works best", "Steps take you", "You often skip", "Steps of 10 minutes"];
 export const kindOf = (text: string) => KINDS.find((kind) => text.startsWith(kind)) ?? null;
 
 const QUICKER = "Steps take you less time than you plan.";
@@ -21,7 +21,8 @@ export function patternsIn(steps: StepRecord[], timeZone: string, kept: string[]
   const line = (text: string, add: number, keep: number) => (kept.includes(text) ? keep : add);
   const done = steps.filter((step) => step.status === "done");
 
-  // Time of day: 5 finished steps or more, 60% of them in one part of the day.
+  // Time of day: 5 finished steps or more, 60% of them in one part of the day. Worded as src/lib/agent.ts focusPart
+  // reads it, so to-dos land in that part of the day now that setup never asks.
   if (done.length >= 5) {
     const parts = new Map<string, number>();
     for (const step of done) {
@@ -29,7 +30,7 @@ export function patternsIn(steps: StepRecord[], timeZone: string, kept: string[]
       parts.set(part, (parts.get(part) ?? 0) + 1);
     }
     for (const [part, count] of parts) {
-      const text = `You finish most steps ${part}.`;
+      const text = `Works best ${part}.`;
       if (count / done.length >= line(text, 0.6, 0.5)) found.push(text);
     }
   }

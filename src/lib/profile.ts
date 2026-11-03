@@ -5,7 +5,7 @@ import { ensureSchema, getSql } from "@/lib/db";
 import { getProfileEmails, type ProfileEmail } from "@/lib/gmail";
 import { addMemory, listMemories, scannedSince } from "@/lib/goals";
 import { dayBounds, formatDate, formatTime } from "@/lib/tz";
-import { sameFact } from "@/lib/vault";
+import { CONDITION, sameFact } from "@/lib/vault";
 
 // The profile scan (docs/PLAN-NOV.md "Memory and profile"): once a local day, calendar and email become a few
 // grouped facts. Emails and events are read in memory and never stored; only the facts are.
@@ -33,11 +33,12 @@ const IMMIGRATION =
 // and an amount only next to an account, card, bill, loan or rent ("$24.99 a month for the gym" stays).
 const MONEY =
   /\$\s?\d[\d,.]*[^.]*\b(checking|savings|bank|credit card|bills?|loans?|rent)\b|\b(checking|savings|credit card|bills?|loans?|rent)\b[^.]*\$\s?\d|\b(debts?|loans?|overdra\w*|in collections|collections agency|credit score|bankrupt\w*|minimum payment|bank account|checking account|savings account|wire transfer|gift cards?|bitcoin|crypto\w*|venmo|zelle|paypal|cash ?app|pay(s|ing)? (it |them )?off|paid off|short on (rent|money|cash)|(behind|late) on (the |their |my )?(rent|bills?|tuition|payments?|loans?|credit card)|can'?t (pay|afford) (the |their |my )?(rent|bills?|tuition)|maxed out (their |my |a |the )?(credit )?cards?|(in|into) (savings|checking))\b|\b(balance|owe[sd]?|owing|past due)\b[^.]*(\$|\b(account|bank|card|credit|statement|tuition|checking|savings?|money|rent|bills?|dollars?|bucks|fees?)\b)|(\$|\b(account|bank|card|credit|statement|tuition|checking|savings?|money|rent|bills?)\b)[^.]*\b(balance|owe[sd]?|owing|past due)\b/i;
-// A condition, care or treatment for one (a counselor, a specialist, a clinic, recovery meetings, accommodations), or
-// how health affects energy, sleep or focus. When someone simply focuses best is not health; an academic counselor,
-// a biology class and a recovery run are not health either, so no bare "-ology" or "recovery".
+// Care or treatment (a doctor's check-in, a counselor, a specialist, a clinic, recovery meetings, accommodations), or
+// how health affects energy, sleep or focus, in generic words. A condition's name is never kept (CONDITION, in
+// src/lib/vault.ts). When someone simply focuses best is not health; an academic counselor, a biology class and a
+// recovery run are not health either, so no bare "-ology" or "recovery".
 const HEALTH =
-  /\b(adhd|autis\w*|asperger'?s|anxiety|panic attacks?|depress\w*|bipolar|ocd|ptsd|eating disorders?|anorexi\w*|bulimi\w*|insomnia|migraines?|asthma|diabet\w*|epilep\w*|seizures?|fibromyalgia|crohn'?s|celiac|covid|cancer|chemo\w*|surgery|surgeries|diagnos\w*|disorders?|disabilit\w*|chronic (pain|fatigue|condition)s?|illness\w*|therap(y|ies|ists?)|psychiatr\w*|mental health|medications?|meds|prescriptions?|pharmacy|doctor'?s? (appointment|visit)s?|hospitali[sz]\w*|injur(y|ies|ed)|concussion|(back|knee|neck|joint) pain|brain fog|foggy|fatigue\w*|low energy|trouble sleeping|sleep (problems?|issues?|apnea|disorder)|(?<!(academic|guidance|career|admissions?|college|school|camp|peer|financial aid|transfer|legal) )counsel(l?ors?|l?ing)|psychologists?|(endocrin|dermat|rheumat|gastroenter|ophthalm|onc|cardi|ur|gyn[ae]c|nephr|pulmon|hemat)olog(y|ists?)|neurologists?|allerg\w*|lupus|dyslex\w*|dyspraxi\w*|dyscalcul\w*|arthritis|ibs|pcos|endometriosis|sickle cell|multiple sclerosis|clinics?|(sees|seeing|visits?|visiting|appointments? with|check-?ups? with) (an? |the |their |my )?(doctor|dr|physician|specialist|dentist|orthodontist)|check-?ups?|in recovery|recovery (meetings?|groups?|programs?)|alcoholics anonymous|narcotics anonymous|(aa|na) meetings?|(goes|go|going|went) to (aa|na)|sobriety|sober|12[- ]step|(testing|exam|academic|disability) accommodations?|accommodations? (letters?|plans?|office)|504 plans?|iep|(extra|extended) time on (tests|exams|quizzes))\b/i;
+  /\b(chemo\w*|surgery|surgeries|diagnos\w*|disabilit\w*|chronic (pain|fatigue|condition)s?|illness\w*|therap(y|ies|ists?)|psychiatr\w*|mental health|medications?|meds|prescriptions?|pharmacy|doctor'?s? (appointment|visit|check-?in)s?|hospitali[sz]\w*|injur(y|ies|ed)|(back|knee|neck|joint) pain|brain fog|foggy|fatigue\w*|low energy|trouble sleeping|sleep (problems?|issues?)|(?<!(academic|guidance|career|admissions?|college|school|camp|peer|financial aid|transfer|legal) )counsel(l?ors?|l?ing)|psychologists?|(endocrin|dermat|rheumat|gastroenter|ophthalm|onc|cardi|ur|gyn[ae]c|nephr|pulmon|hemat)olog(y|ists?)|neurologists?|clinics?|(sees|seeing|visits?|visiting|appointments? with|check-?(ups?|ins?) with) (an? |the |their |my )?(doctor|dr|physician|specialist|dentist|orthodontist)|check-?ups?|in recovery|recovery (meetings?|groups?|programs?)|sobriety|sober|12[- ]step|(testing|exam|academic|disability) accommodations?|accommodations? (letters?|plans?|office)|504 plans?|iep|(extra|extended) time on (tests|exams|quizzes))\b/i;
 // Orientation, and gender identity with it: kept on the device rather than stored or dropped.
 const ORIENTATION =
   /\b(gay|lesbian|bisexual|pansexual|asexual|queer|lgbt\w*|sexual orientation|sexuality|transgender|non-?binary|gender identity|genderqueer|genderfluid|(is|am|as|being|identifies as|openly) (bi|trans)(?!-)|trans (man|woman|men|women|person|people|kid|student)|(they|she|he)\/(them|her|him)|pronouns|came out|coming out (as|to))\b/i;
@@ -73,6 +74,7 @@ const NEVER: [string, RegExp][] = [
   ["a medicine's name", MEDICINE],
   // PrEP only in its own spelling: "prep" is an everyday word ("Prep for the interview").
   ["a medicine's name", /\bPrEP\b/],
+  ["a condition's name", CONDITION],
   ["sexual or reproductive details", SEXUAL],
   [
     "other people's private matters",
@@ -134,7 +136,8 @@ export function sensitiveEmail({ from, subject, snippet = "", body = "" }: Pick<
 }
 
 // The model's reply, checked: valid groups and sources, one short sentence each, nothing on the never-list, no
-// repeats of each other or of what is already known. Private facts (marked by the model or caught by the backstop)
+// repeats of each other or of what is already known, and one routines fact at most (the calendar is read live every
+// day, so only a sum-up of the week is worth keeping). Private facts (marked by the model or caught by the backstop)
 // come back apart, for the device only; max caps both together.
 export function factsFrom(text: string, known: string[], max: number): { facts: ProfileFact[]; private: PrivateFact[] } {
   let data: { facts?: unknown } | null;
@@ -156,7 +159,7 @@ export function factsFrom(text: string, known: string[], max: number): { facts: 
     if (factText.length < 8 || [...factText].length > 200 || !group || !source || verdict?.verdict === "never") continue;
     if ([...known, ...facts.map((fact) => fact.text), ...kept.map((fact) => fact.text)].some((other) => sameFact(other, factText))) continue;
     if (raw.private === true || verdict) kept.push({ text: factText, group });
-    else facts.push({ text: factText, group, source });
+    else if (group !== "routines" || !facts.some((fact) => fact.group === "routines")) facts.push({ text: factText, group, source });
   }
   return { facts, private: kept };
 }
@@ -264,18 +267,21 @@ function profilePrompt(max: number): string {
   return [
     "You build a short profile of one person for Zeno, an app that helps them start and finish their day's work.",
     "From their calendar and recent email, write lasting facts about them that will help plan their days:",
-    "school, work and routines; projects and deadlines, with dates; interests and life goals; key people (professors, boss, teammates) and who they are to them;",
+    "school and work; projects, exams and deadlines, with dates; interests and life goals; key people (professors, boss, teammates) and who they are to them;",
     "and interests or habits that help motivate, seen in purchases and events, like a gym membership, a fitness or weight-loss goal, or a habit to break.",
+    "Zeno reads their calendar live every day, so never write a fact for a class, shift, meeting or other event it shows (an exam or deadline date is still a fact);",
+    "at most one routines fact sums up the shape of their week, only when that helps, like 'Classes Tue/Thu mornings; library shifts Mon/Wed afternoons.'",
     "Skip what does not help plan their days or keep them going: the devices and apps they use, newsletters and forums they read, product plans, subscriptions and renewals (a renewal date is no deadline),",
     "unless the mail shows a goal, deadline, routine or habit, like a gym membership or a race registration ('Training for a 10K on Nov 26.').",
     "Each fact is one short sentence about them, at most 20 words, starting with a verb and without their name, like",
-    "'Takes BIO 121 lab Wednesdays 2 to 4:50 PM.' or 'Works library shifts Tuesdays and Thursdays 8 to noon.'",
+    "'Is a junior biology major at SJSU.' or 'Has the BIO 121 lab report due November 6.'",
     "group: about (school, major, year, job, home town),",
-    "routines (classes, shifts, practices and other repeating plans), projects (projects, exams, deadlines),",
+    "routines (only that one sum-up of their week), projects (projects, exams, deadlines),",
     "interests (interests, hobbies and life goals, fitness and weight goals included),",
     "people (one fact per key person, their name and role to them, like 'Has Prof Kim for CHEM 1A.' or 'Reports to Sam, the cafe shift lead.'; nothing private about them),",
     "work-style (how they work best, only when the data shows it). source: calendar or email, where you saw it.",
     `private: true or false. ${NEVER_KEEP}`,
+    "A health fact stays generic even when private: never name a condition, diagnosis or medicine, like 'Has a doctor check-in Nov 3.' or 'Mornings feel foggy lately.', never 'Has an ADHD check-in Nov 3.'",
     "Never copy links, codes, phone numbers, street addresses or ID numbers.",
     "Write each fact once, even when the calendar and several emails show it, and skip one-off chatter, ads, newsletters,",
     "receipts that show no lasting habit, and anything under 'Already known' or 'Removed by the person', even reworded.",

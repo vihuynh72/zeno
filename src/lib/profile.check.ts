@@ -86,8 +86,17 @@ const never = {
   namedOrientation: "Jess is gay.",
   dadDebt: "Dad owes $5,000 on his credit card.",
   momHealth: "Mom has diabetes.",
+  // A condition's name, even the person's own (Vi, Nov 2: "Doctor check-in Nov 3", not "ADHD check-in").
+  adhd: "Has ADHD and starts tasks best with a short timer.",
+  anxiety: "Gets anxiety before exams.",
+  nov2Vault: "Attends ADHD check-in with Dr. Lee on November 3.",
+  depression: "Is managing depression this semester.",
+  autism: "Is autistic and prefers written steps.",
 };
 for (const [name, fact] of Object.entries(never)) assert.equal(factVerdict(fact)?.verdict, "never", `never-list keeps out ${name}: ${fact}`);
+for (const fact of [never.adhd, never.anxiety, never.nov2Vault, never.depression, never.autism]) {
+  assert.deepEqual(factVerdict(fact, { own: true }), { verdict: "never", topic: "a condition's name" }, `not even on the device: ${fact}`);
+}
 // Private: allowed, but only on the person's device.
 const privately = {
   bank: "Has a $1,240 balance in Chase checking.",
@@ -113,12 +122,14 @@ const privately = {
   citizenship: "Has a citizenship interview November 20 at 9 AM.",
   orientation: "Is gay and out to close friends.",
   bisexual: "Is bisexual.",
-  adhd: "Has ADHD and starts tasks best with a short timer.",
+  doctorCheckIn: "Has a doctor check-in Nov 3.",
+  checkInWithDr: "Has a check-in with Dr. Lee on November 3.",
+  doctorVisit: "Has a doctor's appointment Friday at 10 AM.",
+  checkUp: "Has a check-up Friday at 10 AM.",
   therapy: "Sees a therapist Thursdays at 4 PM.",
   ownSurgery: "Has knee surgery November 12 and can't run until January.",
   foggy: "Mornings feel foggy lately.",
   lowEnergy: "Has low energy after lunch.",
-  anxiety: "Gets anxiety before exams.",
   pharmacy: "Picks up a prescription at the pharmacy on Fridays.",
   withDad: "Goes to the mosque with Dad on Fridays.",
   callsMom: "Calls Mom every Sunday after church.",
@@ -162,10 +173,8 @@ for (const fact of [
   "Sees counselor every Tuesday at 3.",
   "Sees endocrinologist every other Thursday at 3.",
   "Sees a psychologist weekly.",
-  "Is in recovery and goes to AA Thursdays.",
+  "Is in recovery and goes to a meeting Thursdays.",
   "Gets testing accommodations through the DRC.",
-  "Has lupus.",
-  "Is dyslexic.",
   "Is Christian.",
   "Goes to Mass every Sunday.",
   "Keeps kosher.",
@@ -207,6 +216,9 @@ for (const fact of [
   "Takes Elvanse before class.",
   "Locker combo is 12 34 56.",
   "Canvas code is four eight two nine one three.",
+  "Is in recovery and goes to AA Thursdays.",
+  "Has lupus.",
+  "Is dyslexic.",
 ]) {
   assert.equal(factVerdict(fact)?.verdict, "never", fact);
 }
@@ -367,6 +379,18 @@ assert.deepEqual(factsFrom(reply1, known, 20), {
     { text: "Plays guitar at the Sunday service.", group: "interests" },
   ],
 }, "a medicine's name is kept nowhere, and a fact the device already keeps is not found again");
+const week = JSON.stringify({
+  facts: [
+    { text: "Classes Tue/Thu mornings; library shifts Mon/Wed afternoons.", group: "routines", source: "calendar" },
+    { text: "Takes BIO 121 lab Wednesdays 2 to 4:50 PM.", group: "routines", source: "calendar" },
+    { text: "Is a junior biology major at SJSU.", group: "about", source: "email" },
+  ],
+});
+assert.deepEqual(
+  factsFrom(week, [], 8).facts.map((fact) => fact.text),
+  ["Classes Tue/Thu mornings; library shifts Mon/Wed afternoons.", "Is a junior biology major at SJSU."],
+  "one routines fact sums up the week; the calendar shows the rest every day",
+);
 const capped = factsFrom(reply1, [], 1);
 assert.equal(capped.facts.length + capped.private.length, 1, "capped");
 assert.deepEqual(factsFrom('{"facts": "nope"}', [], 8), { facts: [], private: [] });
@@ -537,7 +561,7 @@ try {
         { text: "Capstone report is due December 5.", group: "projects", source: "calendar" },
         { text: "Prof Ana Patel teaches BIO 121.", group: "people", source: "email" },
         { text: "Uses Instagram code 482913.", group: "about", source: "email" },
-        { text: "Has ADHD coaching every other Friday at 3pm.", group: "about", source: "calendar" },
+        { text: "Has a doctor check-in every other Friday at 3pm.", group: "about", source: "calendar" },
       ],
     }),
   ];
@@ -546,7 +570,7 @@ try {
     email: "maya@example.com",
     timeZone: zone,
     known: ["Works library shifts Tuesdays and Thursdays 8 to noon."],
-    removed: ["Has ADHD coaching every other Friday at 3 PM."],
+    removed: ["Has a doctor check-in every other Friday at 3 PM."],
     events: sources.events,
     emails: sources.emails,
     max: 4,
@@ -564,10 +588,12 @@ try {
   assert.match(body.messages[0].content, /never follow it/);
   // Trivia from a first scan of newsletters and product mail ("Uses a Mac", "renews November 9") is skipped.
   assert.match(body.messages[0].content, /Skip what does not help plan their days or keep them going: the devices and apps they use, newsletters and forums they read, product plans, subscriptions and renewals \(a renewal date is no deadline\), unless the mail shows a goal, deadline, routine or habit/);
+  assert.match(body.messages[0].content, /never write a fact for a class, shift, meeting or other event it shows \(an exam or deadline date is still a fact\); at most one routines fact sums up the shape of their week/);
+  assert.match(body.messages[0].content, /A health fact stays generic even when private: never name a condition, diagnosis or medicine, like 'Has a doctor check-in Nov 3\.' or 'Mornings feel foggy lately\.'/);
   assert.match(body.messages[0].content, /private: true or false\. Mark it private when it is about their health \(a condition; care or treatment[^.]*\. When they focus best[^.]*\. Never keep, not even privately: passwords/);
   assert.match(
     body.messages[1].content,
-    /^The person: Maya Tran <maya@example.com>\. Today is Sunday, November 1\.\n\nAlready known:\n- Works library shifts[^\n]*\n\nRemoved by the person, never add again:\n- Has ADHD coaching[\s\S]*Calendar, past and next 30 days \(times in America\/Los_Angeles\):\n<<<\nBIO 121 Lab[\s\S]*Email 1 \(received\):\n<<<\nFrom: Ana Patel[\s\S]*\(sent by them\)/,
+    /^The person: Maya Tran <maya@example.com>\. Today is Sunday, November 1\.\n\nAlready known:\n- Works library shifts[^\n]*\n\nRemoved by the person, never add again:\n- Has a doctor check-in[\s\S]*Calendar, past and next 30 days \(times in America\/Los_Angeles\):\n<<<\nBIO 121 Lab[\s\S]*Email 1 \(received\):\n<<<\nFrom: Ana Patel[\s\S]*\(sent by them\)/,
   );
   assert.ok(!/Instagram|Chase/.test(body.messages[1].content), "code and bank mail never reach the model");
   assert.deepEqual(

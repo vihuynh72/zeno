@@ -52,12 +52,21 @@ export function sameFact(a: string, b: string): boolean {
   return small.every((word) => big.includes(word));
 }
 
+// A health condition's name (Vi, Nov 2: "Doctor check-in Nov 3", not "ADHD check-in"). Kept nowhere, not even on the
+// device: src/lib/profile.ts factVerdict puts it on the never-list, and this vault drops one saved before that rule.
+export const CONDITION =
+  /\b(adhd|autis\w*|asperger'?s|anxiety|panic attacks?|depress\w*|bipolar|ocd|ptsd|anorexi\w*|bulimi\w*|insomnia|migraines?|asthma|diabet\w*|epilep\w*|seizures?|fibromyalgia|crohn'?s|celiac|covid|cancer|disorders?|concussion|sleep apnea|lupus|dyslex\w*|dyspraxi\w*|dyscalcul\w*|arthritis|ibs|pcos|endometriosis|sickle cell|multiple sclerosis|allerg\w*|alcoholics anonymous|narcotics anonymous|(aa|na) meetings?|(goes|go|going|went) to (aa|na))\b/i;
+
 function load(account: string): Vault {
   try {
     const raw = JSON.parse(localStorage.getItem(key(account)) ?? "null") as Partial<Vault> | null;
     const facts = (Array.isArray(raw?.facts) ? raw.facts : []).filter(
       (fact): fact is VaultFact =>
-        typeof fact?.id === "string" && typeof fact.text === "string" && typeof fact.createdAt === "string" && isGroup(fact.group),
+        typeof fact?.id === "string" &&
+        typeof fact.text === "string" &&
+        typeof fact.createdAt === "string" &&
+        isGroup(fact.group) &&
+        !CONDITION.test(fact.text),
     );
     const removed = (Array.isArray(raw?.removed) ? raw.removed : []).filter((text): text is string => typeof text === "string");
     return { facts, removed };
@@ -86,7 +95,7 @@ export function addToVault(account: string, facts: PrivateFact[], now = new Date
   const added: VaultFact[] = [];
   for (const fact of facts) {
     const text = typeof fact?.text === "string" ? fact.text.trim().slice(0, MAX_CHARS) : "";
-    if (!text || !isGroup(fact.group) || known.some((other) => sameFact(other, text))) continue;
+    if (!text || !isGroup(fact.group) || CONDITION.test(text) || known.some((other) => sameFact(other, text))) continue;
     known.push(text);
     added.push({ id: crypto.randomUUID(), text, group: fact.group, createdAt: now.toISOString() });
   }
