@@ -1,7 +1,7 @@
 # Zeno handoff
 
-Last updated: 2026-11-03, by Claude (session 4: the Nov 2 round, live-tested on production, the tidy round, and the
-Nov 4 sprint on `nov4/integrate` with its review fixes on `nov4/fix`).
+Last updated: 2026-11-03, by Claude (session 4: the Nov 2 round, the tidy round and the Nov 4 sprint, all on `main`
+and live-tested on production).
 Read this first, then the Linear doc **"Zeno hackathon build plan (Nov 4)"** (project Zeno, team VI).
 
 ## 0. Session 4 (2026-11-02): the Nov 2 round
@@ -12,7 +12,7 @@ fit and checked on `nov2/integrate`. `nov2/fix` added music for deep work (decis
 fixes from three reviews. **All of it is on `main` and in production** (Nov 2, 9:25 PM PT: `401c81c`), with the fixes
 from the live test below.
 
-### Nov 4 sprint (on `nov4/integrate`, review fixes on `nov4/fix`; not yet on `main`)
+### Nov 4 sprint (on `main` and in production since Nov 3, 1:15 AM PT: `e0e7ac6`)
 From Vi's answers on the night of Nov 2 (product brief sections 2 and 8): "I don't want any alarm… It's annoying",
 check-ins "even quieter", and "I pause two seconds, just think about what to talk next, and then the voice just
 interrupts me… leave space where people think." Built on `nov4/focus` and `nov4/voice`, merged and fitted together here.
@@ -40,8 +40,16 @@ interrupts me… leave space where people think." Built on `nov4/focus` and `nov
 - **Verified**: typegen, tsc, eslint (src and scripts), build and every self-check (`turn.check.ts` drives the real voice
   hook through the waits, a two-second pause after a whole sentence with Meta's 0.9 s onset lag, done talking, errors
   mid-wait, the 2-minute cap and hands-free). The voice track probed Meta's realtime ASR live with synthetic speech:
-  finals are now punctuated, with semantic endpointing. The gallery states were rendered on a dev server (curl), **not
-  looked at**; nothing was tried in a browser or on a real mic.
+  finals are now punctuated, with semantic endpointing. The gallery states were looked at in Chrome at 1456x830 and
+  390px wide (fine; the goal line is cut with "…" on a phone so the due part stays whole).
+- **Live test on production** (Nov 3, 1:15-1:40 AM PT, demo account, sound muted, no mic): a typed "let's start the
+  first step now" opened Focus on "Pick one claim angle" (PHIL 134 Thesis Card #2) with the stopwatch counting up beside
+  "planned 5 min" and **Open in Canvas** (new tab, `noopener noreferrer`, the assignment's page); after 61 s hidden
+  (simulated `visibilitychange`) the line was "Back. 1 min on this."; at 5:00 the muted check-in "5 min in. Get it to a
+  stopping point, then Done." showed (no `pace` yet: fewer than 3 timed steps); Done stamped and offered "Nice. Next:
+  Draft one-sentence card, 10 min". Reload 1 asked the model for a new opening (the Done had changed the plan); reload 2
+  showed the saved opening with **no** `POST /api/day/opening`. **Voice was not tried** (night): Vi's real-mic test is
+  still to do (say a sentence, pause two seconds, go on; tap Talk mid-turn; answer a question hands-free).
 - **Known limits**: a reload during Focus lands on the home card, and Start restarts the step's clock (the server rule).
   A command ("Put it on my calendar.") goes about 3.3-3.8 s after the person stops unless they tap Talk; if Vi finds that
   slow, let `answerSoon` take whole sentences again (the trade: cut off after a pause). On Chrome's Web Speech (no
@@ -53,7 +61,7 @@ interrupts me… leave space where people think." Built on `nov4/focus` and `nov
   late until newer steps pull the median down. Apply it in one place: drop the step-length hint from the prompts
   (`src/lib/agent.ts`), or skip the pace while that pattern is saved.
 
-### Nov 2 evening: the tidy round (on `tidy/integrate` and `tidy/fix`, not yet on `main`)
+### Nov 2 evening: the tidy round (on `main` and in production: `7adcddb`)
 Vi connected the real SJSU Canvas on production: "It looks kind of messy… It doesn't have the context. I think it needs
 some sort of AI to organize it a little bit." Spec and details: the last section of `docs/PLAN-NOV2.md`.
 - **Canvas reads clean at the source**: course codes ("HIST 110", also after a term like "FA 2026" or "AU26"), titles
