@@ -242,7 +242,7 @@ Cards are nearly square-cornered (4px), like cut card stock. Buttons are full pi
 ### Index Card (signature)
 - **Corner Style:** 4px.
 - **Background:** Card Stock with Paper shadow, blue rules every line, a 2px red margin line at 64px, two or three Edge cards peeking below.
-- **Content:** Zeno's line in Display, the person's reply in Hand on the next rule, minutes in Mono at the right end of the first line. In Focus: the step, its goal line and the stopwatch with its planned minutes, each on its own rule; under the card, Zeno's quiet lines (the calm line, the one check-in, the welcome back) in Pencil Grey, shown and never said, never needing an answer.
+- **Content:** Zeno's line in Display, the person's reply in Hand on the next rule, minutes in Mono at the right end of the first line. In Focus: the step, its goal line and the stopwatch with its planned minutes, each on its own rule; under the card, Zeno's quiet lines (the calm line, the one check-in for its minute, the welcome back, a heads-up before an event) in Pencil Grey, shown and never said, never needing an answer, and never covering Zeno's answer to the person.
 - **Motion:** a new card rises 24px from 97% scale in 0.22s; Zeno's words appear word by word (blur 4px to sharp, 280ms apart); finished cards get the DONE stamp (scales from 1.8 in 0.2s) then fly to the pile in 0.3s.
 
 ### Inputs / Fields

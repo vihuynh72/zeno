@@ -115,9 +115,8 @@ assert.equal(checkinMinute(2), 3);
 assert.equal(checkinMinute(5, 0.75), 4);
 assert.equal(checkinMinute(3, 0.75), 3, "never under 3");
 for (const junk of [NaN, 0, -1, Infinity]) assert.equal(checkinMinute(15, junk), 15, String(junk));
-// The line under the card by state: calm before the moment, the check-in at it (and nothing more after), welcome back.
-assert.equal(FOCUS.calm(15), "Planned 15 min. I'll stay quiet.");
-assert.equal(FOCUS.calm(null), "I'll stay quiet.");
+// The line under the card by state: calm (the card shows the planned minutes), the check-in at its moment, welcome back.
+assert.equal(FOCUS.calm, "I'll stay quiet.");
 assert.equal(FOCUS.checkin(15), "15 min in. Finish the line you're on, then Done.");
 assert.equal(FOCUS.checkin(16), "16 min in. Wrap up this bit, then Done.");
 assert.equal(FOCUS.checkin(20), "20 min in. Get it to a stopping point, then Done.");
@@ -125,7 +124,7 @@ assert.equal(FOCUS.checkin(checkinMinute(15, 1.3)), FOCUS.checkin(20), "the same
 const startedAt = "2026-11-03T17:00:00.000Z";
 assert.equal(FOCUS.back(startedAt, Date.parse(startedAt) + 23.9 * 60_000), "Back. 23 min on this.");
 assert.equal(FOCUS.back(startedAt, Date.parse(startedAt) + 125 * 60_000), "Back. 125 min on this.");
-for (const line of [FOCUS.calm(15), FOCUS.checkin(15), FOCUS.back(startedAt, Date.parse(startedAt))]) assert.equal(asks(line), false, line);
+for (const line of [FOCUS.calm, FOCUS.checkin(15), FOCUS.back(startedAt, Date.parse(startedAt))]) assert.equal(asks(line), false, line);
 
 // A saved first card is shown again only while it still fits the day's plan.
 const pickStep: FirstPick = { goal: "Essay", due: null, stepId: "2", steps: [{ title: "Step 2", minutes: 5 }], why: "Next." };
@@ -137,19 +136,22 @@ assert.equal(pickFits(pickNew, goal(step("1", "todo"))), false, "a plan is open 
 assert.equal(pickFits(null, null), false);
 
 // A saved model opening shows again on load, with no model call, while under 20 minutes old and its day is unchanged:
-// the plan's id, each step's id and status, and the Canvas list's assignments and due times.
+// the plan's id, each step's id, status, title and minutes, and the Canvas list's assignments and due times.
 const plan = { ...goal(step("1", "done"), step("2", "todo")), due: "2026-11-06" };
 const list = [{ id: "c1", due: "2026-11-06T06:59:00Z" }, { id: "c2", due: null }];
 const sig = openingSig(plan, list);
 const at0 = Date.parse("2026-11-03T17:00:00Z");
 assert.equal(openingSig(structuredClone(plan), structuredClone(list)), sig, "the same day");
-assert.equal(openingSig({ ...plan, title: "Renamed", due: null }, list), sig, "only ids and statuses count");
+assert.equal(openingSig({ ...plan, title: "Renamed", due: null }, list), sig, "the goal's own title and due date don't count");
 for (const [changed, why] of [
   [openingSig(withStatus(plan, "2", "doing", new Date(at0)), list), "a Start"],
   [openingSig(withStatus(plan, "2", "done", new Date(at0)), list), "a Done"],
   [openingSig({ ...plan, id: "g2" }, list), "another plan"],
   [openingSig({ ...plan, steps: [...plan.steps, step("3", "todo")] }, list), "a step added"],
   [openingSig({ ...plan, steps: plan.steps.slice(0, 1) }, list), "a step removed"],
+  // "Make it smaller" in talk keeps the step's id (replaceRemainingSteps) but not its title or minutes.
+  [openingSig({ ...plan, steps: [plan.steps[0], { ...plan.steps[1], title: "Try three practice limits" }] }, list), "a step reworded"],
+  [openingSig({ ...plan, steps: [plan.steps[0], { ...plan.steps[1], minutes: 5 }] }, list), "a step made shorter"],
   [openingSig(null, list), "no plan"],
   [openingSig(plan, null), "Canvas disconnected"],
   [openingSig(plan, []), "nothing due on Canvas"],
@@ -159,20 +161,34 @@ for (const [changed, why] of [
   assert.notEqual(changed, sig, why);
 }
 const opening = { at: new Date(at0).toISOString(), sig };
-assert.equal(openingReusable(opening, sig, at0 + 19 * 60_000), true);
-assert.equal(openingReusable(opening, sig, at0 + 20 * 60_000), false, "20 minutes old");
-assert.equal(openingReusable(opening, openingSig(plan, null), at0), false, "the day changed");
-assert.equal(openingReusable(opening, sig, at0 - 60_000), false, "saved in the future: the clock moved");
-assert.equal(openingReusable({ sig }, sig, at0), false, "saved before it had a time");
-assert.equal(openingReusable({ at: opening.at }, sig, at0), false, "saved before it had a signature");
-assert.equal(openingReusable(null, sig, at0), false);
+assert.equal(openingReusable(opening, sig, at0 + 19 * 60_000, []), true);
+assert.equal(openingReusable(opening, sig, at0 + 20 * 60_000, []), false, "20 minutes old");
+assert.equal(openingReusable(opening, openingSig(plan, null), at0, []), false, "the day changed");
+// Submitted on Canvas since: this load's sync drops it from the list, so the opening that offered it is asked for again.
+assert.equal(openingReusable(opening, openingSig(plan, list.slice(1)), at0 + 15 * 60_000, []), false, "submitted since");
+assert.equal(openingReusable(opening, sig, at0 - 60_000, []), false, "saved in the future: the clock moved");
+assert.equal(openingReusable({ sig }, sig, at0, []), false, "saved before it had a time");
+assert.equal(openingReusable({ at: opening.at }, sig, at0, []), false, "saved before it had a signature");
+assert.equal(openingReusable(null, sig, at0, []), false);
+// Written at 9:00 (at0) and read at 9:18: an event that began or ended in between makes it stale; one still to come, one
+// already on before it was written, or an all-day one doesn't.
+const event = (start: number, end: number, allDay = false) => ({ title: "CS 146", start: new Date(at0 + start * 60_000).toISOString(), end: new Date(at0 + end * 60_000).toISOString(), allDay });
+assert.equal(openingReusable(opening, sig, at0 + 18 * 60_000, [event(15, 90)]), false, "the lecture began");
+assert.equal(openingReusable(opening, sig, at0 + 18 * 60_000, [event(-60, 10)]), false, "the lecture ended");
+assert.equal(openingReusable(opening, sig, at0 + 18 * 60_000, [event(30, 90), event(-30, 60), event(5, 6, true)]), true);
+assert.equal(openingReusable(opening, sig, at0 + 18 * 60_000, [event(18, 90)]), false, "beginning right now");
 
-// The Canvas item a plan is for: its title holds the item's, any case; an empty title never matches.
+// The Canvas item a plan is for: its title holds the item's as whole words, any case; an empty title never matches.
 const items = [{ title: " ", url: "a" }, { title: "Essay 2", url: "b" }, { title: "Quiz 4 (Ch. 4)", url: "c" }];
 assert.equal(canvasFor({ ...plan, title: "HIST 110: essay 2" }, items)?.url, "b");
 assert.equal(canvasFor({ ...plan, title: "Study for Quiz 4 (Ch. 4)" }, items)?.url, "c");
+assert.equal(canvasFor({ ...plan, title: "Quiz 4 (Ch. 4): the first five" }, items)?.url, "c");
 assert.equal(canvasFor({ ...plan, title: "Lab report" }, items), undefined);
+assert.equal(canvasFor({ ...plan, title: "Essay 20 outline" }, items), undefined, "not part of a longer number");
 assert.equal(canvasFor(null, items), undefined);
+// Never inside another word: "Lab" in "syllabus", "Exam" in "example".
+assert.equal(canvasFor({ ...plan, title: "Read the syllabus" }, [{ course: "BIO 101", title: "Lab", url: "lab" }]), undefined);
+assert.equal(canvasFor({ ...plan, title: "Work the example problems" }, [{ course: "CS 47", title: "Exam 2", url: "exam" }]), undefined);
 // A title kept as its bare kind ("Quiz") never takes a plan for another quiz; the plan's course decides between equals.
 const quizzes = [
   { course: "BIO 101", title: "Quiz", url: "bio" },
@@ -186,6 +202,9 @@ assert.equal(canvasFor({ ...plan, title: "BIO 101: Quiz" }, quizzes)?.url, "bio"
 assert.equal(canvasFor({ ...plan, title: "ENGL 1A: Reading response 7" }, quizzes)?.url, "engl");
 assert.equal(canvasFor({ ...plan, title: "Reading response 7" }, quizzes)?.url, "hist", "the sooner one when nothing else tells");
 assert.equal(quizzes[0].url, "bio", "the list keeps its order");
+// A bare "Quiz" links only a plan that names its course: never another course's quiz that isn't on Canvas.
+assert.equal(canvasFor({ ...plan, title: "CS 47: Quiz 3 prep" }, quizzes), undefined);
+assert.equal(canvasFor({ ...plan, title: "Quiz review" }, quizzes), undefined);
 
 // Connect Canvas re-plans the home card only when it found work still due; Disconnect (unlinked, []) always does, so the
 // card drops a Canvas pick; neither touches any other screen.

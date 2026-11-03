@@ -30,7 +30,7 @@ import type {
 import { canvasBriefs, canvasList, readCanvas, syncCanvas } from "@/lib/canvas-store";
 import { listenAuto, type ListenHandlers } from "@/lib/listen";
 import { audioContext } from "@/lib/speak";
-import { localDate } from "@/lib/tz";
+import { formatTime, localDate } from "@/lib/tz";
 import { useVoice } from "@/lib/use-voice";
 import { addToVault, readVault, removeFromVault, vaultRemoved, vaultTexts, type VaultFact } from "@/lib/vault";
 import {
@@ -256,6 +256,7 @@ export default function GuidedDay() {
   const bookedLine = useRef<string | null>(null); // the talk offer whose booking replaced Zeno's line
   const replied = useRef<string[]>([]); // the last talk turn's quick replies, which came with its booking offers
   const warned = useRef(new Set<string>()); // events already given a heads-up
+  const answered = useRef(""); // Zeno's answer to something said in Focus, which no quiet line covers
   const cardAt = useRef(0); // when the card last changed, so the second tap of a double tap can't answer the next one
   useEffect(() => {
     cardAt.current = performance.now();
@@ -298,11 +299,22 @@ export default function GuidedDay() {
     writeSaved(cache.current);
   }
 
-  // A model opening is saved with when it came and the plan and Canvas list it was written for, so a reload soon after
-  // shows it again without asking the model.
-  function keepOpening(text: string, options: string[], pick: FirstPick | null) {
-    const mine = account();
-    store({ opening: { text, options, pick, at: new Date().toISOString(), sig: openingSig(latest.current.goal, mine ? canvasList(mine) : null) } });
+  // The day an opening is asked for: the plan and this device's Canvas list (openingSig). Refs only, like account(), so
+  // effects can call it.
+  function daySig() {
+    const mine = cache.current?.day.account;
+    return openingSig(latest.current.goal, mine ? canvasList(mine) : null);
+  }
+
+  // A model opening is saved with when it came and the day it was asked for, so a reload soon after shows it again
+  // without asking the model.
+  function keepOpening(text: string, options: string[], pick: FirstPick | null, sig: string) {
+    store({ opening: { text, options, pick, at: new Date().toISOString(), sig } });
+  }
+
+  // After a talk turn or a Memory change the saved opening may be wrong: a reload still paints it, but asks again.
+  function expireOpening() {
+    if (cache.current?.opening) store({ opening: { ...cache.current.opening, at: undefined } });
   }
 
   // A Focus line that is only shown, muted, never said (Vi, Nov 3: check-ins "even quieter").
@@ -426,9 +438,9 @@ export default function GuidedDay() {
     return true;
   });
 
-  // Swaps the model's line and pick in (unless the person moved on or Zeno is mid-sentence) and says it once. A saved
-  // opening shown again (`reused`) stays saved as it was, with its first time.
-  const onOpening = useEffectEvent((res: OpeningResponse | { state: "error" }, allowed: boolean, reused = false) => {
+  // Swaps the model's line and pick in (unless the person moved on or Zeno is mid-sentence) and says it once. `sig` is
+  // the day it was asked for, saved with it; a saved opening shown again (null) stays saved as it was, with its first time.
+  const onOpening = useEffectEvent((res: OpeningResponse | { state: "error" }, allowed: boolean, sig: string | null) => {
     const ok = res.state === "ok" && typeof res.opening === "string" && res.opening.trim() !== "";
     // Without a new model line, a saved one (maybe hours old) is dropped, never said: today's rule line stands in.
     if (!ok) store({ opening: null });
@@ -437,7 +449,7 @@ export default function GuidedDay() {
     const text = ok ? res.opening.trim() : (cache.current?.day.opening ?? line);
     const next = quickReplies(ok ? res.options : cache.current?.day.options);
     const card = ok && pickFits(res.pick, latest.current.goal) ? res.pick : null;
-    if (ok && !reused) keepOpening(text, next, card);
+    if (ok && sig !== null) keepOpening(text, next, card, sig);
     setLine(text);
     setOptions(next);
     setPick(card);
@@ -470,15 +482,11 @@ export default function GuidedDay() {
       (!saved.day.isNew || saved.setupDone) &&
       !readCanvas(saved.day.account) &&
       vaultTexts(saved.day.account).length === 0 &&
-      !(recent?.sig && openingReusable(recent, recent.sig, Date.now()));
+      !(recent?.sig && openingReusable(recent, recent.sig, Date.now(), saved.day.events));
     const early = asksEarly ? fetchOpening(null) : null;
     void getJson<DayResponse>("/api/day").then(async (data) => {
       if (!live || !onDay(data) || data.state !== "ok") return;
       const mine = data.account;
-      // onDay kept this account's opening for this part of the day; read before Canvas syncs again below, as it was
-      // written after the last sync.
-      const kept = cache.current?.opening;
-      const fits = kept && openingReusable(kept, openingSig(data.goal, canvasList(mine)), Date.now()) ? kept : null;
       // Canvas linked here is read again first, so the opening knows its assignments, but never waited on past 4 s. A sync
       // that worked replaced the Canvas deadlines, so Today reads the day again (the opening is still asked for once).
       const canvas = readCanvas(mine) ? syncCanvas(mine) : null;
@@ -487,16 +495,21 @@ export default function GuidedDay() {
         const again = read?.state === "ok" ? await getJson<DayResponse>("/api/day") : null;
         if (live && again) dayAgain(again);
       });
-      if (fits) {
+      if (canvas) await Promise.race([canvas, wait(4000)]);
+      if (!live) return;
+      // The day as this sync left it. onDay kept this account's opening for this part of the day: it shows again if it
+      // was written for that day.
+      const sig = daySig();
+      const kept = cache.current?.opening;
+      if (kept && openingReusable(kept, sig, Date.now(), data.events)) {
         const ok = await allowed;
-        if (live) onOpening({ state: "ok", opening: fits.text, options: fits.options, pick: fits.pick }, ok, true);
+        if (live) onOpening({ state: "ok", opening: kept.text, options: kept.options, pick: kept.pick }, ok, null);
         return;
       }
       // The early opening stands only for this account, and only when it has no private facts or Canvas briefs to add.
       const reuse = early && saved?.day.account === mine && !canvas && vaultTexts(mine).length === 0 ? early : null;
-      const synced = canvas ? Promise.race([canvas, wait(4000)]) : Promise.resolve();
-      const [res, ok] = await Promise.all([reuse ?? synced.then(() => fetchOpening(mine)), allowed]);
-      if (live) onOpening(res, ok);
+      const [res, ok] = await Promise.all([reuse ?? fetchOpening(mine), allowed]);
+      if (live) onOpening(res, ok, sig);
     });
     return () => {
       live = false;
@@ -510,7 +523,7 @@ export default function GuidedDay() {
     let live = true;
     const opening = nextOpening.current ?? Promise.allSettled(saves.current).then(() => fetchOpening(account()));
     void Promise.all([opening, audioAllowed()]).then(([res, ok]) => {
-      if (live) onOpening(res, ok);
+      if (live) onOpening(res, ok, daySig());
     });
     return () => {
       live = false;
@@ -535,6 +548,7 @@ export default function GuidedDay() {
       remember([{ role: "assistant", content: before.line }]);
     }
     moved.current = true;
+    expireOpening();
     // Answering the opening is picking one thing, so the card moves on at once.
     if (before.screen === "ready" || before.screen === "wrap") setScreen("talk");
     if (fromChip) setTyping(false);
@@ -582,6 +596,7 @@ export default function GuidedDay() {
     const done = now.screen === "focus" && next === "checkin" ? openSteps(now.goal)[0] : undefined;
     // After a Done, said or tapped, Zeno says what is next.
     const said = next === "checkin" ? doneLine(res.goal) : res.reply;
+    if (now.screen === "focus" && next === "focus") answered.current = said;
     if (next === "checkin") setCelebrate(Boolean(res.progress));
     // A step's timer and its sources end with its focus, so a new step never opens on the last one's search.
     if (next !== "focus" || openSteps(res.goal)[0]?.id !== openSteps(now.goal)[0]?.id) {
@@ -638,14 +653,14 @@ export default function GuidedDay() {
   }
 
   // The stopwatch runs at the tap, with a calm line under the card and nothing said.
-  function enterFocus(minutes: number | null) {
+  function enterFocus() {
     setOptions([]);
     setOfferKeys([]);
     setDraft(null);
     setSources(null);
     setCelebrate(false);
     setScreen("focus");
-    quiet(FOCUS.calm(minutes));
+    quiet(FOCUS.calm);
   }
 
   // The card's Start: an existing step starts; a new plan is saved and started in one request.
@@ -658,7 +673,7 @@ export default function GuidedDay() {
     if (card.stepId) {
       const stepId = card.stepId;
       if (goal?.steps.some((step) => step.id === stepId)) changeGoal(withStatus(goal, stepId, "doing", new Date()));
-      enterFocus(minutes);
+      enterFocus();
       starting.current = patchStep(stepId, "doing").then((res) => {
         if (res.state === "ok") changeGoal(res.goal);
         else failStart(res, before, "ready");
@@ -667,7 +682,7 @@ export default function GuidedDay() {
       return;
     }
     changeGoal(draftGoal(card, new Date()));
-    enterFocus(minutes);
+    enterFocus();
     starting.current = savePick(card, before);
   }
 
@@ -696,10 +711,11 @@ export default function GuidedDay() {
     setLine(cache.current?.day.opening ?? line);
     setOptions(quickReplies(cache.current?.day.options));
     setPick(null);
+    const sig = daySig();
     const res = await fetchOpening(account());
     if (res.state !== "ok" || moved.current) return;
     const card = pickFits(res.pick, latest.current.goal) ? res.pick : null;
-    keepOpening(res.opening, quickReplies(res.options), card);
+    keepOpening(res.opening, quickReplies(res.options), card, sig);
     setLine(res.opening);
     setOptions(quickReplies(res.options));
     setPick(card);
@@ -737,7 +753,7 @@ export default function GuidedDay() {
     const back = screen ?? "ready";
     setTimer(null);
     if (goal) changeGoal(withStatus(goal, step.id, "doing", new Date()));
-    enterFocus(step.minutes);
+    enterFocus();
     const real = await realStep(step);
     if (!real) return failStart({ state: "error" }, before, back);
     const res = await patchStep(real.id, "doing");
@@ -817,18 +833,20 @@ export default function GuidedDay() {
     }
   }
 
-  // Hands-free: any tap that isn't an answer or Talk itself stops listening (and hands-free with it).
-  const stopVoice = voice.stop;
+  // Hands-free: any tap that isn't an answer or Talk itself is done talking, like Talk: words heard go at once; with none
+  // it stops listening (and hands-free with it).
+  const { stop: stopVoice, finish: finishVoice } = voice;
   useEffect(() => {
     if (voice.phase !== "listening") return;
     const onDown = (event: PointerEvent) => {
       if (event.target instanceof Element && event.target.closest("[data-answer], [data-talk]")) return;
+      if (finishVoice()) return;
       talking.current = false;
       stopVoice();
     };
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
-  }, [voice.phase, stopVoice]);
+  }, [voice.phase, stopVoice, finishVoice]);
 
   // ---------- Calendar ----------
   function offer(key: string, blocks: CalendarBlock[], label: string) {
@@ -906,18 +924,32 @@ export default function GuidedDay() {
   const focusStep = screen === "focus" ? openSteps(goal)[0] ?? null : null;
   const focusMinutes = timer ?? focusStep?.minutes ?? null;
   const moment = focusMinutes ? checkinMinute(focusMinutes, day?.pace) : null;
-  // A quiet line never covers a question and its answers, a draft, or the person talking.
+  // A quiet line never covers a question and its answers, a draft, the person talking, or Zeno's answer to them in Focus
+  // (the tip after Stuck? stays while they use it).
   const hush = useEffectEvent((text: string) => {
     if (latest.current.screen !== "focus" || options.length > 0 || draft || voice.phase === "listening" || voice.phase === "thinking") return;
+    if (line && line === answered.current) return;
     quiet(text);
+  });
+  // The check-in's minute is over: the calm line again, if the check-in is still what shows.
+  const unhush = useEffectEvent((text: string) => {
+    if (line === text && quietLine === text) quiet(FOCUS.calm);
   });
   useEffect(() => {
     if (!focusStep?.startedAt || !moment) return;
-    const delay = Date.parse(focusStep.startedAt) + moment * 60_000 - Date.now();
-    // One moment per step, shown once: after it the clock just keeps counting, however long the step runs.
-    if (!(delay > 0)) return;
-    const id = setTimeout(() => hush(FOCUS.checkin(moment)), delay);
-    return () => clearTimeout(id);
+    const at = Date.parse(focusStep.startedAt) + moment * 60_000;
+    // One moment per step, shown for its minute and never late (a laptop asleep through it); after it the clock just
+    // keeps counting, however long the step runs.
+    if (!(at > Date.now())) return;
+    const checkin = FOCUS.checkin(moment);
+    const show = setTimeout(() => {
+      if (Date.now() < at + 60_000) hush(checkin);
+    }, at - Date.now());
+    const hide = setTimeout(() => unhush(checkin), at + 60_000 - Date.now());
+    return () => {
+      clearTimeout(show);
+      clearTimeout(hide);
+    };
   }, [focusStep?.id, focusStep?.startedAt, moment]);
   // Page Visibility only (no permission, no idle detection): back after a minute or more away, the card says how long
   // this step has run.
@@ -936,14 +968,16 @@ export default function GuidedDay() {
     return () => document.removeEventListener("visibilitychange", onChange);
   }, [focusing]);
 
-  // A heads-up before an event is only spoken (Vi, Nov 2): once, never over the person talking, nothing when muted.
+  // A heads-up before an event is only spoken (Vi, Nov 2): once, never over the person talking, nothing when muted. In
+  // Focus nothing is said (Vi, Nov 3: "I don't want any alarm"), so there it is a quiet line, with the time, which stays true.
   const headsUp = useEffectEvent(() => {
     const keyOf = (event: { title: string; start: string }) => `${event.title}@${event.start}`;
     const soon = soonEvent((day?.events ?? []).filter((event) => !warned.current.has(keyOf(event))), Date.now());
     if (!soon) return;
     warned.current.add(keyOf(soon));
     const minutes = Math.max(1, Math.round((Date.parse(soon.start) - Date.now()) / 60_000));
-    if (voice.phase === "idle" || voice.phase === "speaking") speakLine(`Heads up, ${soon.title} in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`);
+    if (screen === "focus") hush(`Heads up, ${soon.title} at ${formatTime(soon.start, zone())}.`);
+    else if (voice.phase === "idle" || voice.phase === "speaking") speakLine(`Heads up, ${soon.title} in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`);
   });
   const watching = screen !== null && screen !== "signed-out" && screen !== "setup";
   useEffect(() => {
@@ -1019,6 +1053,7 @@ export default function GuidedDay() {
   }
 
   function forget(fact: Fact) {
+    expireOpening();
     if (!fact.device) return void forgetMemory(fact.id);
     const mine = account();
     if (!mine) return;
@@ -1039,6 +1074,7 @@ export default function GuidedDay() {
       setNote(SAVE_FAIL);
       return false;
     } else {
+      expireOpening();
       setNote(null);
       setMemories(res.memories);
       const mine = account();

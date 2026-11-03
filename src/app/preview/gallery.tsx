@@ -265,8 +265,8 @@ const STATES: Record<string, Fixture> = {
   thinking: { screen: "talk", line: "", you: "My history essay. It's due Friday.", phase: "thinking" },
   // Focus (Vi, Nov 3: "I don't want any alarm"): a stopwatch counts up beside the planned minutes, and Zeno's lines
   // under the card are muted and never said. Just started: the calm line.
-  focus: { screen: "focus", goal: focusing(roadmap("done", "doing", "todo", "todo"), 0.4), line: FOCUS.calm(10), quiet: true, chips: FOCUS_CHIPS },
-  // The step's one check-in moment (the planned minutes at the person's pace), once.
+  focus: { screen: "focus", goal: focusing(roadmap("done", "doing", "todo", "todo"), 0.4), line: FOCUS.calm, quiet: true, chips: FOCUS_CHIPS },
+  // The step's one check-in moment (the planned minutes at the person's pace), for that minute only.
   "focus-checkin": {
     screen: "focus",
     goal: focusing(roadmap("done", "doing", "todo", "todo"), 10),
@@ -276,20 +276,14 @@ const STATES: Record<string, Fixture> = {
   },
   // Back on the tab after a while away: how long this step has run.
   "focus-back": { screen: "focus", goal: focusing(roadmap("done", "doing", "todo", "todo"), 23), line: FOCUS.back(ago(23), Date.now()), quiet: true, chips: FOCUS_CHIPS },
-  // Far past the plan: the clock keeps counting and nothing new is said; the check-in stays as it was.
-  "focus-overtime": {
-    screen: "focus",
-    goal: focusing(roadmap("done", "doing", "todo", "todo"), 75),
-    line: FOCUS.checkin(checkinMinute(10)),
-    quiet: true,
-    chips: FOCUS_CHIPS,
-  },
-  "focus-two-line": { screen: "focus", goal: focusing(LONG_PLAN, 4), line: FOCUS.calm(10), quiet: true, chips: FOCUS_CHIPS },
+  // Far past the plan: the clock keeps counting and nothing new is said; the calm line is back after the check-in's minute.
+  "focus-overtime": { screen: "focus", goal: focusing(roadmap("done", "doing", "todo", "todo"), 75), line: FOCUS.calm, quiet: true, chips: FOCUS_CHIPS },
+  "focus-two-line": { screen: "focus", goal: focusing(LONG_PLAN, 4), line: FOCUS.calm, quiet: true, chips: FOCUS_CHIPS },
   // An email to write: Focus offers to draft it in Gmail.
   "focus-email": {
     screen: "focus",
     goal: focusing({ id: "sample-lab", title: PICK.goal, due: PICK.due, steps: [step("e1", PICK.steps[0].title, 5, "doing")] }, 1),
-    line: FOCUS.calm(5),
+    line: FOCUS.calm,
     quiet: true,
     chips: ["Done", "Stuck?", "Stop for now", "Draft it in Gmail"],
   },
@@ -297,13 +291,13 @@ const STATES: Record<string, Fixture> = {
   "focus-canvas": {
     screen: "focus",
     goal: focusing(CANVAS_PLAN, 2),
-    line: FOCUS.calm(5),
+    line: FOCUS.calm,
     quiet: true,
     chips: FOCUS_CHIPS,
     canvasUrl: "https://sample.instructure.com/courses/1/assignments/1",
   },
   // The Sources link opened the step's sources: one ruled card, a title and a why on a line each.
-  "focus-sources": { screen: "focus", goal: focusing(PREPPED, 3), line: FOCUS.calm(10), quiet: true, chips: FOCUS_CHIPS.slice(0, 3), sources: true },
+  "focus-sources": { screen: "focus", goal: focusing(PREPPED, 3), line: FOCUS.calm, quiet: true, chips: FOCUS_CHIPS.slice(0, 3), sources: true },
   // Stuck in focus: Zeno's question leads with its answers; Done stays one tap away.
   "focus-question": {
     screen: "focus",

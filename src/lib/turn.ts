@@ -15,13 +15,15 @@ const REPLIES = new Set([
   "cancel", "never mind", "that's it", "that's all", "help", "help me", "i'm stuck",
 ]);
 
-// Whether Zeno should answer soon: a whole short reply, or a question that doesn't trail off. Anything else may go on
-// after a pause to think, even a whole sentence (Vi, Nov 3: "I pause two seconds, just think about what to talk next"),
-// so Zeno leaves room.
+// Whether Zeno should answer soon: a whole short reply, a question, or an answer of three words or fewer that Meta ended
+// as a sentence ("One point.", "Set up tomorrow.", like the chips), none trailing off. Anything longer may go on after a
+// pause to think, even a whole sentence (Vi, Nov 3: "I pause two seconds, just think about what to talk next"), so Zeno
+// leaves room.
 export function answerSoon(text: string): boolean {
   const said = text.trim();
   const words = (said.toLowerCase().replace(/’/g, "'").match(/[a-z0-9']+/g) ?? []).join(" ");
   if (!words || /([,;:\-–—]|\.\.\.|…)$/.test(said)) return false;
   if (REPLIES.has(words)) return true;
-  return said.endsWith("?") && !HANGING.some((ending) => words === ending || words.endsWith(` ${ending}`));
+  if (HANGING.some((ending) => words === ending || words.endsWith(` ${ending}`))) return false;
+  return said.endsWith("?") || (/[.!]$/.test(said) && words.split(" ").length <= 3);
 }

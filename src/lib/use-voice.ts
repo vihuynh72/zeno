@@ -12,10 +12,12 @@ type UserTurn = (text: string, how: "voice" | "typed") => Promise<string | null>
 type ListenAfter = (said: string) => boolean;
 
 const LISTEN_LIMIT_MS = 30_000;
-// How long a pause after the last words ends the turn: short after a question or a short reply, long after anything else,
-// which may go on after a pause to think.
+// However words keep coming (a TV in the room), a turn goes this long after the listen began.
+const TURN_LIMIT_MS = 120_000;
+// How long a pause after the last words ends the turn: short after a question or a short answer, long after anything
+// else, which may go on after a pause to think. Meta reports new speech up to 0.9 s late, so a 2 s pause needs 3 s.
 const SOON_WAIT_MS = 700;
-const THINK_WAIT_MS = 2_200;
+const THINK_WAIT_MS = 3_000;
 const subscribeNever = () => () => {};
 
 // Sound on or off is remembered per browser, so muting at night outlasts a reload; blocked storage means sound on.
@@ -68,6 +70,7 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
     const quiet = () => quietSet ?? soundOff();
     let session: Awaited<ReturnType<Listen>> | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined; // the listen limit
+    let cap: ReturnType<typeof setTimeout> | undefined; // the turn limit
     let wait: ReturnType<typeof setTimeout> | undefined; // the pause after the last words that ends the turn
     let heard = ""; // the turn's final words so far, across the pauses in it
     let live = ""; // words still being said
@@ -79,10 +82,15 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
       setPartial("");
     }
 
+    function clearTimers() {
+      clearTimeout(timer);
+      clearTimeout(cap);
+      clearTimeout(wait);
+    }
+
     function halt() {
       gen++;
-      clearTimeout(timer);
-      clearTimeout(wait);
+      clearTimers();
       heard = live = "";
       session?.stop();
       session = null;
@@ -102,8 +110,7 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
     // Everything heard goes as one turn, then the session pauses as between any two turns.
     function send() {
       const text = said();
-      clearTimeout(timer);
-      clearTimeout(wait);
+      clearTimers();
       heard = live = "";
       if (!text) return silent();
       session?.pause();
@@ -120,6 +127,7 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
       go("listening");
       setError(null);
       timer = setTimeout(send, LISTEN_LIMIT_MS);
+      cap = setTimeout(send, TURN_LIMIT_MS);
       // Between turns the session is only paused, so an adapter can keep its connection open.
       if (session) return session.resume();
       const listening = () => mine === gen && current === "listening";
@@ -151,9 +159,16 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
         },
         onError(reason) {
           if (!listening()) return;
-          if (reason === "no-speech") return silent();
-          stop();
-          setError(reason);
+          if (said()) {
+            // The adapter already let go of the mic (the tab was hidden, the relay closed), but what was heard still goes.
+            session = null;
+            send();
+          } else if (reason === "no-speech") {
+            return silent();
+          } else {
+            stop();
+          }
+          if (reason !== "no-speech") setError(reason);
         },
       };
       try {

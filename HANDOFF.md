@@ -1,7 +1,7 @@
 # Zeno handoff
 
 Last updated: 2026-11-03, by Claude (session 4: the Nov 2 round, live-tested on production, the tidy round, and the
-Nov 4 sprint on `nov4/integrate`).
+Nov 4 sprint on `nov4/integrate` with its review fixes on `nov4/fix`).
 Read this first, then the Linear doc **"Zeno hackathon build plan (Nov 4)"** (project Zeno, team VI).
 
 ## 0. Session 4 (2026-11-02): the Nov 2 round
@@ -12,33 +12,46 @@ fit and checked on `nov2/integrate`. `nov2/fix` added music for deep work (decis
 fixes from three reviews. **All of it is on `main` and in production** (Nov 2, 9:25 PM PT: `401c81c`), with the fixes
 from the live test below.
 
-### Nov 4 sprint (on `nov4/integrate`, not yet on `main`)
+### Nov 4 sprint (on `nov4/integrate`, review fixes on `nov4/fix`; not yet on `main`)
 From Vi's answers on the night of Nov 2 (product brief sections 2 and 8): "I don't want any alarm… It's annoying",
 check-ins "even quieter", and "I pause two seconds, just think about what to talk next, and then the voice just
 interrupts me… leave space where people think." Built on `nov4/focus` and `nov4/voice`, merged and fitted together here.
 - **Focus is a quiet stopwatch**: it counts up from the step's start ("75:03" past an hour) with "planned 15 min" muted
-  beside it; no alarm, chime or spoken line, ever. Zeno's lines under the card are muted and never said: "Planned 15 min.
-  I'll stay quiet." at the start, one check-in at the planned minutes times the person's pace ("15 min in. Finish the
-  line you're on, then Done."), then nothing more however long it runs; back on the tab after a minute away (Page
-  Visibility only), "Back. 23 min on this." None covers a question with answers, a draft, or the person talking.
+  beside it; no alarm, chime or spoken line, ever. Zeno's lines under the card are muted and never said: "I'll stay
+  quiet." at the start, one check-in at the planned minutes times the person's pace ("15 min in. Finish the line you're
+  on, then Done.") for that minute only (never late after a laptop slept), then the calm line again however long it
+  runs; back on the tab after a minute away (Page Visibility only), "Back. 23 min on this."; a heads-up before an event
+  is a quiet line too ("Heads up, CS 146 at 2:00 PM."), never spoken in Focus. None covers a question with answers, a
+  draft, the person talking, or Zeno's answer to something said in Focus (the tip after Stuck? stays).
 - **Pace is learned from use**: `GET /api/day` returns `pace`, the median real/planned minutes of the last 20 finished,
   timed steps (last 30 days), within 0.75-2; missing below 3 such steps (then 1).
-- **Open in Canvas** joins Focus's links when the plan is a Canvas assignment (the most specific title wins, the course
-  breaks ties). **Cheaper opening**: one under 20 minutes old, for the same plan steps and Canvas list, shows again on
-  reload with no model call.
-- **Voice leaves room to think**: a final no longer ends the turn. Zeno waits 0.7 s after a question or a short reply
-  ("yes", "done", "what's next") and 2.2 s after anything else, a whole sentence too (`answerSoon`, `src/lib/turn.ts`);
-  more words join the turn. Tapping Talk while words are heard sends them at once; with nothing heard it stops.
+- **Open in Canvas** joins Focus's links when the plan is a Canvas assignment (the title as whole words, the most
+  specific title wins, the course breaks ties; a one-word title such as a bare "Quiz" needs its course in the plan).
+  **Cheaper opening**: one under 20 minutes old shows again on reload with no model call when the plan (step ids,
+  statuses, titles, minutes) and the Canvas list (as this load's sync left it, within 4 s) are the same, no event began
+  or ended since, and no talk turn or Memory change happened since.
+- **Voice leaves room to think**: a final no longer ends the turn. Zeno waits 0.7 s after a question, a short reply
+  ("yes", "done", "what's next") or an answer of three words or fewer that Meta ended as a sentence ("One point.",
+  "Set up tomorrow."), and 3 s after anything else, a whole sentence too (`answerSoon`, `src/lib/turn.ts`): Meta reports
+  new speech up to 0.9 s late, so a two-second pause needs 3 s. More words join the turn. Tapping Talk, or anywhere else,
+  while words are heard sends them at once; with nothing heard it stops. A hidden tab or a dropped relay during the wait
+  still sends what was heard, and a turn goes at most 2 minutes after the listen began (a TV in the room).
 - Gallery: `/preview?state=` `focus`, `focus-checkin`, `focus-back`, `focus-overtime`, `focus-two-line`, `focus-canvas`.
 - **Verified**: typegen, tsc, eslint (src and scripts), build and every self-check (`turn.check.ts` drives the real voice
-  hook through the waits, a two-second pause after a whole sentence, done talking and hands-free). The voice track probed
-  Meta's realtime ASR live with synthetic speech: finals are now punctuated, with semantic endpointing. The gallery
-  states were rendered on a dev server (curl), **not looked at**; nothing was tried in a browser or on a real mic.
+  hook through the waits, a two-second pause after a whole sentence with Meta's 0.9 s onset lag, done talking, errors
+  mid-wait, the 2-minute cap and hands-free). The voice track probed Meta's realtime ASR live with synthetic speech:
+  finals are now punctuated, with semantic endpointing. The gallery states were rendered on a dev server (curl), **not
+  looked at**; nothing was tried in a browser or on a real mic.
 - **Known limits**: a reload during Focus lands on the home card, and Start restarts the step's clock (the server rule).
-  A command ("Put it on my calendar.") goes about 2.5-3 s after the person stops unless they tap Talk; if Vi finds that
+  A command ("Put it on my calendar.") goes about 3.3-3.8 s after the person stops unless they tap Talk; if Vi finds that
   slow, let `answerSoon` take whole sentences again (the trade: cut off after a pause). On Chrome's Web Speech (no
-  punctuation) only short replies go soon. Meta can take 1.2-2.6 s to end a bare "Yes.". The check-in line stays up after
-  its moment. On a phone the DONE stamp briefly covers "planned N min". A reused opening is said again on reload.
+  punctuation) only short replies go soon. Meta can take 1.2-2.6 s to end a bare "Yes.". On a phone the DONE stamp
+  briefly covers "planned N min". A reused opening is said again on reload.
+- **Vi's calls**: (1) heads-ups in Focus are shown quietly; skipping them there instead is one line in `headsUp`. (2) The
+  pace can count twice: once 4+ steps took about 2x, the "Steps take you about 2x as long as you plan." pattern lets Muse
+  lengthen the first step, and `pace` (from the older, shorter steps) still doubles the check-in moment, so it lands
+  late until newer steps pull the median down. Apply it in one place: drop the step-length hint from the prompts
+  (`src/lib/agent.ts`), or skip the pace while that pattern is saved.
 
 ### Nov 2 evening: the tidy round (on `tidy/integrate` and `tidy/fix`, not yet on `main`)
 Vi connected the real SJSU Canvas on production: "It looks kind of messy… It doesn't have the context. I think it needs

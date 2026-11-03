@@ -36,11 +36,22 @@ const soon = [
   "all done",
   "next one",
   "  yes  ",
+  // A short answer Meta ended as a sentence, like the chips Zeno offers.
+  "Tomorrow.",
+  "Let it go.",
+  "Something else.",
+  "Set up tomorrow.",
+  "Yes, start it.",
+  "Yup.",
+  "One point.",
+  "Find an example.",
+  "Not yet!",
 ];
 const later = [
   // A whole sentence: Vi pauses after one "to think about what to talk next".
   "Put the lab report on my calendar.",
   "I have an essay due Friday.",
+  "I have an essay.",
   "I finished the outline!",
   "I want to work on the um the essay for history.",
   "Email Prof Patel about the group project.",
@@ -129,7 +140,7 @@ const spoken: string[] = [];
 Object.assign(globalThis, { spoken });
 Object.defineProperty(navigator, "mediaDevices", { value: {} }); // hands-free needs a mic to hand back
 
-// A clock that moves only when told, so the 700 ms and 2,200 ms waits are exact.
+// A clock that moves only when told, so the 700 ms and 3,000 ms waits are exact.
 let now = 0;
 let lastId = 0;
 const timers = new Map<number, { at: number; run: () => void }>();
@@ -195,22 +206,22 @@ assert.deepEqual(calls, ["open", "pause", "stop"]);
 assert.deepEqual(spoken, ["Got it."]);
 assert.equal(phase(), "idle");
 
-// Words that trail off get 2,200 ms.
+// Words that trail off get 3,000 ms.
 await talk();
 h.onFinal("I want to work on the");
-await after(2_199);
+await after(2_999);
 assert.equal(turns.length, 1);
 await after(1);
 assert.equal(turns.at(-1), "I want to work on the");
 
 // So does a whole sentence (Vi: "I pause two seconds, just think about what to talk next"): two seconds of thought,
-// then the next sentence joins the turn.
+// then the next sentence joins the turn, even when Meta ends the sentence at once and reports the new speech 0.9 s late.
 await talk();
 h.onFinal("I have an essay due Friday.");
-await after(2_000);
+await after(2_900);
 h.onSpeechStart?.();
 h.onFinal("And a lab report.");
-await after(2_199);
+await after(2_999);
 assert.equal(turns.length, 2);
 await after(1);
 assert.equal(turns.at(-1), "I have an essay due Friday. And a lab report.");
@@ -235,7 +246,7 @@ h.onSpeechStart?.();
 await after(5_000);
 assert.equal(turns.length, 4);
 h.onSpeechEnd?.();
-await after(2_200);
+await after(3_000);
 assert.equal(turns.at(-1), "Put it on my calendar.");
 
 // Done talking: Talk sends what was heard at once, live words too; with nothing heard the caller stops instead.
@@ -269,11 +280,11 @@ assert.equal(calls.at(-1), "resume");
 assert.equal(phase(), "listening");
 reply = "Got it.";
 h.onFinal("Okay,");
-await after(2_199);
+await after(2_999);
 assert.equal(turns.length, 8);
 h.onSpeechStart?.();
 h.onFinal("let's do it.");
-await after(2_200);
+await after(3_000);
 assert.equal(turns.at(-1), "Okay, let's do it.");
 
 // The listen limit: nothing said in 30 s is silence; words still being said by then go as they are.
@@ -309,19 +320,51 @@ await talk();
 h.onFinal("put the essay on my calendar");
 h.onSpeechStart?.();
 h.onFinal("");
-await after(2_199);
+await after(2_999);
 assert.equal(turns.length, 11);
 await after(1);
 assert.equal(turns.at(-1), "put the essay on my calendar");
 
-// Errors still end the listen and drop the words.
+// An error ends the listen, but words already heard still go: hidden mid-wait (switched to Google Calendar to watch the
+// event appear), the adapter has let go of the mic, so hands-free opens a new session after Zeno's question.
+reply = "Want me to book 3 PM?";
 await talk();
+h.onFinal("Put the lab report on my calendar.");
+h.onError?.("no-speech");
+await after(0);
+assert.equal(turns.at(-1), "Put the lab report on my calendar.");
+assert.equal(states[3], null);
+assert.equal(phase(), "listening");
+assert.equal(calls.at(-1), "open");
+reply = "Got it.";
 h.onFinal("Put it on");
 h.onError?.("network");
+await after(0);
+assert.equal(turns.at(-1), "Put it on");
+assert.equal(states[3], "network");
+// With nothing heard, an error just ends the listen.
+const sent = turns.length;
+await talk();
+h.onError?.("network");
 await after(5_000);
-assert.equal(turns.length, 12);
+assert.equal(turns.length, sent);
 assert.equal(states[3], "network");
 assert.equal(phase(), "idle");
+
+// However words keep coming (a TV in the room), the turn goes 2 minutes after the listen began.
+await talk();
+for (let i = 0; i < 59; i++) {
+  h.onFinal("And now the weather for the weekend.");
+  h.onSpeechStart?.();
+  await after(2_000);
+}
+h.onFinal("And now the weather for the weekend.");
+h.onSpeechStart?.();
+await after(1_999);
+assert.equal(turns.length, sent);
+await after(1);
+assert.equal(turns.length, sent + 1);
+assert.equal(turns.at(-1)?.split("weekend.").length, 61);
 
 // ---- listenWeb: after words a new recognition listens on, so a pause doesn't end the turn; pause stops it.
 class Recognition {

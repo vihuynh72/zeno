@@ -114,26 +114,37 @@ export function stepCard(goal: Goal | null): FirstPick | null {
   return goal && step ? { goal: goal.title, due: goal.due ?? null, stepId: step.id, steps: [{ title: step.title, minutes: step.minutes ?? 5 }], why: "" } : null;
 }
 
-// What a saved model opening was written for: the plan (its id, each step's id and status) and the device's Canvas list
-// (each assignment's id and due time). Any change to them asks the model again.
+// What a saved model opening was written for: the plan (its id, each step's id, status, title and minutes) and the
+// device's Canvas list (each assignment's id and due time). Any change to them asks the model again.
 export const openingSig = (goal: Goal | null, canvas: Pick<CanvasAssignment, "id" | "due">[] | null) =>
-  JSON.stringify([goal?.id ?? null, goal?.steps.map((step) => [step.id, step.status]) ?? [], canvas?.map((item) => [item.id, item.due]) ?? null]);
+  JSON.stringify([
+    goal?.id ?? null,
+    goal?.steps.map((step) => [step.id, step.status, step.title, step.minutes]) ?? [],
+    canvas?.map((item) => [item.id, item.due]) ?? null,
+  ]);
 
 // A saved opening under 20 minutes old whose day still matches shows again on page load, with no model call (Vi wants
-// Zeno cheaper to run). One saved before it had a time and a signature is asked for again.
-export function openingReusable(opening: { at?: string; sig?: string } | null | undefined, sig: string, now: number) {
-  const age = now - Date.parse(opening?.at ?? "");
-  return age >= 0 && age < 20 * 60_000 && opening?.sig === sig;
+// Zeno cheaper to run), unless an event began or ended since ("Before CS 146 at 2…" is wrong at 2:03). One saved before
+// it had a time and a signature is asked for again.
+export function openingReusable(opening: { at?: string; sig?: string } | null | undefined, sig: string, now: number, events: DayEvent[]) {
+  const at = Date.parse(opening?.at ?? "");
+  const passed = (time: string) => Date.parse(time) > at && Date.parse(time) <= now;
+  const changed = events.some((event) => !event.allDay && (passed(event.start) || passed(event.end)));
+  return now - at >= 0 && now - at < 20 * 60_000 && opening?.sig === sig && !changed;
 }
 
-// The Canvas item a plan is for: the plan's title holds the item's, any case ("Essay 2", or "HIST 110: Essay 2" as its
-// deadline names it). One whose course the plan names too comes first, then the longest title, so a bare "Quiz" (a title
-// that held a code) never takes another course's "Quiz 7".
+const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// The Canvas item a plan is for: the plan's title holds the item's as whole words, any case ("Essay 2", or "HIST 110:
+// Essay 2" as its deadline names it), so "Exam" never takes "Work the example problems". A one-word title (a bare "Quiz",
+// kept for a title that held a code) needs its course in the plan too. One whose course the plan names comes first,
+// then the longest title, so a bare "Quiz" never takes another course's "Quiz 7".
 export function canvasFor<T extends { title: string; course?: string }>(plan: Goal | null, items: T[]): T | undefined {
   const title = plan?.title.toLowerCase() ?? "";
-  const holds = (text = "") => text.trim() !== "" && title.includes(text.trim().toLowerCase());
+  const holds = (text = "") =>
+    text.trim() !== "" && new RegExp(`(?<![\\p{L}\\p{N}])${escaped(text.trim().toLowerCase())}(?![\\p{L}\\p{N}])`, "u").test(title);
   return items
-    .filter((item) => holds(item.title))
+    .filter((item) => holds(item.title) && (/\s/.test(item.title.trim()) || holds(item.course)))
     .sort((a, b) => Number(holds(b.course)) - Number(holds(a.course)) || b.title.trim().length - a.title.trim().length)[0];
 }
 
@@ -251,10 +262,11 @@ export const checkinMinute = (planned: number, pace?: number) =>
 
 const WRAP_UPS = ["Finish the line you're on, then Done.", "Wrap up this bit, then Done.", "Get it to a stopping point, then Done."];
 
-// The lines under the Focus card, shown and never said: calm until the check-in, the check-in (then nothing more,
-// however long the step runs), and the welcome back after the page was hidden a minute or more.
+// The lines under the Focus card, shown and never said: calm (the planned minutes are on the card already), the
+// check-in for its minute (then calm again, however long the step runs), and the welcome back after the page was hidden
+// a minute or more.
 export const FOCUS = {
-  calm: (planned: number | null) => (planned ? `Planned ${planned} min. I'll stay quiet.` : "I'll stay quiet."),
+  calm: "I'll stay quiet.",
   checkin: (minute: number) => `${minute} min in. ${WRAP_UPS[minute % WRAP_UPS.length]}`,
   back: (startedAt: string, now: number) => `Back. ${Math.max(0, Math.floor((now - Date.parse(startedAt)) / 60_000))} min on this.`,
 };
