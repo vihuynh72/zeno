@@ -3,13 +3,14 @@
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { signIn, signOut } from "next-auth/react";
 import type {
+  ActivateRequest,
   BookResponse,
   CalendarBlock,
   CanvasAssignment,
-  CanvasBrief,
+  DayEmail,
   DayResponse,
+  Deadline,
   EmailDraft,
-  FirstPick,
   FreeResponse,
   Goal,
   GoalResponse,
@@ -17,6 +18,7 @@ import type {
   Memory,
   MemoryResponse,
   OpeningResponse,
+  PlanRequest,
   PrivateFact,
   ProfileResponse,
   Progress,
@@ -34,43 +36,53 @@ import { formatTime, localDate } from "@/lib/tz";
 import { useVoice } from "@/lib/use-voice";
 import { addToVault, readVault, removeFromVault, vaultRemoved, vaultTexts, type VaultFact } from "@/lib/vault";
 import {
+  addedStep,
   addHeard,
   asks,
   canvasFor,
   checkinMinute,
+  choiceCard,
   dayPart,
   doneLine,
-  draftGoal,
   FOCUS,
   foundLine,
   greeting,
-  isDraft,
+  homeChoices,
   isEmailStep,
   isNotes,
   isTomorrow,
   laterBlock,
   laterMinutes,
+  mailPlan,
+  nextProposal,
   nextScreen,
   openingReusable,
   openingSig,
+  openPlans,
   openSteps,
-  pickFits,
+  proposedStep,
   quickReplies,
   replanOnCanvas,
+  runningStep,
+  sameTitle,
   slotLabel,
   soonEvent,
-  stepCard,
+  spoken,
+  stoppedLine,
+  todayLine,
+  untilNext,
   withStatus,
   type Fact,
   type Screen,
 } from "@/components/day-flow";
 import type { Booking } from "@/components/booking-chip";
-import DayView, { type Sheet } from "@/components/day-view";
+import DayView, { useToday, type Sheet, type View } from "@/components/day-view";
 import { httpsOnly } from "@/components/desk-rows";
 
 const SIGNED_OUT_LINE = "Zeno helps you start the thing you keep putting off.";
 const THINK_FAIL = "I couldn't think that through just now. Try again?";
 const SAVE_FAIL = "I couldn't save that just now. Try again?";
+const OPEN_FAIL = "Couldn't open that. Try again.";
 const WRAP_LINE = "Saved. I'll bring it back next time.";
 const READING_LINE = "Reading your calendar and email…";
 const PASTE_LINE = "Paste a syllabus, a to-do list or notes. I'll pull out what matters.";
@@ -81,30 +93,37 @@ const VOICE_NOTE = {
 };
 
 type Day = Extract<DayResponse, { state: "ok" }>;
-// at and sig: when the model wrote it and the day it was written for (openingSig); missing on openings saved before
-// Nov 3, which are asked for again.
-type Opening = { text: string; options: string[]; pick: FirstPick | null; at?: string; sig?: string };
+// at and sig: when the model wrote it and the day it was written for (openingSig).
+type Opening = { text: string; options: string[]; at?: string; sig?: string };
 // What the last visit left in this browser, kept current after every action; the model's opening is for `part` only.
-// It paints before /api/day says whose browser this is, its chips wait for that answer, and its opening and setup
-// state carry over only when day.account matches.
+// It paints before /api/day says whose browser this is, its answers wait for that answer, and its opening and setup
+// state carry over only when day.account matches. Version 4 (Nov 3): the home greets by itself, so an opening saved
+// before, which began with its own greeting, never paints there.
 // shortcut: first paint trusts it, so a day written as the account switched (an /api/day already in flight, or a switch
 // outside this page's Sign in / Sign out) shows until /api/day answers; check a readable cookie set at sign-in to close that.
-type Saved = { v: 3; part: string; day: Day; opening: Opening | null; setupDone: boolean };
+type Saved = { v: 4; part: string; day: Day; opening: Opening | null; setupDone: boolean };
 // One answer on the screen: the first is its big button, the rest links under it.
 type Answer = { label: string; run(): void };
+// A goal's desk while its plan is made (a deadline's steps, an email's reply): its title, due date and the card's line.
+type Planning = { title: string; due: string | null; line: string };
 
 const SAVED_KEY = "zeno:day";
 const scannedKey = (account: string) => `zeno:scanned:${account}`;
 const heardKey = (account: string) => `zeno:heard:${account}`;
-// The day as this browser keeps it: no email snippets (nothing on screen shows them), and no Gmail link, which holds the
-// address that the opaque account key keeps out of storage. Both come back with each /api/day.
+// Which plan answers which email, { [goalId]: emailId }: ids only, never the email's words (Vi, Nov 3).
+const mailKey = (account: string) => `zeno:mailgoal:${account}`;
+// The day as this browser keeps it: no email snippets, and no Gmail link, which holds the address that the opaque account
+// key keeps out of storage. Both come back with each /api/day.
 const toKeep = (day: Day): Day => ({ ...day, emails: [], mailUrl: undefined });
 const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+// The plans with `goal` as it is now: in its place, or first when it is new.
+const upsert = (goals: Goal[], goal: Goal) => (goals.some((one) => one.id === goal.id) ? goals.map((one) => (one.id === goal.id ? goal : one)) : [goal, ...goals]);
+const smallerText = (step: Step) => `Make "${step.title}" smaller: a first piece of 2 to 5 minutes.`;
 
 function readSaved(): Saved | null {
   try {
     const saved = JSON.parse(localStorage.getItem(SAVED_KEY) ?? "null") as Saved | null;
-    return saved?.v === 3 && saved.day?.state === "ok" && typeof saved.day.opening === "string" ? saved : null;
+    return saved?.v === 4 && saved.day?.state === "ok" && typeof saved.day.opening === "string" ? saved : null;
   } catch {
     return null;
   }
@@ -145,11 +164,21 @@ function readHeard(account: string): string[] {
   }
 }
 
-// Read once per page load, so the first paint and every later render agree.
-let boot: { part: string; hour: number; saved: Saved | null } | undefined;
-const readBoot = () => (boot ??= { part: dayPart(new Date()), hour: new Date().getHours(), saved: readSaved() });
+function readMailGoals(account: string): Record<string, string> {
+  try {
+    const map: unknown = JSON.parse(readLocal(mailKey(account)) ?? "{}");
+    if (!map || typeof map !== "object" || Array.isArray(map)) return {};
+    return Object.fromEntries(Object.entries(map).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+  } catch {
+    return {};
+  }
+}
 
-// Network errors and non-JSON replies (a platform 504 page) come back as { state: "error" }.
+// Read once per page load, so the first paint and every later render agree.
+let boot: { part: string; hour: number; saved: Saved | null; at: number } | undefined;
+const readBoot = () => (boot ??= { part: dayPart(new Date()), hour: new Date().getHours(), saved: readSaved(), at: Date.now() });
+
+// Network errors and non-JSON replies (a platform 504 page, a route not deployed yet) come back as { state: "error" }.
 async function getJson<T>(url: string, init?: RequestInit): Promise<T | { state: "error" }> {
   try {
     return (await (await fetch(url, init)).json()) as T;
@@ -207,8 +236,6 @@ const offerLabel = (block: CalendarBlock) =>
     : `Add “${block.title}” on ${new Date(`${block.date}T12:00:00Z`).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric" })}?`;
 // Only a Gmail compose window opens from Open in Gmail.
 const gmailDraft = (draft: EmailDraft | null | undefined) => (typeof draft?.url === "string" && draft.url.startsWith("https://mail.google.com/") ? draft : null);
-// "15 min" on the screen is said as "15 minutes".
-const spoken = (line: string) => line.replace(/(\d) min$/, "$1 minutes");
 
 export default function GuidedDay() {
   // null on the server and while hydrating; then this browser's saved day, if any.
@@ -217,26 +244,35 @@ export default function GuidedDay() {
   const [savedDropped, setSavedDropped] = useState(false);
   const saved = savedDropped ? null : booted?.saved ?? null;
   const same = saved && saved.part === booted?.part ? saved : null;
-  // /api/day answered: until then a saved card paints, but its chips (maybe stale) wait.
+  // /api/day answered: until then a saved day paints, but its answers (maybe stale) wait.
   const [fresh, setFresh] = useState(false);
+  // A step still running in the saved day paints in Focus on its desk at once; /api/day says whether it still runs.
+  const resumed = Boolean(saved && booted && (!saved.day.isNew || saved.setupDone) && runningStep(saved.day.goal, booted.at));
 
   // Each piece below starts from the saved day until something newer sets it.
   const [screenSet, setScreen] = useState<Screen | null>(null);
+  const [viewSet, setView] = useState<View | null>(null);
   const [lineSet, setLine] = useState<string | null>(null);
   const [optionsSet, setOptions] = useState<string[] | null>(null);
   const [daySet, setDay] = useState<Day | null>(null);
   const [goalSet, setGoal] = useState<Goal | null | undefined>(undefined);
-  const [pickSet, setPick] = useState<FirstPick | null | undefined>(undefined);
+  const [goalsSet, setGoals] = useState<Goal[] | null>(null);
   const [progressSet, setProgress] = useState<Progress | null>(null);
   // Setup waits for /api/day to say the person is still new, so a tap on a saved setup card is never undone.
-  const screen = screenSet ?? (saved && (!saved.day.isNew || saved.setupDone) ? "ready" : null);
-  const line =
-    lineSet ?? (same ? same.opening?.text ?? same.day.opening : booted ? greeting(booted.hour, saved?.day.firstName ?? null) : "");
+  const screen = screenSet ?? (saved && (!saved.day.isNew || saved.setupDone) ? (resumed ? "focus" : "ready") : null);
+  const view = viewSet ?? (resumed ? "desk" : "home");
+  const line = lineSet ?? (screen === "focus" ? FOCUS.calm : same ? same.opening?.text ?? same.day.opening : "");
   const options = optionsSet ?? (same ? quickReplies(same.opening?.options ?? same.day.options) : []);
   const day = daySet ?? same?.day ?? null;
+  // Plans and deadlines don't change with the part of the day, so a saved day's paint the home from any part of it.
+  const base = day ?? saved?.day ?? null;
   const goal = goalSet === undefined ? saved?.day.goal ?? null : goalSet;
-  const pick = pickSet === undefined ? (same && pickFits(same.opening?.pick, same.day.goal) ? same.opening?.pick ?? null : null) : pickSet;
+  // Every open plan; days saved before Nov 3 have none, and the current plan stands for them (homeChoices).
+  const goals = goalsSet ?? base?.goals ?? [];
   const progress = progressSet ?? day?.progress ?? null;
+  const name = day?.firstName ?? saved?.day.firstName ?? null;
+  // The home's hello, by the hour the page opened (as dayPart is).
+  const hello = booted ? greeting(booted.hour, name) : "";
 
   const [heard, setHeard] = useState("");
   const [typing, setTyping] = useState(false);
@@ -251,23 +287,32 @@ export default function GuidedDay() {
   const [timer, setTimer] = useState<number | null>(null);
   const [hear, setHear] = useState(false);
   const [draft, setDraft] = useState<EmailDraft | null>(null); // an email Zeno wrote, offered as Open in Gmail
-  const [sources, setSources] = useState<{ canvas?: CanvasBrief } | null>(null); // Focus shows its step's sources
   const [bookings, setBookings] = useState<Record<string, Booking>>({});
   const [offerKeys, setOfferKeys] = useState<string[]>([]);
   const [pasting, setPasting] = useState(false);
   const [learned, setLearned] = useState<PrivateFact[]>([]); // what first sign-in's scan learned, private facts too
   const [scanning, setScanning] = useState(false);
   const [canvasOn, setCanvasOn] = useState(false); // Canvas is linked on this device for this account
-  const [quietLine, setQuietLine] = useState(""); // the Focus line Zeno set quietly, muted while it is the one showing
+  const [quietLine, setQuietLine] = useState<string>(FOCUS.calm); // the Focus line Zeno set quietly, muted while it shows
+  const [proposedId, setProposedId] = useState<string | null>(null); // the step she tapped on the desk ("Another step")
+  const [planning, setPlanning] = useState<Planning | null>(null);
+  const [stuck, setStuck] = useState(false); // Stuck? in Focus: a smaller step or another goal, no question
+  const [mailGoals, setMailGoals] = useState<Record<string, string>>({});
+  const today = useToday();
+  const choices = homeChoices(goal, goals, base?.deadlines ?? [], day?.emails ?? [], today, Object.values(mailGoals));
+  const proposed = proposedStep(goal, proposedId);
+  // The desk shows while its plan is made, has a step open, or is in Focus or after a Done; otherwise the home.
+  const onDesk = view === "desk" && (planning !== null || proposed !== null || screen === "focus" || screen === "checkin");
   const history = useRef<Turn[]>([]);
   const cache = useRef<Saved | null>(null);
   const tapped = useRef(false); // the turn in flight came from a chip, not the type box
-  const moved = useRef(false); // the person has taken a turn since the opening was shown
+  const moved = useRef(false); // the person has taken a turn (or opened a desk) since the opening was shown
   const spoke = useRef(false); // the opening has been said (or offered with Hear Zeno)
   const talking = useRef(false); // hands-free: the person tapped Talk, so Zeno listens after each question it says
   const nextOpening = useRef<Promise<OpeningResponse | { state: "error" }> | null>(null);
   const saves = useRef<Promise<unknown>[]>([]); // the first scan and pasted notes still being saved
-  const starting = useRef<Promise<Goal | null> | null>(null); // a plan from the first card still being saved
+  const opened = useRef(0); // the latest desk asked for: a slower answer for an earlier one never moves the screen
+  const wrapLine = useRef(WRAP_LINE); // the line after Stop for now, with today's steps
   const booking = useRef(new Set<string>()); // booking chips with a request in flight, so a double tap books once
   const bookedLine = useRef<string | null>(null); // the talk offer whose booking replaced Zeno's line
   const replied = useRef<string[]>([]); // the last talk turn's quick replies, which came with its booking offers
@@ -276,11 +321,12 @@ export default function GuidedDay() {
   const cardAt = useRef(0); // when the card last changed, so the second tap of a double tap can't answer the next one
   useEffect(() => {
     cardAt.current = performance.now();
-  }, [screen, pasting]);
+  }, [screen, pasting, view, stuck]);
   // The voice hook calls onUserTurn later, so it reads the screen, goal and phase from here, not a stale render.
-  const latest = useRef({ screen, goal, line, progress });
+  const shown: View = onDesk ? "desk" : "home";
+  const latest = useRef({ screen, view: shown, goal, goals, line, progress, choices });
   useEffect(() => {
-    latest.current = { screen, goal, line, progress };
+    latest.current = { screen, view: shown, goal, goals, line, progress, choices };
   });
 
   // Auth.js sends failed sign-ins back to "/?error=...".
@@ -324,8 +370,8 @@ export default function GuidedDay() {
 
   // A model opening is saved with when it came and the day it was asked for, so a reload soon after shows it again
   // without asking the model. The pattern it names (noticed) is heard from now on, so no later opening names it again.
-  function keepOpening(text: string, options: string[], pick: FirstPick | null, sig: string, noticed: unknown) {
-    store({ opening: { text, options, pick, at: new Date().toISOString(), sig } });
+  function keepOpening(text: string, options: string[], sig: string, noticed: unknown) {
+    store({ opening: { text, options, at: new Date().toISOString(), sig } });
     const mine = account();
     if (mine && Array.isArray(noticed) && noticed.length > 0) writeLocal(heardKey(mine), JSON.stringify(addHeard(readHeard(mine), noticed)));
   }
@@ -341,22 +387,33 @@ export default function GuidedDay() {
     setQuietLine(text);
   }
 
-  // Every change to the plan or the streak goes to the saved day too, so a reload paints what is true now.
+  // Every change to the plan or the streak goes to the saved day too, so a reload paints what is true now. The plan
+  // also takes its place among the open plans, so the home and the Desk show it as it is now.
   function changeGoal(next: Goal | null) {
     setGoal(next);
     latest.current.goal = next;
-    if (cache.current && !isDraft(next)) store({ day: { ...cache.current.day, goal: next } });
+    const list = next ? upsert(latest.current.goals, next) : latest.current.goals;
+    if (next) {
+      setGoals(list);
+      latest.current.goals = list;
+    }
+    if (cache.current) store({ day: { ...cache.current.day, goal: next, goals: list } });
+  }
+
+  // A save's answer for a plan the page may have moved on from: the current plan is replaced, any other is kept as it
+  // is now without becoming current.
+  function takeGoal(next: Goal) {
+    if (latest.current.goal?.id === next.id) return changeGoal(next);
+    const list = upsert(latest.current.goals, next);
+    setGoals(list);
+    latest.current.goals = list;
+    if (cache.current) store({ day: { ...cache.current.day, goals: list } });
   }
 
   function changeProgress(next: Progress) {
     setProgress(next);
     latest.current.progress = next;
     if (cache.current) store({ day: { ...cache.current.day, progress: next, streak: next.streak } });
-  }
-
-  function changePick(next: FirstPick | null) {
-    setPick(next);
-    if (cache.current?.opening) store({ opening: { ...cache.current.opening, pick: next } });
   }
 
   // Private facts go to this device only (never to /api/memory), silently like every memory (Vi, Nov 2); returns the
@@ -377,10 +434,12 @@ export default function GuidedDay() {
     setTyping(false);
     setSheet(null);
     setHear(false);
-    setPick(null);
     setDraft(null);
+    setPlanning(null);
+    setStuck(false);
     setOfferKeys([]);
     setBookings({});
+    setView("home");
     setLine(SIGNED_OUT_LINE);
     setScreen("signed-out");
   }
@@ -400,12 +459,12 @@ export default function GuidedDay() {
       if (res.state === "ok") setLearned([...(res.learned ?? []), ...keep(res.private)]);
     });
     saves.current.push(scan);
-    // Asked for once the scan settles, so the first card's opening is written with what it learned.
+    // Asked for once the scan settles, so the home's opening is written with what it learned.
     nextOpening.current = scan.then(() => fetchOpening(mine));
   }
 
-  // Returns whether the model's opening should follow.
-  const onDay = useEffectEvent((data: DayResponse | { state: "error" }) => {
+  // Returns whether the model's opening should follow. `now` is when /api/day answered.
+  const onDay = useEffectEvent((data: DayResponse | { state: "error" }, now: number) => {
     if (data.state === "signed-out") {
       showSignedOut();
       return false;
@@ -420,27 +479,38 @@ export default function GuidedDay() {
     // Another account's saved day is dropped here: overwritten, its opening and setup state not carried over.
     const prior = saved?.day.account === data.account ? saved : null;
     const kept = prior && prior.part === booted?.part ? prior.opening : null;
-    cache.current = { v: 3, part: booted?.part ?? "", day: toKeep(data), opening: kept, setupDone: prior?.setupDone ?? false };
+    cache.current = { v: 4, part: booted?.part ?? "", day: toKeep(data), opening: kept, setupDone: prior?.setupDone ?? false };
     writeSaved(cache.current);
     setDay(data);
     setCanvasOn(Boolean(readCanvas(data.account)));
-    if (!prior) setPick(null);
-    else if (!moved.current) setPick(pickFits(kept?.pick, data.goal) ? kept?.pick ?? null : null);
+    setMailGoals(readMailGoals(data.account));
     if (moved.current) return false;
     setGoal(data.goal);
+    setGoals(null);
     // An opening that already arrived is checked against this day, not the saved one, before the next render.
     latest.current.goal = data.goal;
+    latest.current.goals = data.goals ?? [];
     if (data.isNew === true && !prior?.setupDone) {
+      setView("home");
       setScreen("setup");
       startScan(data.account);
       return false;
     }
-    setScreen("ready");
-    latest.current.screen = "ready";
-    // A saved model line for this part of the day stays until the new one lands; otherwise the quick line shows now.
-    if (!kept) {
-      setLine(data.opening);
-      setOptions(quickReplies(data.options));
+    // A step still running goes straight to Focus on its desk; otherwise the home.
+    if (runningStep(data.goal, now)) {
+      setView("desk");
+      setScreen("focus");
+      latest.current.screen = "focus";
+      quiet(FOCUS.calm);
+    } else {
+      setView("home");
+      setScreen("ready");
+      latest.current.screen = "ready";
+      // A saved model line for this part of the day stays until the new one lands; otherwise the quick line shows now.
+      if (!kept) {
+        setLine(data.opening);
+        setOptions(quickReplies(data.options));
+      }
     }
     // The first open of the day (not the first run) re-reads calendar and email quietly; what it learns saves silently.
     const today = localDate(zone());
@@ -456,25 +526,24 @@ export default function GuidedDay() {
     return true;
   });
 
-  // Swaps the model's line and pick in (unless the person moved on or Zeno is mid-sentence) and says it once. `sig` is
-  // the day it was asked for, saved with it; a saved opening shown again (null) stays saved as it was, with its first time.
+  // Swaps the model's line in (unless the person moved on or Zeno is mid-sentence) and says it once, after the home's
+  // hello. `sig` is the day it was asked for, saved with it; a saved opening shown again (null) stays saved as it was,
+  // with its first time.
   const onOpening = useEffectEvent((res: OpeningResponse | { state: "error" }, allowed: boolean, sig: string | null) => {
     const ok = res.state === "ok" && typeof res.opening === "string" && res.opening.trim() !== "";
     // Without a new model line, a saved one (maybe hours old) is dropped, never said: today's rule line stands in.
     if (!ok) store({ opening: null });
-    if (moved.current || latest.current.screen !== "ready") return;
+    if (moved.current || latest.current.screen !== "ready" || latest.current.view !== "home") return;
     // cache.current.day is this load's /api/day, even before the render that sets `day`.
     const text = ok ? res.opening.trim() : (cache.current?.day.opening ?? line);
     const next = quickReplies(ok ? res.options : cache.current?.day.options);
-    const card = ok && pickFits(res.pick, latest.current.goal) ? res.pick : null;
-    if (ok && sig !== null) keepOpening(text, next, card, sig, res.noticed);
+    if (ok && sig !== null) keepOpening(text, next, sig, res.noticed);
     setLine(text);
     setOptions(next);
-    setPick(card);
     if (spoke.current || voice.muted) return;
     spoke.current = true;
     // Never over another line (a heads-up) or the person: Hear Zeno offers it instead.
-    if (allowed && voice.phase === "idle" && !typing) void voice.speak(text);
+    if (allowed && voice.phase === "idle" && !typing) void voice.speak(`${hello} ${text}`);
     else setHear(true);
   });
 
@@ -503,7 +572,7 @@ export default function GuidedDay() {
       !(recent?.sig && openingReusable(recent, recent.sig, Date.now(), saved.day.events));
     const early = asksEarly ? fetchOpening(null, saved.day.account) : null;
     void getJson<DayResponse>("/api/day").then(async (data) => {
-      if (!live || !onDay(data) || data.state !== "ok") return;
+      if (!live || !onDay(data, Date.now()) || data.state !== "ok") return;
       const mine = data.account;
       // Canvas linked here is read again first, so the opening knows its assignments, but never waited on past 4 s. A sync
       // that worked replaced the Canvas deadlines, so Today reads the day again (the opening is still asked for once).
@@ -521,7 +590,7 @@ export default function GuidedDay() {
       const kept = cache.current?.opening;
       if (kept && openingReusable(kept, sig, Date.now(), data.events)) {
         const ok = await allowed;
-        if (live) onOpening({ state: "ok", opening: kept.text, options: kept.options, pick: kept.pick }, ok, null);
+        if (live) onOpening({ state: "ok", opening: kept.text, options: kept.options, pick: null }, ok, null);
         return;
       }
       // The early opening stands only for this account, and only when it has no private facts or Canvas briefs to add.
@@ -555,6 +624,15 @@ export default function GuidedDay() {
   // Zeno says a line it chose itself (a template, no model wait); hands-free listens after it only if it asks.
   function speakLine(text: string) {
     if (!voice.muted) void voice.speak(text);
+  }
+
+  // After a Done (or a skip said in Focus): what is next and, when today's calendar knows, the free time before the next
+  // event.
+  function afterDone(next: Goal | null, skipped = false) {
+    const known = cache.current?.day ?? day;
+    // new Date(), as withStatus takes it: the compiler's purity lint reads onUserTurn (given to useVoice) as render code.
+    const until = openSteps(next).length > 0 && known ? untilNext(known.events, known.free ?? [], new Date().getTime()) : null;
+    return until ? `${doneLine(next, skipped)} ${until}` : doneLine(next, skipped);
   }
 
   async function onUserTurn(text: string): Promise<string | null> {
@@ -615,16 +693,17 @@ export default function GuidedDay() {
     // A skip said in Focus leaves it this way too, so only a step really marked done gets the stamp, the sound and "Nice".
     const status = done ? res.goal?.steps.find((one) => one.id === done.id)?.status : undefined;
     // After a Done, said or tapped, Zeno says what is next.
-    const said = next === "checkin" ? doneLine(res.goal, status === "skipped") : res.reply;
+    const said = next === "checkin" ? afterDone(res.goal, status === "skipped") : res.reply;
     if (now.screen === "focus" && next === "focus") answered.current = said;
     if (next === "checkin") setCelebrate(Boolean(res.progress));
-    // A step's timer and its sources end with its focus, so a new step never opens on the last one's search.
-    if (next !== "focus" || openSteps(res.goal)[0]?.id !== openSteps(now.goal)[0]?.id) {
-      setTimer(null);
-      setSources(null);
+    // A step's timer ends with its focus.
+    if (next !== "focus" || openSteps(res.goal)[0]?.id !== openSteps(now.goal)[0]?.id) setTimer(null);
+    // A plan made or changed here opens its desk, proposing its first new step ("Something smaller"'s first piece).
+    if (next === "ready") {
+      setView("desk");
+      setStuck(false);
+      setProposedId(addedStep(now.goal, res.goal));
     }
-    // A plan made or changed here is the card now: its first step, ready to start.
-    if (next === "ready") changePick(stepCard(res.goal));
     if (done) {
       // Said "done" out loud: same stamp and sound as the Done button, so the card and its answers wait for it too.
       if (status === "done") {
@@ -635,6 +714,8 @@ export default function GuidedDay() {
       setTimeout(() => {
         setBusy(false);
         changeGoal(res.goal);
+        setProposedId(null);
+        setStuck(false);
         fileAway(status === "done" ? done : null, said);
       }, 400);
     } else {
@@ -660,19 +741,12 @@ export default function GuidedDay() {
     setTimeout(() => setLeaving(null), 300);
   }
 
-  // A plan saved from the first card may still be on its way; its draft step stands for the saved one.
-  async function realStep(step: Step): Promise<Step | null> {
-    if (!step.id.startsWith("draft-")) return step;
-    const saved = await starting.current;
-    return saved?.steps[Number(step.id.slice(6))] ?? null;
-  }
-
   function failStart(res: { state: string }, before: Goal | null, back: Screen) {
     if (res.state === "signed-out") return showSignedOut();
     changeGoal(before);
     setTimer(null);
     setScreen(back);
-    setLine(SAVE_FAIL);
+    setNote(SAVE_FAIL);
   }
 
   // The stopwatch runs at the tap, with a calm line under the card and nothing said.
@@ -680,77 +754,34 @@ export default function GuidedDay() {
     setOptions([]);
     setOfferKeys([]);
     setDraft(null);
-    setSources(null);
     setCelebrate(false);
+    setStuck(false);
+    setNote(null);
+    setView("desk");
     setScreen("focus");
     quiet(FOCUS.calm);
   }
 
-  // The card's Start: an existing step starts; a new plan is saved and started in one request.
-  function startPick(card: FirstPick) {
-    const before = goal;
-    const minutes = card.steps[0].minutes;
-    moved.current = true;
-    voice.stop();
-    setTimer(minutes);
-    if (card.stepId) {
-      const stepId = card.stepId;
-      if (goal?.steps.some((step) => step.id === stepId)) changeGoal(withStatus(goal, stepId, "doing", new Date()));
-      enterFocus();
-      starting.current = patchStep(stepId, "doing").then((res) => {
-        if (res.state === "ok") changeGoal(res.goal);
-        else failStart(res, before, "ready");
-        return res.state === "ok" ? res.goal : null;
-      });
-      return;
-    }
-    changeGoal(draftGoal(card, new Date()));
-    enterFocus();
-    starting.current = savePick(card, before);
-  }
-
-  // POST /api/goal; a due date that passed since the card was shown gets the fresh card instead.
-  async function savePick(card: FirstPick, before: Goal | null) {
-    const res = await post<GoalResponse>("/api/goal", { title: card.goal, due: card.due, steps: card.steps, start: true });
-    if (res.state === "ok") {
-      changeGoal(res.goal);
-      return res.goal;
-    }
-    if (res.state === "bad-request") {
-      changeGoal(before);
-      setTimer(null);
-      await refreshOpening();
-      return null;
-    }
-    failStart(res, before, "ready");
-    return null;
-  }
-
-  // A fresh first card: today's quick line at once, then the model's opening and pick, said aloud, unless the person
-  // moved on meanwhile.
-  async function refreshOpening() {
-    moved.current = false;
-    setScreen("ready");
-    setLine(cache.current?.day.opening ?? line);
-    setOptions(quickReplies(cache.current?.day.options));
-    setPick(null);
-    const sig = daySig();
-    const res = await fetchOpening(account());
-    if (res.state !== "ok" || moved.current) return;
-    const card = pickFits(res.pick, latest.current.goal) ? res.pick : null;
-    keepOpening(res.opening, quickReplies(res.options), card, sig, res.noticed);
-    setLine(res.opening);
-    setOptions(quickReplies(res.options));
-    setPick(card);
-    speakLine(res.opening);
+  // The step running in Focus goes back to todo, as Stop for now does, before she leaves it (Switch goal, the home,
+  // another plan, Something smaller); resolves with the save's answer, or null when nothing was running.
+  function letGo(): Promise<StepResponse | { state: "error" } | null> {
+    const plan = latest.current.goal;
+    const step = latest.current.screen === "focus" ? openSteps(plan)[0] : undefined;
+    setTimer(null);
+    if (!plan || step?.status !== "doing") return Promise.resolve(null);
+    changeGoal(withStatus(plan, step.id, "todo", new Date()));
+    return patchStep(step.id, "todo").then((res) => {
+      if (res.state === "ok") takeGoal(res.goal);
+      else if (res.state === "signed-out") showSignedOut();
+      return res;
+    });
   }
 
   async function finishStep(step: Step) {
     if (!voice.muted) wakeAudio();
     setStamping(true);
     setBusy(true);
-    const real = await realStep(step);
-    const [res] = await Promise.all([real ? patchStep(real.id, "done") : Promise.resolve({ state: "error" as const }), wait(400)]);
+    const [res] = await Promise.all([patchStep(step.id, "done"), wait(400)]);
     setBusy(false);
     if (res.state !== "ok") {
       setStamping(false);
@@ -760,15 +791,15 @@ export default function GuidedDay() {
     }
     if (!voice.muted) playDone();
     changeGoal(res.goal);
-    changePick(null);
+    setProposedId(null);
+    setStuck(false);
     if (res.progress) changeProgress(res.progress);
     setTimer(null);
-    setSources(null);
     setDraft(null);
     setOptions([]);
     setCelebrate(Boolean(res.progress));
     // The stamp, then what is next, with Keep going.
-    const said = doneLine(res.goal);
+    const said = afterDone(res.goal);
     fileAway(step, said);
     speakLine(spoken(said));
   }
@@ -776,13 +807,12 @@ export default function GuidedDay() {
   async function startStep(step: Step) {
     const before = goal;
     const back = screen ?? "ready";
+    moved.current = true;
     setTimer(null);
     if (goal) changeGoal(withStatus(goal, step.id, "doing", new Date()));
     enterFocus();
-    const real = await realStep(step);
-    if (!real) return failStart({ state: "error" }, before, back);
-    const res = await patchStep(real.id, "doing");
-    if (res.state === "ok") changeGoal(res.goal);
+    const res = await patchStep(step.id, "doing");
+    if (res.state === "ok") takeGoal(res.goal);
     else failStart(res, before, back);
   }
 
@@ -792,21 +822,23 @@ export default function GuidedDay() {
     void voice.submit(text);
   }
 
-  // "Stop for now" and "That's enough today": the step stays open, so the next opening brings it back. A plan with an
-  // hour or more left gets one block tomorrow offered (Vi, Nov 2); its button shows only once free time answers, so
-  // nothing moves under a tap.
+  // "Stop for now" and "That's enough today": the step goes back to todo and stays open, so the home brings it back. A
+  // plan with an hour or more left gets one block tomorrow offered (Vi, Nov 2); its button shows only once free time
+  // answers, so nothing moves under a tap. The line says what today held, when anything was finished.
   function stopForNow() {
     voice.stop();
+    void letGo();
     setTyping(false);
     setOptions([]);
     setDraft(null);
     setCelebrate(false);
-    setTimer(null);
-    setSources(null);
+    setStuck(false);
     setScreen("wrap");
-    setLine(WRAP_LINE);
-    speakLine(WRAP_LINE);
-    const plan = isDraft(goal) ? null : goal;
+    const done = todayLine([latest.current.goal, ...latest.current.goals], zone(), new Date());
+    wrapLine.current = done ? `${WRAP_LINE} ${done}` : WRAP_LINE;
+    setLine(wrapLine.current);
+    speakLine(spoken(wrapLine.current));
+    const plan = latest.current.goal;
     const minutes = day?.calendarWrite === "ok" ? laterMinutes(plan) : 0;
     const first = openSteps(plan)[0];
     if (!plan || !minutes || !first) return setOfferKeys([]);
@@ -825,18 +857,135 @@ export default function GuidedDay() {
     });
   }
 
-  // Back to my day, No thanks, or done with a draft: the home card holds the saved place, with its Start, never a
-  // vague "Let's start" or no button at all (live, Nov 2); a finished plan gets a fresh pick, as Pick the next thing does.
-  function goHome(said = "Nice work today.") {
+  // The home: the hello and the goal options (Vi, Nov 3). The current plan stays current. `said` replaces Zeno's line
+  // for a moment ("Your draft is open in Gmail."); otherwise the day's opening is back.
+  function goHome(said?: string) {
+    opened.current += 1;
     setOfferKeys([]);
     setDraft(null);
     setTyping(false);
-    const card = stepCard(goal);
-    if (!card) return void refreshOpening();
-    setOptions([]);
-    changePick(card);
-    setLine(said);
+    setStuck(false);
+    setPlanning(null);
+    setCelebrate(false);
+    setNote(null);
+    setView("home");
     setScreen("ready");
+    latest.current.view = "home";
+    latest.current.screen = "ready";
+    setLine(said ?? cache.current?.opening?.text ?? cache.current?.day.opening ?? line);
+    setOptions(quickReplies(cache.current?.opening?.options ?? cache.current?.day.options));
+  }
+
+  // The mark, "← All goals" and Switch goal: a step running in Focus goes back to todo first.
+  function leaveForHome() {
+    void letGo();
+    goHome();
+  }
+
+  // ---------- A goal's desk (Vi, Nov 3: she picks the goal, Zeno picks the step) ----------
+  // Opening a desk is choosing, so a late opening line never moves the screen, and Zeno stops talking.
+  function openDesk(): number {
+    void letGo();
+    moved.current = true;
+    voice.stop();
+    talking.current = false;
+    setNote(null);
+    setTyping(false);
+    setStuck(false);
+    setDraft(null);
+    setOfferKeys([]);
+    setOptions([]);
+    setCelebrate(false);
+    setHear(false);
+    setProposedId(null);
+    setView("desk");
+    setScreen("ready");
+    latest.current.view = "desk";
+    latest.current.screen = "ready";
+    return ++opened.current;
+  }
+
+  // A plan's desk shows at once from the day's plans; it becomes the current plan (the old one is paused, not lost).
+  async function openPlan(target: Goal) {
+    const ticket = openDesk();
+    const before = latest.current.goal;
+    setPlanning(null);
+    changeGoal(target);
+    if (before?.id === target.id) return;
+    setBusy(true);
+    const res = await post<GoalResponse>("/api/goal/activate", { id: target.id } satisfies ActivateRequest);
+    setBusy(false);
+    if (res.state === "signed-out") return showSignedOut();
+    if (res.state === "ok") return takeGoal(res.goal);
+    // Not saved: the old plan is still the current one.
+    if (latest.current.goal?.id === target.id) changeGoal(before);
+    if (ticket !== opened.current) return;
+    goHome();
+    setNote(OPEN_FAIL);
+  }
+
+  // A deadline with no plan yet: Muse breaks it into small steps (the only new model call, with its Canvas assignment's
+  // instructions when this device has them), and that plan becomes the current one. A deadline an open plan covers
+  // opens that plan.
+  async function planDeadline(deadline: Deadline) {
+    const covered = openPlans(latest.current.goal, latest.current.goals).find((plan) => sameTitle(plan.title, deadline.title));
+    if (covered) return openPlan(covered);
+    const ticket = openDesk();
+    const mine = account();
+    const canvas = mine ? canvasFor({ id: "", title: deadline.title, steps: [] }, canvasBriefs(mine)) : undefined;
+    const due = deadline.date >= localDate(zone()) ? deadline.date : null;
+    setPlanning({ title: deadline.title, due, line: "Breaking it into steps…" });
+    const res = await post<GoalResponse>("/api/goal/plan", { title: deadline.title, due, ...(canvas ? { canvas } : {}) } satisfies PlanRequest);
+    if (res.state === "signed-out") return showSignedOut();
+    if (ticket !== opened.current) {
+      if (res.state === "ok") takeGoal(res.goal);
+      return;
+    }
+    setPlanning(null);
+    if (res.state === "ok") return changeGoal(res.goal);
+    goHome();
+    setNote(OPEN_FAIL);
+  }
+
+  // An email that asks something: a plan with one 2-minute reply (plain words when the API refuses its sender or
+  // subject), its email remembered by id for the desk. One that already has an open plan opens it.
+  async function answerMail(email: DayEmail) {
+    const known = Object.entries(mailGoals).find(([, id]) => id === email.id)?.[0];
+    const plan = known ? openPlans(latest.current.goal, latest.current.goals).find((one) => one.id === known) : undefined;
+    if (plan) return openPlan(plan);
+    const ticket = openDesk();
+    const words = mailPlan(email);
+    setPlanning({ title: words.title, due: null, line: "Getting it ready…" });
+    let res = await post<GoalResponse>("/api/goal", words);
+    if (res.state === "bad-request") res = await post<GoalResponse>("/api/goal", mailPlan(null));
+    if (res.state === "signed-out") return showSignedOut();
+    const mine = account();
+    if (res.state === "ok" && email.id && mine) {
+      const map = { ...readMailGoals(mine), [res.goal.id]: email.id };
+      writeLocal(mailKey(mine), JSON.stringify(Object.fromEntries(Object.entries(map).slice(-50))));
+      setMailGoals(map);
+    }
+    if (ticket !== opened.current) {
+      if (res.state === "ok") takeGoal(res.goal);
+      return;
+    }
+    setPlanning(null);
+    if (res.state === "ok") return changeGoal(res.goal);
+    goHome();
+    setNote(OPEN_FAIL);
+  }
+
+  // Stuck? in Focus, "Make it smaller": the step goes back to todo (a plan change only rewrites todo steps), then Talk
+  // asks for its first small piece, as Something smaller does on the desk.
+  async function smallerNow(step: Step) {
+    setStuck(false);
+    const going = letGo();
+    setScreen("ready");
+    latest.current.screen = "ready";
+    const res = await going;
+    if (res?.state === "signed-out") return;
+    if (res && res.state !== "ok") return setNote(SAVE_FAIL);
+    tap(smallerText(step));
   }
 
   function talk() {
@@ -941,7 +1090,7 @@ export default function GuidedDay() {
     setBookings((all) => ({ ...all, [key]: { ...entry, blocks: entry.blocks.map((block) => ({ ...block, eventId: undefined })), state: "offer" } }));
     linkSteps(entry.blocks, false);
     // The offer is back, so the line no longer says Booked.
-    if (latest.current.screen === "wrap") setLine(WRAP_LINE);
+    if (latest.current.screen === "wrap") setLine(wrapLine.current);
     else if (bookedLine.current === key) setLine("Okay, it's off your calendar.");
   }
 
@@ -949,8 +1098,7 @@ export default function GuidedDay() {
   const focusStep = screen === "focus" ? openSteps(goal)[0] ?? null : null;
   const focusMinutes = timer ?? focusStep?.minutes ?? null;
   const moment = focusMinutes ? checkinMinute(focusMinutes, day?.pace) : null;
-  // A quiet line never covers a question and its answers, a draft, the person talking, or Zeno's answer to them in Focus
-  // (the tip after Stuck? stays while they use it).
+  // A quiet line never covers a question and its answers, a draft, the person talking, or Zeno's answer to them in Focus.
   const hush = useEffectEvent((text: string) => {
     if (latest.current.screen !== "focus" || options.length > 0 || draft || voice.phase === "listening" || voice.phase === "thinking") return;
     if (line && line === answered.current) return;
@@ -1016,7 +1164,7 @@ export default function GuidedDay() {
   }, [watching]);
 
   // ---------- First sign-in ----------
-  // Pasted notes become memories (POST /api/import only saves since Nov 2); the first card's opening waits for them.
+  // Pasted notes become memories (POST /api/import only saves since Nov 2); the home's opening waits for them.
   function savePaste(text: string) {
     saves.current.push(
       post<ImportResponse>("/api/import", { text }).then((res) => {
@@ -1029,15 +1177,16 @@ export default function GuidedDay() {
     finishSetup();
   }
 
+  // Start my day: the home, with the opening written from what the scan learned.
   function finishSetup() {
     store({ setupDone: true });
     moved.current = false;
     setPasting(false);
     setOfferKeys([]);
+    setView("home");
     setScreen("ready");
-    setLine(day?.opening || greeting(new Date().getHours(), day?.firstName ?? null));
+    setLine(day?.opening ?? "");
     setOptions(quickReplies(day?.options));
-    setPick(null);
     setWantOpening((n) => n + 1);
   }
 
@@ -1109,8 +1258,8 @@ export default function GuidedDay() {
   }
 
   // ---------- Canvas ----------
-  // Linked or unlinked in its sheet: the day (its deadlines) is read again, and the home card re-plans at once after a
-  // Disconnect or a Connect that found work due.
+  // Linked or unlinked in its sheet: the day (its deadlines, so the home's options) is read again, and the home's line
+  // is written again at once after a Disconnect or a Connect that found work due.
   async function canvasSynced(assignments: CanvasAssignment[]) {
     const mine = account();
     if (!mine) return;
@@ -1120,16 +1269,34 @@ export default function GuidedDay() {
     const data = await getJson<DayResponse>("/api/day");
     if (data.state === "signed-out") return showSignedOut();
     takeDay(data);
-    if (replanOnCanvas(latest.current.screen, linked, assignments)) await refreshOpening();
+    if (latest.current.view === "home" && replanOnCanvas(latest.current.screen, linked, assignments)) await refreshOpening();
+  }
+
+  // A fresh home line: today's quick line at once, then the model's opening, said aloud, unless the person moved on.
+  async function refreshOpening() {
+    moved.current = false;
+    setScreen("ready");
+    setLine(cache.current?.day.opening ?? line);
+    setOptions(quickReplies(cache.current?.day.options));
+    const sig = daySig();
+    const res = await fetchOpening(account());
+    if (res.state !== "ok" || moved.current) return;
+    keepOpening(res.opening, quickReplies(res.options), sig, res.noticed);
+    setLine(res.opening);
+    setOptions(quickReplies(res.options));
+    speakLine(res.opening);
   }
 
   // ---------- The screen's answers ----------
-  const name = day?.firstName ?? saved?.day.firstName;
   const setupLine = scanning ? READING_LINE : pasting ? PASTE_LINE : foundLine(learned);
   const offers = offerKeys.flatMap((key) => (bookings[key] ? [bookings[key]] : []));
   const step = openSteps(goal)[0];
-  // The assignment in this device's Canvas list that the focus plan is for, offered as a link; nothing opens on its own.
-  const canvasUrl = focusStep && daySet ? httpsOnly(canvasFor(goal, canvasList(daySet.account) ?? [])?.url) : undefined;
+  // The desk's materials read this device's Canvas list only once /api/day said whose it is.
+  const mine = daySet?.account;
+  const brief = onDesk && mine ? canvasFor(goal, canvasBriefs(mine)) : undefined;
+  const assignment = onDesk && mine ? canvasFor(goal, canvasList(mine) ?? []) : undefined;
+  const mailId = goal ? mailGoals[goal.id] : undefined;
+  const gmail = httpsOnly(day?.mailUrl);
 
   // Every screen has one big button (the first answer) and small links for the rest (Vi, Nov 2).
   function screenAnswers(): Answer[] {
@@ -1144,18 +1311,35 @@ export default function GuidedDay() {
       return [say("Start my day", finishSetup), say("Paste notes", () => setPasting(true)), say("See what I learned", () => openSheet("memory"))];
     }
     if (draft) {
+      // A draft written in Focus leaves her in Focus: she sends it from Gmail, then taps Done.
+      const back = (said: string) => {
+        if (latest.current.screen !== "focus") return goHome(said);
+        setDraft(null);
+        setOptions([]);
+        quiet(said);
+      };
       return [
         say("Open in Gmail", () => {
           window.open(draft.url, "_blank", "noopener,noreferrer");
-          goHome("Your draft is open in Gmail.");
+          back("Your draft is open in Gmail.");
         }),
-        say("Not now", () => goHome("Okay, not now.")),
+        say("Not now", () => back("Okay, not now.")),
+      ];
+    }
+    if (screen === "ready" && onDesk) {
+      // Saved answers wait for /api/day; a plan being made has no Start yet.
+      if (!fresh || planning || !proposed) return [];
+      const start = proposed;
+      return [
+        say(start.minutes ? `Start · ${start.minutes} min` : "Start", () => void startStep(start)),
+        say("Something smaller", () => tap(smallerText(start))),
+        ...(openSteps(goal).length > 1 ? [say("Another step", () => setProposedId(nextProposal(goal, start.id)))] : []),
       ];
     }
     if (screen === "ready") {
-      // A saved card paints at once, but its answers wait for /api/day.
+      // A saved home paints at once, but its answers wait for /api/day.
       if (!fresh) return [];
-      if (pick) return [say(`Start · ${pick.steps[0].minutes} min`, () => startPick(pick)), other];
+      if (choices.length > 0) return [other];
       return options.length ? [...replies, other] : [say("Let's start", () => tap("Let's start."))];
     }
     if (screen === "talk") {
@@ -1163,24 +1347,23 @@ export default function GuidedDay() {
       if (options.length) return [...replies, other];
       if (offers.some((one) => one.state !== "booked")) return [say("No thanks", () => goHome()), other];
       // A booked offer answered Zeno's question, so one way home (live, Nov 2: it was a dead end); a plain question
-      // still waits for Talk or Type.
+      // still waits for Talk or the keyboard.
       return offers.length ? [say("Back to my day", () => goHome())] : [];
     }
     if (screen === "focus" && step) {
+      if (!fresh) return [];
       const done = say("Done", () => void finishStep(step));
       const stop = say("Stop for now", stopForNow);
       // A question Zeno asked during focus leads with its answers; Done stays one tap away.
       if (options.length) return [...replies, done, stop];
-      const extra = isEmailStep(step.title)
-        ? [say("Draft it in Gmail", () => tap(`Draft the email for: ${step.title}`))]
-        : sources || isDraft(goal)
-          ? []
-          : [say("Sources", () => setSources({ canvas: canvasFor(goal, canvasBriefs(account() ?? "")) }))];
-      return [done, say("Stuck?", () => tap(`I'm stuck on: ${step.title}.`)), stop, ...extra];
+      // Stuck? asks nothing (Vi, Nov 3): a smaller piece of this step, or another goal.
+      if (stuck) return [done, say("Make it smaller", () => void smallerNow(step)), say("Switch goal", leaveForHome)];
+      const extra = isEmailStep(step.title) ? [say("Draft it in Gmail", () => tap(`Draft the email for: ${step.title}`))] : [];
+      return [done, say("Stuck?", () => setStuck(true)), stop, ...extra];
     }
     if (screen === "checkin") {
-      const next = step ? say("Keep going", () => void startStep(step)) : say("Pick the next thing", () => void refreshOpening());
-      return [next, say("That's enough today", stopForNow)];
+      if (step) return [say("Keep going", () => void startStep(step)), say("Switch goal", () => goHome()), say("That's enough today", stopForNow)];
+      return [say("Back to my goals", () => goHome()), say("That's enough today", stopForNow)];
     }
     if (screen === "wrap") {
       // While free time is asked for, nothing shows, so no button changes under a tap.
@@ -1199,13 +1382,36 @@ export default function GuidedDay() {
     answers[i]?.run();
   }
 
+  // A home option: its plan's desk, a deadline's new plan, or an email's reply (the options as this render drew them).
+  function choose(i: number) {
+    const choice = latest.current.choices[i];
+    if (!choice || !fresh || busy || performance.now() - cardAt.current < 400) return;
+    if (choice.kind === "plan") void openPlan(choice.goal);
+    else if (choice.kind === "deadline") void planDeadline(choice.deadline);
+    else void answerMail(choice.email);
+  }
+
   return (
     <DayView
       screen={screen}
+      view={shown}
+      hello={hello}
       line={screen === "setup" ? setupLine : line}
       you={voice.phase === "listening" ? voice.partial : heard}
       goal={goal}
-      goals={day?.goals}
+      goals={openPlans(goal, goals)}
+      choices={screen === "ready" && !onDesk ? choices.map((choice) => choiceCard(choice, goal?.id ?? null, today)) : []}
+      planning={onDesk ? planning : null}
+      proposed={proposed}
+      materials={
+        onDesk && goal && !planning
+          ? {
+              prompt: brief || assignment ? { course: brief?.course ?? assignment?.course ?? "", text: brief?.instructions ?? "", url: httpsOnly(assignment?.url) } : undefined,
+              stopped: stoppedLine(goal, zone(), today),
+              mail: mailId ? { id: mailId, gmail: gmail && `${gmail}#inbox/${encodeURIComponent(mailId)}` } : undefined,
+            }
+          : undefined
+      }
       today={
         day && { events: day.events, emails: day.emails, unreadEmail: day.unreadEmail, sources: day.sources, free: day.free, deadlines: day.deadlines, mailUrl: day.mailUrl }
       }
@@ -1216,20 +1422,17 @@ export default function GuidedDay() {
       leaving={leaving}
       note={voice.error ? VOICE_NOTE[voice.error] : note}
       signInFailed={signInFailed}
-      busy={busy || voice.phase === "thinking"}
+      busy={busy || voice.phase === "thinking" || (screen === "ready" && !fresh)}
       chips={answers.map((one) => one.label)}
       pasting={screen === "setup" && pasting}
-      hear={hear && screen === "ready"}
+      hear={hear && screen === "ready" && !onDesk}
       progress={progress}
-      pick={pick}
       celebrate={celebrate}
       bookings={bookings}
       offers={offers}
       timer={timer}
       quiet={line === quietLine}
-      canvasUrl={canvasUrl}
-      sources={sources !== null}
-      brief={sources?.canvas}
+      brief={brief}
       device={device}
       account={screen && screen !== "signed-out" ? (name?.trim()[0]?.toUpperCase() ?? "") : null}
       canvas={daySet ? { account: daySet.account, linked: canvasOn } : null}
@@ -1237,9 +1440,12 @@ export default function GuidedDay() {
       voice={voice}
       on={{
         chip,
+        choose,
+        home: leaveForHome,
+        propose: (stepId) => setProposedId(stepId),
         hear() {
           setHear(false);
-          void voice.speak(line);
+          void voice.speak(`${hello} ${line}`);
         },
         paste: savePaste,
         talk,
@@ -1277,10 +1483,20 @@ export default function GuidedDay() {
           void signOut({ redirectTo: "/" });
         },
         canvasSynced: (assignments) => void canvasSynced(assignments),
-        // Contract stubs for the Nov 3 round (docs/PLAN-NOV3.md), filled by the flow-ui track.
-        openGoal: () => {},
-        openDeadline: () => {},
-        reply: () => {},
+        // The Desk's working cards (Vi, Nov 3): each closes the Desk, then does what the home's option does.
+        openGoal(goalId) {
+          setSheet(null);
+          const plan = openPlans(goal, goals).find((one) => one.id === goalId);
+          if (plan && fresh) void openPlan(plan);
+        },
+        openDeadline(deadline) {
+          setSheet(null);
+          if (fresh) void planDeadline(deadline);
+        },
+        reply(email) {
+          setSheet(null);
+          if (fresh) void answerMail(email);
+        },
       }}
     />
   );

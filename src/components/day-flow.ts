@@ -1,5 +1,21 @@
 // Pure rules behind the Guided day screens. `node src/components/day-flow.check.ts` runs them (it maps "@/").
-import { MEMORY_GROUPS, type CalendarBlock, type CanvasAssignment, type DayEvent, type FirstPick, type FreeSlot, type Goal, type MemoryGroup, type Progress, type Step, type StepStatus, type TalkAction } from "@/lib/day";
+import {
+  MEMORY_GROUPS,
+  type CalendarBlock,
+  type CanvasAssignment,
+  type Choice,
+  type DayEmail,
+  type DayEvent,
+  type Deadline,
+  type FreeSlot,
+  type Goal,
+  type MemoryGroup,
+  type Progress,
+  type Step,
+  type StepStatus,
+  type TalkAction,
+} from "@/lib/day";
+import { senderName } from "@/components/desk-rows";
 import { dayBounds, formatTime, localDate } from "@/lib/tz";
 
 // setup is first sign-in (the scan, then what it found), ready the card, checkin the screen after Done, wrap the one
@@ -17,11 +33,13 @@ export const GROUP_NAMES: Record<MemoryGroup, string> = {
   patterns: "Patterns Zeno noticed",
 };
 
-// Before 5 AM it is still the night before for most people, not morning.
+// The home's hello (Vi, Nov 3): "Morning, Maya." to noon, "Hey Maya." to 5 PM, then "Evening, Maya."; before 5 AM it
+// is still the night before for most people, not morning.
 export function greeting(hour: number, firstName: string | null) {
   const who = firstName ? `, ${firstName}` : "";
   if (hour < 5) return `Still up${who}?`;
-  return `Good ${hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening"}${who}.`;
+  if (hour < 12) return `Morning${who}.`;
+  return hour < 17 ? `Hey${firstName ? ` ${firstName}` : ""}.` : `Evening${who}.`;
 }
 
 // The step being done comes first, then the rest still to do, in roadmap order.
@@ -81,37 +99,174 @@ export function clock(seconds: number) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-// ---------- The first card ----------
+// ---------- The home and a goal's desk (Vi, Nov 3: she picks the goal, Zeno picks the step) ----------
 
-// A saved first card is still good when its step is still open or, for a new plan, while nothing else is open.
-export function pickFits(pick: FirstPick | null | undefined, goal: Goal | null): boolean {
-  if (!pick) return false;
-  const open = openSteps(goal);
-  return pick.stepId ? open.some((step) => step.id === pick.stepId) : open.length === 0;
+// Lowercase, with every run of characters that are not letters or digits made one space.
+const titleKey = (title: string) => title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
+// Two titles name the same goal when either holds the other ("Essay 2" and "HIST 110: essay 2!").
+export function sameTitle(a: string, b: string) {
+  const [x, y] = [titleKey(a), titleKey(b)];
+  return x !== "" && y !== "" && (x.includes(y) || y.includes(x));
 }
 
-// The plan a pick makes, its first step running, shown at once while POST /api/goal saves it; the ids stand in until
-// the save answers.
-export function draftGoal(pick: FirstPick, now: Date): Goal {
+const DAY_MS = 86_400_000;
+const daysFrom = (today: string, date: string) => Math.round((Date.parse(date) - Date.parse(today)) / DAY_MS);
+const choiceDue = (choice: Choice) => (choice.kind === "plan" ? choice.goal.due ?? null : choice.kind === "deadline" ? choice.deadline.date : null);
+const byDue = (a: string | null, b: string | null) => (a === b ? 0 : a === null ? 1 : b === null ? -1 : a < b ? -1 : 1);
+
+// Every plan with a step open, the current one first and as the page has it now (the day's copy of it may be older).
+export function openPlans(goal: Goal | null, goals: Goal[]): Goal[] {
+  const plans: Goal[] = [];
+  for (const plan of [goal, ...goals]) if (plan && openSteps(plan).length > 0 && !plans.some((one) => one.id === plan.id)) plans.push(plan);
+  return plans;
+}
+
+// The home's goal options, at most 3 (a few options raise motivation, many lower it): the current plan first while a
+// step of it is open, then the other open plans and the deadlines due within 7 days that no open plan covers, soonest
+// first (no due date last). The newest email that asks something takes the third slot, unless it already became a plan
+// here (`handled`: email ids, see mailPlan).
+export function homeChoices(goal: Goal | null, goals: Goal[], deadlines: Deadline[], emails: DayEmail[], today: string, handled: string[] = []): Choice[] {
+  const plans = openPlans(goal, goals);
+  const current = goal && plans[0]?.id === goal.id ? plans[0] : null;
+  const soon = deadlines.filter((deadline, i) => {
+    const days = daysFrom(today, deadline.date);
+    const covered = [...plans.map((plan) => plan.title), ...deadlines.slice(0, i).map((one) => one.title)].some((title) => sameTitle(title, deadline.title));
+    return days >= 0 && days <= 7 && !covered;
+  });
+  const rest: Choice[] = [
+    ...plans.filter((plan) => plan !== current).map((plan): Choice => ({ kind: "plan", goal: plan })),
+    ...soon.map((deadline): Choice => ({ kind: "deadline", deadline })),
+  ].sort((a, b) => byDue(choiceDue(a), choiceDue(b)));
+  const list: Choice[] = current ? [{ kind: "plan", goal: current }, ...rest] : rest;
+  const mail = emails.find((email) => email.asks === true && email.id && !handled.includes(email.id));
+  return mail ? [...list.slice(0, 2), { kind: "mail", email: mail }] : list.slice(0, 3);
+}
+
+export type ChoiceCard = { title: string; minutes: number | null; meta: string; last: string };
+
+const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+// An option card's words: the title (minutes on the right), a grey line, and a last line. `currentId` is the current
+// plan's, which picks up where she stopped.
+export function choiceCard(choice: Choice, currentId: string | null, today: string): ChoiceCard {
+  if (choice.kind === "mail") {
+    const name = senderName(choice.email.from);
+    return { title: `Answer ${name}`, minutes: 2, meta: `Email · ${name}`, last: choice.email.subject };
+  }
+  if (choice.kind === "deadline") {
+    const { title, date } = choice.deadline;
+    const due = dueLabel(date, today);
+    return { title, minutes: null, meta: ["not started", dueLabel(date, today, "short")].filter(Boolean).join(" · "), last: due && `${capital(due)}.` };
+  }
+  const { goal } = choice;
+  const done = goal.steps.filter((step) => step.status === "done").length;
+  const next = openSteps(goal)[0];
+  const resumes = goal.id === currentId && (done > 0 || next?.status === "doing");
   return {
-    id: "draft",
-    title: pick.goal,
-    due: pick.due,
-    steps: pick.steps.map((step, i) => ({
-      id: `draft-${i}`,
-      title: step.title,
-      minutes: step.minutes,
-      status: i === 0 ? "doing" : "todo",
-      startedAt: i === 0 ? now.toISOString() : null,
-      doneAt: null,
-    })),
+    title: goal.title,
+    minutes: next?.minutes ?? null,
+    meta: [`${done} of ${goal.steps.length} done`, goal.due ? dueLabel(goal.due, today, "short") : ""].filter(Boolean).join(" · "),
+    last: resumes ? "Picks up where you stopped." : next ? `Next: ${next.title}` : "",
   };
 }
 
-// A plan made or changed in talk, as the card: its first open step, ready to start.
-export function stepCard(goal: Goal | null): FirstPick | null {
-  const step = openSteps(goal)[0];
-  return goal && step ? { goal: goal.title, due: goal.due ?? null, stepId: step.id, steps: [{ title: step.title, minutes: step.minutes ?? 5 }], why: "" } : null;
+// The plan an email that asks something becomes: one 2-minute reply, named for its sender and subject (cut to 40
+// characters at a word), or plain words when the API refuses those.
+export function mailPlan(email: DayEmail | null) {
+  if (!email) return { title: "Answer an email", steps: [{ title: "Reply to the email", minutes: 2 }] };
+  const name = senderName(email.from);
+  const subject = email.subject.trim();
+  const cut = subject.slice(0, 41);
+  const about = subject.length <= 40 ? subject : (/\s/.test(cut) && cut.replace(/\s+\S*$/, "")) || subject.slice(0, 40);
+  return { title: `Answer ${name}`, steps: [{ title: about ? `Reply to ${name} about ${about}` : `Reply to ${name}`, minutes: 2 }] };
+}
+
+// The step Zeno proposes on the desk: the one she tapped while it is still open, else the first open one.
+export const proposedStep = (goal: Goal | null, id: string | null): Step | null =>
+  openSteps(goal).find((step) => step.id === id) ?? openSteps(goal)[0] ?? null;
+
+// "Another step": the open step after the proposed one, round again after the last.
+export function nextProposal(goal: Goal | null, id: string | null): string | null {
+  const open = openSteps(goal);
+  if (open.length === 0) return null;
+  return open[(Math.max(0, open.findIndex((step) => step.id === id)) + 1) % open.length].id;
+}
+
+// The first todo step a plan change added ("Something smaller"'s first piece), so the desk proposes it; null for none.
+export const addedStep = (before: Goal | null, after: Goal | null) =>
+  after?.steps.find((step) => step.status === "todo" && !before?.steps.some((old) => old.id === step.id))?.id ?? null;
+
+// A step left running when the page opens, so it goes straight to Focus; one started 3 hours ago or more (a tab closed
+// mid-step yesterday) opens on the home instead.
+// shortcut: 3 hours is a guess at the longest real focus; ask Vi if a step runs longer.
+export function runningStep(goal: Goal | null, now: number): Step | null {
+  const step = goal?.steps.find((one) => one.status === "doing");
+  const ran = now - Date.parse(step?.startedAt ?? "");
+  return step && ran >= 0 && ran < 3 * 3_600_000 ? step : null;
+}
+
+// How long a finished step really took, from its start to its done; null without both.
+export function realMinutes(step: Step): number | null {
+  const ms = Date.parse(step.doneAt ?? "") - Date.parse(step.startedAt ?? "");
+  return ms >= 0 ? Math.max(1, Math.round(ms / 60_000)) : null;
+}
+
+// "45 min", "2 h", "1 h 25 min".
+export function duration(minutes: number) {
+  const m = Math.max(1, Math.floor(minutes));
+  const [h, rest] = [Math.floor(m / 60), m % 60];
+  return h === 0 ? `${rest} min` : rest === 0 ? `${h} h` : `${h} h ${rest} min`;
+}
+
+// The goal strip's caption: "3 of 7 done", and right after a Done, once more than half is done, "4 of 7 · over halfway".
+export const barCaption = (done: number, total: number, justDone = false) =>
+  justDone && done * 2 > total && done < total ? `${done} of ${total} · over halfway` : `${done} of ${total} done`;
+
+const localDay = (iso: string, timeZone: string) => localDate(timeZone, new Date(iso));
+
+// "Where you stopped": the newest done step, "Draft the thesis · done yesterday in 12 min", by the person's `today`
+// (YYYY-MM-DD in `timeZone`); null before any.
+export function stoppedLine(goal: Goal | null, timeZone: string, today: string): string | null {
+  const last = (goal?.steps ?? [])
+    .filter((step) => step.status === "done" && !Number.isNaN(Date.parse(step.doneAt ?? "")))
+    .sort((a, b) => Date.parse(b.doneAt ?? "") - Date.parse(a.doneAt ?? ""))[0];
+  if (!last?.doneAt) return null;
+  const date = localDay(last.doneAt, timeZone);
+  const ago = daysFrom(date, today);
+  if (Number.isNaN(ago)) return null;
+  const day = new Date(`${date}T12:00:00Z`);
+  const when =
+    ago <= 0
+      ? "today"
+      : ago === 1
+        ? "yesterday"
+        : day.toLocaleDateString("en-US", { timeZone: "UTC", ...(ago < 7 ? { weekday: "long" } : { month: "short", day: "numeric" }) });
+  const minutes = realMinutes(last);
+  return `${last.title} · done ${when}${minutes ? ` in ${minutes} min` : ""}`;
+}
+
+// The wrap line's "Today: 2 steps, 41 min.": steps finished today across the plans (each counted once, the first copy
+// of a plan winning), with the minutes they really took when known; null when none.
+export function todayLine(plans: (Goal | null)[], timeZone: string, now: Date): string | null {
+  const today = localDate(timeZone, now);
+  const done = new Map<string, Step>();
+  for (const step of plans.flatMap((plan) => plan?.steps ?? [])) {
+    if (step.status === "done" && step.doneAt && localDay(step.doneAt, timeZone) === today && !done.has(step.id)) done.set(step.id, step);
+  }
+  if (done.size === 0) return null;
+  const minutes = [...done.values()].reduce((sum, step) => sum + (realMinutes(step) ?? 0), 0);
+  return `Today: ${done.size} ${done.size === 1 ? "step" : "steps"}${minutes ? `, ${duration(minutes)}` : ""}.`;
+}
+
+// After a Done, "You have 1 h 25 min until BIO 101.": now is in a free slot that ends where one of today's events
+// begins (never Zeno's own block, and not the end of the waking day); null otherwise.
+export function untilNext(events: DayEvent[], free: FreeSlot[], now: number): string | null {
+  const slot = free.find((one) => Date.parse(one.start) <= now && now < Date.parse(one.end));
+  if (!slot) return null;
+  const end = Date.parse(slot.end);
+  const next = events.find((event) => !event.allDay && !event.zeno && Math.abs(Date.parse(event.start) - end) < 60_000 && event.title.trim());
+  return next ? `You have ${duration((end - now) / 60_000)} until ${next.title.trim()}.` : null;
 }
 
 // What a saved model opening was written for: the plan (its id, each step's id, status, title and minutes) and the
@@ -163,16 +318,22 @@ export const replanOnCanvas = (screen: Screen | null, linked: boolean, found: Pi
 // What the screen after Done, or after a skip said in Focus, says: the next step, or that the plan is finished.
 export function doneLine(goal: Goal | null, skipped = false): string {
   const next = openSteps(goal)[0];
-  if (!next) return `${skipped ? "Skipped." : "Nice work."} That was the last step.`;
-  return `${skipped ? "Skipped." : "Nice."} Next: ${next.title}${next.minutes ? `, ${next.minutes} min` : ""}`;
+  if (!next) return `${skipped ? "Skipped. " : ""}That's all of ${goal?.title.replace(/[.!?]+$/, "") || "it"}.`;
+  return `${skipped ? "Skipped." : "Nice."} Next: ${next.title.replace(/\.+$/, "")}${next.minutes ? `, ${next.minutes} min` : ""}.`;
 }
+
+// A line as Zeno says it: "15 min" is "15 minutes" and "1 h" is "1 hour".
+export const spoken = (line: string) =>
+  line
+    .replace(/\b1 min(?![\w-])/g, "1 minute")
+    .replace(/(\d) min(?![\w-])/g, "$1 minutes")
+    .replace(/\b1 h(?![\w-])/g, "1 hour")
+    .replace(/(\d) h(?![\w-])/g, "$1 hours");
 
 // A step that is an email to write, so Focus offers to draft it in Gmail ("Draft an email to…", "Ask … by email"), never
 // one to read ("Read the email from Dana").
 export const isEmailStep = (title: string) =>
   /^(e-?mail|write to|reply to|message)\b|\b(draft|write|send|compose|answer)\b.*\be-?mail\b|\bby e-?mail\b/i.test(title.trim());
-
-export const isDraft = (goal: Goal | null) => goal?.id === "draft";
 
 // One step's new status, as the server will save it, so a tap shows at once.
 export function withStatus(goal: Goal, stepId: string, status: StepStatus, now: Date): Goal {
@@ -189,12 +350,12 @@ export function withStatus(goal: Goal, stepId: string, status: StepStatus, now: 
   };
 }
 
-// "due Friday" style, from YYYY-MM-DD dates, for the card's "<goal> · due <when>" line.
-export function dueLabel(due: string, today: string): string {
+// "due Friday" style (or "due Fri"), from YYYY-MM-DD dates; "" before the browser's clock.
+export function dueLabel(due: string, today: string, weekday: "long" | "short" = "long"): string {
   const days = Math.round((Date.parse(due) - Date.parse(today)) / 86_400_000);
   if (Number.isNaN(days)) return "";
   const date = new Date(`${due}T12:00:00Z`);
-  const named = date.toLocaleDateString("en-US", { timeZone: "UTC", ...(days > 0 && days < 7 ? { weekday: "long" } : { month: "short", day: "numeric" }) });
+  const named = date.toLocaleDateString("en-US", { timeZone: "UTC", ...(days > 0 && days < 7 ? { weekday } : { month: "short", day: "numeric" }) });
   if (days < 0) return `was due ${named}`;
   return days === 0 ? "due today" : days === 1 ? "due tomorrow" : `due ${named}`;
 }
