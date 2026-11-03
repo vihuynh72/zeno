@@ -532,6 +532,28 @@ assert.deepEqual(notes.todos, [
 ]);
 assert.deepEqual(notes.deadlines, [{ title: "Midterm 2", date: "2026-11-18" }]);
 assert.deepEqual(notes.private, []);
+// A to-do the notes also give as a deadline is kept once, as the deadline (live, Nov 2: a pasted syllabus listed
+// each item twice); a to-do with words the deadline lacks stays.
+const syllabus = notesFrom(
+  JSON.stringify({
+    todos: [
+      { title: "Write final reflection paper", minutes: 60, due: "2026-12-10" },
+      { title: "Study for chapter 6 quiz", minutes: 30, due: "" },
+      { title: "Complete reading response 3", minutes: 20, due: "" },
+      { title: "Prepare group speech", minutes: 30, due: "" },
+      { title: "Email Dr. Kim about the group speech", minutes: 10, due: "" },
+    ],
+    deadlines: [
+      { title: "COMM 20 final reflection paper", date: "2026-12-10" },
+      { title: "COMM 20 chapter 6 quiz", date: "2026-11-16" },
+      { title: "COMM 20 reading response 3", date: "2026-11-09" },
+      { title: "COMM 20 group speech", date: "2026-12-01" },
+    ],
+  }),
+  "2026-11-02",
+);
+assert.deepEqual(syllabus.todos.map((todo) => todo.title), ["Email Dr. Kim about the group speech"]);
+assert.equal(syllabus.deadlines.length, 4);
 assert.deepEqual(notesFrom('{"facts":"x"}', "2026-11-01"), { facts: [], todos: [], deadlines: [], private: [] });
 assert.throws(() => notesFrom("Sure! Here are the facts", "2026-11-01"), /not JSON/);
 // The two lists, server side: private items (marked, or caught by the backstop) become facts for the device, never a
@@ -564,9 +586,10 @@ assert.deepEqual(routed, {
   private: [
     { text: "Goes to church every Sunday at 10.", group: "routines" },
     { text: "Plays keys at the Sunday service.", group: "interests" },
+    // Deadlines are read before to-dos, so a to-do they cover is dropped (above).
+    { text: "Immigration hearing, due Friday, November 20.", group: "projects" },
     { text: "To do: Renew visa paperwork.", group: "projects" },
     { text: "To do: Bring documents to the interview, due Friday, November 20.", group: "projects" },
-    { text: "Immigration hearing, due Friday, November 20.", group: "projects" },
   ],
 });
 assert.equal(deadlineMemory({ title: "CS 146 final project", date: "2026-12-09" }), "CS 146 final project, due Wednesday, December 9.");

@@ -406,6 +406,14 @@ export async function extractNotes(notes: string, timeZone: string, now = new Da
 // The model's lists are untrusted: keep what fits, drop the rest and anything on the never-list. A private item
 // (marked by the model, or caught by the backstop as scans have it, without the instructions guard since the notes
 // are the person's own) becomes a fact for the device. Past dates are no deadline.
+const TODO_VERB = /^(write|prepare|prep|study for|study|complete|finish|do|submit|turn in|work on|start|draft|make|review|practice|rehearse)\s+/i;
+const contentWords = (text: string) =>
+  text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word && !/^(a|an|the|my|for|of|to|on|in|and|with|by)$/.test(word))
+    .map((word) => (word.length > 3 && word.endsWith("s") ? word.slice(0, -1) : word));
+
 export function notesFrom(text: string, today: string): Notes {
   let data: { facts?: unknown; todos?: unknown; deadlines?: unknown } | null;
   try {
@@ -438,16 +446,22 @@ export function notesFrom(text: string, today: string): Notes {
     routines ||= group === "routines";
     return [{ text: fact, group }];
   });
-  const todos = items(data?.todos).flatMap((item) => {
-    const title = titleOf(item.title);
-    if (!title || !isMinutes(item.minutes)) return [];
-    const due = isDate(item.due) && item.due >= today ? item.due : null;
-    return shared(item, title, `${todoMemory(title)}${due ? `, due ${dueDay(due)}` : ""}.`, "projects") ? [{ title, minutes: item.minutes, due }] : [];
-  });
   const deadlines = items(data?.deadlines).flatMap((item) => {
     const title = titleOf(item.title);
     if (!title || !isDate(item.date) || item.date < today) return [];
     return shared(item, title, deadlineMemory({ title, date: item.date }), "projects") ? [{ title, date: item.date }] : [];
+  });
+  // A to-do the notes also give as a deadline ("Write final reflection paper" beside "COMM 20 final reflection paper",
+  // due Dec 10) is one item, kept as the deadline (live, Nov 2: Memory listed all four twice).
+  const covered = (title: string) => {
+    const mine = contentWords(title.replace(TODO_VERB, ""));
+    return mine.length > 0 && deadlines.some((deadline) => mine.every((word) => contentWords(deadline.title).includes(word)));
+  };
+  const todos = items(data?.todos).flatMap((item) => {
+    const title = titleOf(item.title);
+    if (!title || !isMinutes(item.minutes) || covered(title)) return [];
+    const due = isDate(item.due) && item.due >= today ? item.due : null;
+    return shared(item, title, `${todoMemory(title)}${due ? `, due ${dueDay(due)}` : ""}.`, "projects") ? [{ title, minutes: item.minutes, due }] : [];
   });
   return { facts: facts.slice(0, 8), todos: todos.slice(0, 6), deadlines: deadlines.slice(0, 6), private: kept.slice(0, 20) };
 }
