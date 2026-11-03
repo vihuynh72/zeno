@@ -810,8 +810,8 @@ export default function GuidedDay() {
     } else if (voice.phase === "speaking") {
       talking.current = true;
       voice.interrupt();
-    } else {
-      // Tapping stop ends hands-free until the next Talk.
+    } else if (!voice.finish()) {
+      // Done talking sends what was heard (hands-free carries on); with nothing heard, tapping stop ends hands-free.
       talking.current = false;
       voice.stop();
     }

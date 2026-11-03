@@ -30,7 +30,7 @@ const LABEL: Record<VoicePhase, string> = {
 
 const HINT: Record<VoicePhase, string> = {
   idle: "",
-  listening: ", tap to stop",
+  listening: ", tap when done",
   thinking: ", tap to stop",
   speaking: ", tap to interrupt",
 };

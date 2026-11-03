@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { listenWeb, type ListenHandlers } from "./listen";
 import { playbackLevel, speakText, stopSpeaking, unlockAudio } from "./speak";
-import { soundsFinished } from "./turn";
+import { answerSoon } from "./turn";
 
 export type VoicePhase = "idle" | "listening" | "thinking" | "speaking";
 export type VoiceError = "blocked" | "unsupported" | "network" | null;
@@ -12,9 +12,10 @@ type UserTurn = (text: string, how: "voice" | "typed") => Promise<string | null>
 type ListenAfter = (said: string) => boolean;
 
 const LISTEN_LIMIT_MS = 30_000;
-// How long a pause after the last words ends the turn: short when they sound finished, long when they trail off.
-const FINISHED_WAIT_MS = 700;
-const UNFINISHED_WAIT_MS = 2_200;
+// How long a pause after the last words ends the turn: short after a question or a short reply, long after anything else,
+// which may go on after a pause to think.
+const SOON_WAIT_MS = 700;
+const THINK_WAIT_MS = 2_200;
 const subscribeNever = () => () => {};
 
 // Sound on or off is remembered per browser, so muting at night outlasts a reload; blocked storage means sound on.
@@ -111,7 +112,7 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
 
     function waitForMore() {
       clearTimeout(wait);
-      wait = setTimeout(send, soundsFinished(said()) ? FINISHED_WAIT_MS : UNFINISHED_WAIT_MS);
+      wait = setTimeout(send, answerSoon(said()) ? SOON_WAIT_MS : THINK_WAIT_MS);
     }
 
     async function listenNow() {
@@ -143,6 +144,9 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
           live = "";
           if (!heard) return silent();
           setPartial(heard);
+          // A turn runs on while words come, so the listen limit counts from the last of them.
+          clearTimeout(timer);
+          timer = setTimeout(send, LISTEN_LIMIT_MS);
           waitForMore();
         },
         onError(reason) {

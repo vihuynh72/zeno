@@ -11,16 +11,17 @@ const REPLIES = new Set([
   "yes", "yeah", "yep", "yes please", "mm hmm", "uh huh", "no", "nope", "no thanks", "not now", "later",
   "done", "all done", "i'm done", "finished", "i finished", "i'm finished", "next", "next one", "what's next",
   "stop", "start", "start it", "skip", "skip it", "okay", "ok", "sure", "got it", "sounds good", "all right",
-  "alright", "thanks", "thank you", "ready", "i'm ready", "let's go", "do it", "book it", "cancel", "never mind",
-  "that's it", "that's all", "help", "help me", "i'm stuck",
+  "alright", "thanks", "thank you", "ready", "i'm ready", "let's go", "let's do it", "go ahead", "do it", "book it",
+  "cancel", "never mind", "that's it", "that's all", "help", "help me", "i'm stuck",
 ]);
 
-// Whether a spoken turn sounds finished, so Zeno can answer soon, or trails off, so Zeno leaves room to think.
-export function soundsFinished(text: string): boolean {
+// Whether Zeno should answer soon: a whole short reply, or a question that doesn't trail off. Anything else may go on
+// after a pause to think, even a whole sentence (Vi, Nov 3: "I pause two seconds, just think about what to talk next"),
+// so Zeno leaves room.
+export function answerSoon(text: string): boolean {
   const said = text.trim();
   const words = (said.toLowerCase().replace(/’/g, "'").match(/[a-z0-9']+/g) ?? []).join(" ");
   if (!words || /([,;:\-–—]|\.\.\.|…)$/.test(said)) return false;
   if (REPLIES.has(words)) return true;
-  if (HANGING.some((ending) => words === ending || words.endsWith(` ${ending}`))) return false;
-  return /[.?!]$/.test(said) || words.split(" ").length >= 4;
+  return said.endsWith("?") && !HANGING.some((ending) => words === ending || words.endsWith(` ${ending}`));
 }

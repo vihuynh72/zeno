@@ -173,6 +173,19 @@ assert.equal(canvasFor({ ...plan, title: "HIST 110: essay 2" }, items)?.url, "b"
 assert.equal(canvasFor({ ...plan, title: "Study for Quiz 4 (Ch. 4)" }, items)?.url, "c");
 assert.equal(canvasFor({ ...plan, title: "Lab report" }, items), undefined);
 assert.equal(canvasFor(null, items), undefined);
+// A title kept as its bare kind ("Quiz") never takes a plan for another quiz; the plan's course decides between equals.
+const quizzes = [
+  { course: "BIO 101", title: "Quiz", url: "bio" },
+  { course: "CS 146", title: "Quiz 7 (Ch. 7)", url: "cs" },
+  { course: "HIST 110", title: "Reading response 7", url: "hist" },
+  { course: "ENGL 1A", title: "Reading response 7", url: "engl" },
+];
+assert.equal(canvasFor({ ...plan, title: "CS 146: Quiz 7 (Ch. 7)" }, quizzes)?.url, "cs");
+assert.equal(canvasFor({ ...plan, title: "Quiz 7 (Ch. 7)" }, quizzes)?.url, "cs");
+assert.equal(canvasFor({ ...plan, title: "BIO 101: Quiz" }, quizzes)?.url, "bio");
+assert.equal(canvasFor({ ...plan, title: "ENGL 1A: Reading response 7" }, quizzes)?.url, "engl");
+assert.equal(canvasFor({ ...plan, title: "Reading response 7" }, quizzes)?.url, "hist", "the sooner one when nothing else tells");
+assert.equal(quizzes[0].url, "bio", "the list keeps its order");
 
 // Connect Canvas re-plans the home card only when it found work still due; Disconnect (unlinked, []) always does, so the
 // card drops a Canvas pick; neither touches any other screen.

@@ -44,7 +44,7 @@ typography:
     lineHeight: "24px"
   timer:
     fontFamily: "Atkinson Hyperlegible Mono, ui-monospace, monospace"
-    fontSize: "56px"
+    fontSize: "48px"
     fontWeight: 500
     fontFeature: "tnum"
   numeral:
@@ -167,7 +167,7 @@ A paper-and-ink palette: two warm neutrals, near-black ink, one blue for ruling 
 ### Neutral
 - **Card Stock** (`card-stock`; `dark-card-stock`): every card, strip, mini card and the edges of waiting cards.
 - **Desk** (`desk`; `dark-desk`): the page ground, sheets and the desk view; also the hover fill of outlined pills.
-- **Pencil Grey** (`ink-2`; `dark-ink-2`): secondary text, placeholders, minutes, inactive step names.
+- **Pencil Grey** (`ink-2`; `dark-ink-2`): secondary text, placeholders, minutes, inactive step names, and Zeno's quiet lines under the Focus card.
 - **Track** (`track`; `dark-track`): unlit dots, upcoming step bars, quiet pill outlines, sheet edges, and in dark the 1px rim that lifts the desk view.
 
 ### Calendar Tints (data, not accent)
@@ -192,7 +192,8 @@ On the desk's Week, events from the person's other calendars tint the card in th
 - **Title** (700, 20px/32px): mini card headings, roadmap strip, caption line.
 - **Body** (400, 18px/24px): everything else. 18px is the floor.
 - **Label** (700, 20px/24px; 18px on small pills and phones): pill text. Dock labels are 500 at body size; Talk is 700.
-- **Timer** (Mono 500, 56px, tabular numerals; 40px on phones): the focus countdown, written on the card's rules.
+- **Timer** (Mono 500 at three quarters of the rule, tabular numerals: 48px on the large card, 42px on a short laptop, 30px on phones): the Focus stopwatch, counting up from 0:00 on its own rule. No alarm, chime or spoken line, however long it runs.
+- **Planned** (400, 24px; 18px on phones, Pencil Grey): "planned 15 min" beside the stopwatch on its rule, the word in the sans and the minutes in Mono; it drops to the next rule only on a very narrow screen.
 - **Numeral** (Mono 400, 24px, Pencil Grey): minutes at the right end of a step's first line, on the same rule. Times, dates' clock and done counts are Mono at body size.
 
 ### Named Rules
@@ -241,7 +242,7 @@ Cards are nearly square-cornered (4px), like cut card stock. Buttons are full pi
 ### Index Card (signature)
 - **Corner Style:** 4px.
 - **Background:** Card Stock with Paper shadow, blue rules every line, a 2px red margin line at 64px, two or three Edge cards peeking below.
-- **Content:** Zeno's line in Display, the person's reply in Hand on the next rule, minutes in Mono at the right end of the first line, the timer on the rules during Focus.
+- **Content:** Zeno's line in Display, the person's reply in Hand on the next rule, minutes in Mono at the right end of the first line. In Focus: the step, its goal line and the stopwatch with its planned minutes, each on its own rule; under the card, Zeno's quiet lines (the calm line, the one check-in, the welcome back) in Pencil Grey, shown and never said, never needing an answer.
 - **Motion:** a new card rises 24px from 97% scale in 0.22s; Zeno's words appear word by word (blur 4px to sharp, 280ms apart); finished cards get the DONE stamp (scales from 1.8 in 0.2s) then fly to the pile in 0.3s.
 
 ### Inputs / Fields

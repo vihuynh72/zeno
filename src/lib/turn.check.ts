@@ -1,27 +1,22 @@
-// Self-check for turn-taking: soundsFinished, useVoice's wait for more words, and Web Speech listening on after a pause.
+// Self-check for turn-taking: answerSoon, useVoice's wait for more words, and Web Speech listening on after a pause.
 // Run: node src/lib/turn.check.ts
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
-import { soundsFinished } from "./turn.ts";
+import { answerSoon } from "./turn.ts";
 import type { ListenHandlers } from "./listen.ts";
 
-// ---- soundsFinished. Meta's finals are punctuated ("Put the lab report on my calendar."); Chrome's are not.
-const finished = [
-  "Put the lab report on my calendar.",
+// ---- answerSoon. Meta's finals are punctuated ("Put the lab report on my calendar."); Chrome's are not, so there only a
+// short reply goes soon.
+const soon = [
   "What should I do next?",
-  "I finished the outline!",
-  "I want to work on the um the essay for history.",
   "Can you break it into smaller steps?",
-  "Email Prof Patel about the group project.",
-  "Book it for 3 p.m.",
+  "Should I start with the outline or the intro?",
+  "What's on my calendar?",
   "Yes.",
   "No thanks.",
-  "Okay, let's do it.",
   "Uh-huh.",
   "Mm-hmm.",
-  "put the lab report on my calendar",
-  "what should i do next",
-  "i have a quiz at 3:30",
+  "Let's do it.",
   "yes",
   "Yeah",
   "no",
@@ -41,10 +36,22 @@ const finished = [
   "all done",
   "next one",
   "  yes  ",
+];
+const later = [
+  // A whole sentence: Vi pauses after one "to think about what to talk next".
+  "Put the lab report on my calendar.",
+  "I have an essay due Friday.",
+  "I finished the outline!",
+  "I want to work on the um the essay for history.",
+  "Email Prof Patel about the group project.",
+  "Book it for 3 p.m.",
+  "Okay, let's do it.",
   "Let me think about the outline first.",
   "I can't wait for this weekend",
-];
-const unfinished = [
+  "put the lab report on my calendar",
+  "what should i do next",
+  "i have a quiz at 3:30",
+  // Trailing off.
   "",
   "   ",
   "...",
@@ -61,6 +68,7 @@ const unfinished = [
   "it was like",
   "Start with the.",
   "Should I start with?",
+  "Should I start with the outline or?",
   "I need to finish my essay,",
   "Okay,",
   "Yes,",
@@ -86,8 +94,8 @@ const unfinished = [
   "history essay first",
   "Put it on my",
 ];
-for (const text of finished) assert.equal(soundsFinished(text), true, `finished: ${JSON.stringify(text)}`);
-for (const text of unfinished) assert.equal(soundsFinished(text), false, `unfinished: ${JSON.stringify(text)}`);
+for (const text of soon) assert.equal(answerSoon(text), true, `soon: ${JSON.stringify(text)}`);
+for (const text of later) assert.equal(answerSoon(text), false, `later: ${JSON.stringify(text)}`);
 
 // ---- useVoice. React, Zeno's voice and the clock are stand-ins; the hook and the adapter contract are real.
 const stub = (source: string) => ({ url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true });
@@ -171,18 +179,18 @@ async function talk() {
   await after(0);
 }
 
-// A finished sentence goes 700 ms after its final, whole; the session pauses for Zeno's turn.
+// A question goes 700 ms after its final, whole; the session pauses for Zeno's turn.
 await talk();
 h.onSpeechStart?.();
-h.onPartial?.("Put the lab report");
-assert.equal(partial(), "Put the lab report");
+h.onPartial?.("What should I");
+assert.equal(partial(), "What should I");
 h.onSpeechEnd?.();
-h.onFinal("Put the lab report on my calendar.");
-assert.equal(partial(), "Put the lab report on my calendar.");
+h.onFinal("What should I do next?");
+assert.equal(partial(), "What should I do next?");
 await after(699);
 assert.deepEqual(turns, []);
 await after(1);
-assert.deepEqual(turns, ["Put the lab report on my calendar."]);
+assert.deepEqual(turns, ["What should I do next?"]);
 assert.deepEqual(calls, ["open", "pause", "stop"]);
 assert.deepEqual(spoken, ["Got it."]);
 assert.equal(phase(), "idle");
@@ -195,27 +203,39 @@ assert.equal(turns.length, 1);
 await after(1);
 assert.equal(turns.at(-1), "I want to work on the");
 
+// So does a whole sentence (Vi: "I pause two seconds, just think about what to talk next"): two seconds of thought,
+// then the next sentence joins the turn.
+await talk();
+h.onFinal("I have an essay due Friday.");
+await after(2_000);
+h.onSpeechStart?.();
+h.onFinal("And a lab report.");
+await after(2_199);
+assert.equal(turns.length, 2);
+await after(1);
+assert.equal(turns.at(-1), "I have an essay due Friday. And a lab report.");
+
 // A pause to think: new speech holds the turn, the next final joins it and waits again; the card shows it all.
 await talk();
 h.onFinal("I need to finish my essay,");
 await after(1_500);
 h.onSpeechStart?.();
 await after(10_000); // Meta can hold a segment open through a long pause; its final decides
-assert.equal(turns.length, 2);
+assert.equal(turns.length, 3);
 h.onPartial?.("and email");
 assert.equal(partial(), "I need to finish my essay, and email");
-h.onFinal("And email my professor.");
+h.onFinal("And email my professor?");
 await after(700);
-assert.equal(turns.at(-1), "I need to finish my essay, And email my professor.");
+assert.equal(turns.at(-1), "I need to finish my essay, And email my professor?");
 
 // Speech with no words gets no final from Meta; its end starts the wait again.
 await talk();
 h.onFinal("Put it on my calendar.");
 h.onSpeechStart?.();
 await after(5_000);
-assert.equal(turns.length, 3);
+assert.equal(turns.length, 4);
 h.onSpeechEnd?.();
-await after(700);
+await after(2_200);
 assert.equal(turns.at(-1), "Put it on my calendar.");
 
 // Done talking: Talk sends what was heard at once, live words too; with nothing heard the caller stops instead.
@@ -233,7 +253,7 @@ await talk();
 h.onFinal("Cancel that and");
 voice.stop();
 await after(5_000);
-assert.equal(turns.length, 5);
+assert.equal(turns.length, 6);
 await talk();
 h.onFinal("Yes.");
 await after(700);
@@ -250,10 +270,10 @@ assert.equal(phase(), "listening");
 reply = "Got it.";
 h.onFinal("Okay,");
 await after(2_199);
-assert.equal(turns.length, 7);
+assert.equal(turns.length, 8);
 h.onSpeechStart?.();
 h.onFinal("let's do it.");
-await after(700);
+await after(2_200);
 assert.equal(turns.at(-1), "Okay, let's do it.");
 
 // The listen limit: nothing said in 30 s is silence; words still being said by then go as they are.
@@ -268,6 +288,18 @@ h.onPartial?.("then the");
 await after(30_000);
 assert.equal(turns.at(-1), "First the reading, then the");
 assert.equal(silences, 1);
+// A long turn runs on while words come: the limit counts from the last final, not the tap.
+await talk();
+h.onFinal("This week I have the history essay.");
+h.onSpeechStart?.();
+await after(20_000);
+h.onFinal("And the lab report.");
+h.onSpeechStart?.();
+await after(20_000);
+assert.equal(turns.length, 10);
+h.onFinal("Which one first?");
+await after(700);
+assert.equal(turns.at(-1), "This week I have the history essay. And the lab report. Which one first?");
 
 // Web Speech ends a recognition with an empty final: silence when nothing was said, the usual wait after words.
 await talk();
@@ -277,7 +309,9 @@ await talk();
 h.onFinal("put the essay on my calendar");
 h.onSpeechStart?.();
 h.onFinal("");
-await after(700);
+await after(2_199);
+assert.equal(turns.length, 11);
+await after(1);
 assert.equal(turns.at(-1), "put the essay on my calendar");
 
 // Errors still end the listen and drop the words.
@@ -285,7 +319,7 @@ await talk();
 h.onFinal("Put it on");
 h.onError?.("network");
 await after(5_000);
-assert.equal(turns.length, 10);
+assert.equal(turns.length, 12);
 assert.equal(states[3], "network");
 assert.equal(phase(), "idle");
 

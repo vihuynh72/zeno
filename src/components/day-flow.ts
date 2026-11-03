@@ -127,10 +127,14 @@ export function openingReusable(opening: { at?: string; sig?: string } | null | 
 }
 
 // The Canvas item a plan is for: the plan's title holds the item's, any case ("Essay 2", or "HIST 110: Essay 2" as its
-// deadline names it).
-export function canvasFor<T extends { title: string }>(plan: Goal | null, items: T[]): T | undefined {
-  const title = plan?.title.toLowerCase();
-  return title ? items.find((item) => item.title.trim() !== "" && title.includes(item.title.trim().toLowerCase())) : undefined;
+// deadline names it). One whose course the plan names too comes first, then the longest title, so a bare "Quiz" (a title
+// that held a code) never takes another course's "Quiz 7".
+export function canvasFor<T extends { title: string; course?: string }>(plan: Goal | null, items: T[]): T | undefined {
+  const title = plan?.title.toLowerCase() ?? "";
+  const holds = (text = "") => text.trim() !== "" && title.includes(text.trim().toLowerCase());
+  return items
+    .filter((item) => holds(item.title))
+    .sort((a, b) => Number(holds(b.course)) - Number(holds(a.course)) || b.title.trim().length - a.title.trim().length)[0];
 }
 
 // Canvas linked or unlinked in its sheet re-plans the home card, only on that card (never mid-focus, after a Done, in

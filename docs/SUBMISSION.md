@@ -8,7 +8,7 @@ Zeno makes starting the easy part: open it, tap one of three things it picked fr
 
 ## Project description
 
-Starting is the hardest part of any goal, and calendars and inboxes make it worse. Zeno is a voice-first daily helper for students and anyone who struggles to begin. When you open it, the first card is on screen instantly and Zeno says one short line about your day, built from your Google Calendar, your inbox, your goals and what it remembers about you. Instead of typing, you tap one of three things it suggests (or just talk). Zeno asks at most one question, shrinks the goal into a roadmap of five-to-fifteen-minute steps, and walks you through the first one on a single index card with a timer. Say "done" and the card gets stamped and lands on your done pile; your streak grows. A 60-second first-run setup and a "paste your syllabus" import give Zeno real context from day one, and everything it remembers is visible and deletable. One thing per screen, large type, light and dark: built to be calm for people who get overwhelmed.
+Starting is the hardest part of any goal, and calendars and inboxes make it worse. Zeno is a voice-first daily helper for students and anyone who struggles to begin. When you open it, the first card is on screen instantly and Zeno says one short line about your day, built from your Google Calendar, your inbox, your goals and what it remembers about you. Instead of typing, you tap one of three things it suggests (or just talk). Zeno asks at most one question, shrinks the goal into a roadmap of five-to-fifteen-minute steps, and walks you through the first one on a single index card with a quiet stopwatch. Say "done" and the card gets stamped and lands on your done pile; your streak grows. A 60-second first-run setup and a "paste your syllabus" import give Zeno real context from day one, and everything it remembers is visible and deletable. One thing per screen, large type, light and dark: built to be calm for people who get overwhelmed.
 
 ## Describe your use of Meta products
 
@@ -19,7 +19,7 @@ Starting is the hardest part of any goal, and calendars and inboxes make it wors
 
 ## Why are Meta's models important to your solution?
 
-Zeno only works if it feels instant and knows the person. Muse Spark's controllable reasoning lets us spend almost no reasoning on quick conversational turns and still get reliable tool calls and strict JSON, which is what makes "tap one of three choices" possible instead of a chat box. Muse Voice Transcribe's realtime endpointing makes talking to Zeno feel like a conversation rather than dictation: it knows when you stopped, so there is no Send button. Together they let a small, calm interface carry real agent work (planning, remembering, tracking progress) without making people think.
+Zeno only works if it feels instant and knows the person. Muse Spark's controllable reasoning lets us spend almost no reasoning on quick conversational turns and still get reliable tool calls and strict JSON, which is what makes "tap one of three choices" possible instead of a chat box. Muse Voice Transcribe's realtime endpointing makes talking to Zeno feel like a conversation rather than dictation, and Zeno leaves room to think on top of it: it answers soon after a question or a quick "yes", waits through a pause after anything else, and a tap on Talk sends at once, so there is no Send button. Together they let a small, calm interface carry real agent work (planning, remembering, tracking progress) without making people think.
 
 ## 3-minute demo video (shot list)
 
@@ -31,7 +31,7 @@ Record in Chrome at 1440x900 with the demo account **dotcainha@gmail.com** (neve
 | 0:15-0:45 | First-run setup: 4 taps, paste a syllabus, "Here's what I'll remember" | "Thirty seconds, four taps, and Zeno knows your world. You can see and delete all of it." |
 | 0:45-1:05 | Reload: the card is instantly there, Zeno speaks its one-line opening, three options | "It opens instantly and talks first, using your real calendar and what it remembers." |
 | 1:05-1:45 | Tap the essay option, tap a quick reply, the roadmap appears; then say "make the first step smaller" and watch the live words and the roadmap change | "No typing. Tap, or just talk. Muse Spark plans it with tool calls; Muse Voice Transcribe hears when you stop." |
-| 1:45-2:15 | Start the step, the 10:00 timer (cut), Done: the stamp flies to the pile, check-in, "3 days in a row" | "One card, one step, one satisfying stamp." |
+| 1:45-2:15 | Start the step, the stopwatch counting up with its one quiet check-in line (cut), Done: the stamp flies to the pile, check-in, "3 days in a row" | "One card, one step, one satisfying stamp." |
 | 2:15-2:35 | Today: the desk unfolds with calendar and inbox in the middle | "Your day in one place, the start of Zeno's workspace." |
 | 2:35-2:55 | Simple diagram: Muse Spark (minimal reasoning, tools, JSON options), Muse Voice Transcribe realtime over a Vercel WebSocket relay, memory in Postgres | "Fast where it matters, careful with your data." |
 | 2:55-3:00 | Logo + URL | "Zeno. Make starting the easy part." |
