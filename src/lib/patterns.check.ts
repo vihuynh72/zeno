@@ -7,7 +7,7 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { alreadySaid, kindOf, patternsIn, reconcile } = await import("./patterns.ts");
+const { alreadySaid, kindOf, paceOf, patternsIn, reconcile } = await import("./patterns.ts");
 
 const LA = "America/Los_Angeles";
 // A local time in Los Angeles in October (PDT, UTC-7); Date.UTC rolls a late hour into the next day.
@@ -173,5 +173,22 @@ for (let count = 1; count <= wobbly.length; count++) {
 }
 assert.equal(saves, 1, "the morning is saved once, not three times");
 assert.deepEqual(kept.map((row) => row.text), [morning]);
+
+// The pace that times Focus's one check-in: the median of real/planned over the last 20 finished, timed, planned steps
+// (1 minute to 6 hours each), within 0.75-2, to the nearest 0.05; nothing below 3 such steps.
+const run = (...reals: number[]) => reals.map((real, index) => took(1 + index, 10, real));
+assert.equal(paceOf([]), undefined);
+assert.equal(paceOf(run(20, 20)), undefined, "2 steps are too few");
+assert.equal(paceOf(run(20, 20, 15)), 2);
+assert.equal(paceOf(run(10, 15, 20, 30)), 1.75, "an even count takes the middle two");
+assert.equal(paceOf(run(13, 13, 14)), 1.3);
+assert.equal(paceOf(run(13.3, 13.3, 13.3)), 1.35, "to the nearest 0.05");
+assert.equal(paceOf(run(2, 3, 4)), 0.75, "never under 0.75");
+assert.equal(paceOf(run(40, 50, 60)), 2, "never over 2");
+assert.equal(paceOf([...run(12, 12), took(5, 10, 0.5), took(6, 10, 361), took(7, null, 12), done(la(8, 9), 10), skipped(la(9, 9), 10)]), undefined, "none of the rest count");
+assert.equal(paceOf([...run(12, 12), took(5, 10, 1)]), 1.2, "1 minute counts");
+assert.equal(paceOf([...run(12, 12), took(5, 10, 360)]), 1.2, "6 hours counts");
+// Only the last 20 count: 21 older steps at 2x, then 20 at the plan (all 41 would make it 2).
+assert.equal(paceOf(Array.from({ length: 41 }, (_, index) => took(1 + index, 10, index < 21 ? 20 : 10))), 1);
 
 console.log("patterns self-check passed");

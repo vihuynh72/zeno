@@ -117,7 +117,8 @@ body {
   --fs: 44px;
   --lh: 64px;
   --fs2: 30px;
-  --timer: 56px;
+  /* Three quarters of the rule at every card size, so its digits clear the goal line's descenders on the rule above. */
+  --timer: calc(var(--lh) * 0.75);
   --margin-x: 64px;
   --pad-l: 104px;
   --pad-r: 64px;
@@ -158,7 +159,6 @@ body {
     --fs: 30px;
     --lh: 40px;
     --fs2: 22px;
-    --timer: 40px;
     --margin-x: 40px;
     --pad-l: 56px;
     --pad-r: 24px;
@@ -228,6 +228,21 @@ body {
   line-height: 0;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+}
+/* Muse's planned minutes beside the stopwatch: small, muted and on the stopwatch's rule. */
+.planned {
+  margin-left: 16px;
+  font-size: 24px;
+  line-height: 0;
+  font-weight: 400;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+@media (max-width: 639px) {
+  .planned {
+    margin-left: 12px;
+    font-size: 18px;
+  }
 }
 
 /* Typing happens on the next rule. */

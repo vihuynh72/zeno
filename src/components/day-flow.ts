@@ -75,9 +75,9 @@ export function cardSize(text: string): "l" | "m" | "s" {
   return text.length <= 90 ? "l" : text.length <= 160 ? "m" : "s";
 }
 
-// 9:05 style countdown, never below 0:00.
+// The Focus stopwatch, M:SS from 0:00 ("75:03" past an hour).
 export function clock(seconds: number) {
-  const s = Math.max(0, Math.ceil(seconds));
+  const s = Math.max(0, Math.floor(seconds));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
@@ -112,6 +112,25 @@ export function draftGoal(pick: FirstPick, now: Date): Goal {
 export function stepCard(goal: Goal | null): FirstPick | null {
   const step = openSteps(goal)[0];
   return goal && step ? { goal: goal.title, due: goal.due ?? null, stepId: step.id, steps: [{ title: step.title, minutes: step.minutes ?? 5 }], why: "" } : null;
+}
+
+// What a saved model opening was written for: the plan (its id, each step's id and status) and the device's Canvas list
+// (each assignment's id and due time). Any change to them asks the model again.
+export const openingSig = (goal: Goal | null, canvas: Pick<CanvasAssignment, "id" | "due">[] | null) =>
+  JSON.stringify([goal?.id ?? null, goal?.steps.map((step) => [step.id, step.status]) ?? [], canvas?.map((item) => [item.id, item.due]) ?? null]);
+
+// A saved opening under 20 minutes old whose day still matches shows again on page load, with no model call (Vi wants
+// Zeno cheaper to run). One saved before it had a time and a signature is asked for again.
+export function openingReusable(opening: { at?: string; sig?: string } | null | undefined, sig: string, now: number) {
+  const age = now - Date.parse(opening?.at ?? "");
+  return age >= 0 && age < 20 * 60_000 && opening?.sig === sig;
+}
+
+// The Canvas item a plan is for: the plan's title holds the item's, any case ("Essay 2", or "HIST 110: Essay 2" as its
+// deadline names it).
+export function canvasFor<T extends { title: string }>(plan: Goal | null, items: T[]): T | undefined {
+  const title = plan?.title.toLowerCase();
+  return title ? items.find((item) => item.title.trim() !== "" && title.includes(item.title.trim().toLowerCase())) : undefined;
 }
 
 // Canvas linked or unlinked in its sheet re-plans the home card, only on that card (never mid-focus, after a Done, in
@@ -219,13 +238,21 @@ export function streakLine(progress: Progress) {
   return `Day ${progress.streak} · ${steps} ${steps === 1 ? "step" : "steps"} this week`;
 }
 
-// ---------- Focus check-ins ----------
+// ---------- Focus: a stopwatch and one quiet check-in (Vi, Nov 3: "I don't want any alarm") ----------
 
-export const CHECKINS = {
-  start: (minutes: number) =>
-    minutes === 5 ? "Timer's on. Just five minutes." : `Timer's on. ${minutes} ${minutes === 1 ? "minute" : "minutes"}, one thing.`,
-  half: "Halfway there.",
-  end: "Time's up. Done, or stuck?",
+// The step's one check-in, in minutes from its start: Muse's planned minutes at the person's pace (GET /api/day; 1 until
+// it is known), never under 3.
+export const checkinMinute = (planned: number, pace?: number) =>
+  Math.max(3, Math.round(planned * (pace && Number.isFinite(pace) && pace > 0 ? pace : 1)));
+
+const WRAP_UPS = ["Finish the line you're on, then Done.", "Wrap up this bit, then Done.", "Get it to a stopping point, then Done."];
+
+// The lines under the Focus card, shown and never said: calm until the check-in, the check-in (then nothing more,
+// however long the step runs), and the welcome back after the page was hidden a minute or more.
+export const FOCUS = {
+  calm: (planned: number | null) => (planned ? `Planned ${planned} min. I'll stay quiet.` : "I'll stay quiet."),
+  checkin: (minute: number) => `${minute} min in. ${WRAP_UPS[minute % WRAP_UPS.length]}`,
+  back: (startedAt: string, now: number) => `Back. ${Math.max(0, Math.floor((now - Date.parse(startedAt)) / 60_000))} min on this.`,
 };
 
 // ---------- Memory ----------
