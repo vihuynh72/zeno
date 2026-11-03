@@ -4,8 +4,6 @@ export type EmailSummary = {
   subject: string;
   snippet: string;
   unread: boolean;
-  // From someone who may expect an answer, not a bulk or no-reply sender.
-  personal: boolean;
 };
 
 type GmailListResponse = {
@@ -58,12 +56,12 @@ async function gmailFetch(accessToken: string, path: string) {
 // Gmail's Promotions, Social, Updates and Forums tabs, and no-reply senders: mail nobody answers.
 const BULK = /^CATEGORY_(PROMOTIONS|SOCIAL|UPDATES|FORUMS)$/;
 const NO_REPLY = /no-?reply|do-?not-?reply|notifications?@|mailer-daemon|newsletter/i;
+const IMPORTANT = "in:inbox -category:promotions -category:social -category:updates -category:forums";
 
+// Only important mail (Vi, Nov 2), people and school: the newest 15 outside the bulk tabs, without bulk or no-reply
+// senders, at most 6.
 export async function getRecentEmail(accessToken: string): Promise<EmailSummary[]> {
-  const list = (await gmailFetch(
-    accessToken,
-    "messages?maxResults=8&labelIds=INBOX",
-  )) as GmailListResponse;
+  const list = (await gmailFetch(accessToken, `messages?${new URLSearchParams({ maxResults: "15", q: IMPORTANT })}`)) as GmailListResponse;
 
   const ids = (list.messages ?? []).map((item) => item.id).filter(Boolean) as string[];
   const messages = await Promise.all(
@@ -76,18 +74,22 @@ export async function getRecentEmail(accessToken: string): Promise<EmailSummary[
     ),
   );
 
-  return messages.map((message) => {
-    const from = header(message, "From");
-    const labels = message.labelIds ?? [];
-    return {
-      id: message.id ?? crypto.randomUUID(),
-      from: from || "Unknown sender",
-      subject: header(message, "Subject") || "(no subject)",
-      snippet: (message.snippet ?? "").slice(0, 160),
-      unread: labels.includes("UNREAD"),
-      personal: Boolean(from) && !NO_REPLY.test(from) && !labels.some((label) => BULK.test(label)),
-    };
-  });
+  return messages
+    .flatMap((message) => {
+      const from = header(message, "From");
+      const labels = message.labelIds ?? [];
+      if (!from || NO_REPLY.test(from) || labels.some((label) => BULK.test(label))) return [];
+      return [
+        {
+          id: message.id ?? crypto.randomUUID(),
+          from,
+          subject: header(message, "Subject") || "(no subject)",
+          snippet: (message.snippet ?? "").slice(0, 160),
+          unread: labels.includes("UNREAD"),
+        },
+      ];
+    })
+    .slice(0, 6);
 }
 
 // One email for the profile scan: read and cleaned in memory, never stored.

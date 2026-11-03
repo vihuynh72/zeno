@@ -1,11 +1,11 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { OPENING_SCHEMA, openingPrompt, parseOpening, systemPrompt, type Refs } from "@/lib/agent";
+import { cleanCanvas, OPENING_SCHEMA, openingPrompt, parseOpening, systemPrompt, type Refs } from "@/lib/agent";
 import { aiConfigured, askModel } from "@/lib/ai";
 import { ruleOpening, ruleOptions, rulePick } from "@/lib/brief";
 import { loadUserContext } from "@/lib/context";
-import type { OpeningResponse } from "@/lib/day";
+import type { CanvasBrief, OpeningResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
 import { stepsFinishedBetween } from "@/lib/goals";
 import { dayBounds, localDate, timeZoneFrom } from "@/lib/tz";
@@ -15,17 +15,18 @@ export const maxDuration = 30;
 
 // The model-written opening, options and first-card pick in one call; the screens show the rule line until it
 // lands. When the model fails, the rule line and rule pick answer instead, so the first card always has one thing.
-// POST sends the device's private facts in the body (never the URL); GET is the same without them.
+// POST sends the device's private facts and Canvas briefs in the body (never the URL; never saved or logged); GET is the
+// same without them.
 export async function GET() {
-  return opening([]);
+  return opening([], []);
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as { private?: unknown } | null;
-  return opening(cleanPrivate(body?.private));
+  const body = (await request.json().catch(() => null)) as { private?: unknown; canvas?: unknown } | null;
+  return opening(cleanPrivate(body?.private), cleanCanvas(body?.canvas));
 }
 
-async function opening(privateFacts: string[]) {
+async function opening(privateFacts: string[], canvas: CanvasBrief[]) {
   const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ state: "signed-out" } satisfies OpeningResponse, { status: 401 });
@@ -37,10 +38,11 @@ async function opening(privateFacts: string[]) {
   const today = dayBounds(timeZone);
   // The last instant before today's midnight falls on the person's yesterday, DST included.
   const yesterday = dayBounds(timeZone, new Date(today.start.getTime() - 1));
-  const [context, finished] = await Promise.all([
+  const [loaded, finished] = await Promise.all([
     loadUserContext(email, session, timeZone),
     databaseConfigured() ? stepsFinishedBetween(email, yesterday.start, yesterday.end).catch(() => []) : [],
   ]);
+  const context = { ...loaded, canvas };
   const rule = () =>
     NextResponse.json({
       state: "ok",

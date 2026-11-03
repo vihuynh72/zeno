@@ -1,7 +1,7 @@
 import type { Session } from "next-auth";
 import type { CalendarBlock, CalendarWrite, Deadline, FreeSlot, WeekEvent } from "@/lib/day";
 import { ensureSchema, getSql } from "@/lib/db";
-import { factKey, isId, setStepSchedule } from "@/lib/goals";
+import { isId, setStepSchedule } from "@/lib/goals";
 import { dayBounds, localDate, localHour } from "@/lib/tz";
 
 // The narrowest Google scope that lets Zeno make its own calendar and write events only there.
@@ -20,6 +20,8 @@ export type CalendarEvent = {
   allDay: boolean;
   // A block Zeno booked (it carries Zeno's private event property).
   zeno: boolean;
+  // The event's page in Google Calendar, which the read-only Week view opens.
+  link?: string | null;
 };
 
 type GoogleEvent = {
@@ -28,6 +30,7 @@ type GoogleEvent = {
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
   extendedProperties?: { private?: Record<string, string> };
+  htmlLink?: string;
 };
 
 type GoogleError = Error & { status?: number; body?: string };
@@ -122,6 +125,8 @@ function eventFrom(item: GoogleEvent): CalendarEvent {
     end: item.end?.dateTime ?? item.end?.date ?? "",
     allDay: Boolean(item.start?.date && !item.start?.dateTime),
     zeno: Boolean(item.extendedProperties?.private?.zenoKind),
+    // Only Google's own https page, since a tap opens it.
+    link: /^https:\/\/([\w-]+\.)*google\.com\//.test(item.htmlLink ?? "") ? item.htmlLink! : null,
   };
 }
 
@@ -265,8 +270,7 @@ export function thisMonday(timeZone: string, now = new Date()) {
 const KINDS: readonly string[] = ["step", "todo", "deadline"];
 
 // Blocks from a request body. They are model-proposed, so untrusted: each is checked on its own and an invalid one
-// is left out, so one bad block never cancels a pasted batch. null when the list itself is off or none is valid.
-// A proposal can be filtered with this too, so it only offers what booking accepts.
+// is left out, so one bad block never cancels the rest. null when the list itself is off or none is valid.
 export function validBlocks(input: unknown, timeZone: string, now = new Date()): CalendarBlock[] | null {
   if (!Array.isArray(input) || input.length < 1 || input.length > 12) return null;
   const today = localDate(timeZone, now);
@@ -434,25 +438,6 @@ export async function upcomingDeadlines(accessToken: string, email: string, time
     const daysLeft = daysBetween(days[0].date, date);
     const title = (item.summary ?? "").replace(/^due:\s*/i, "").trim() || "Untitled";
     return daysLeft >= 0 && daysLeft <= 14 ? [{ title, date, daysLeft }] : [];
-  });
-}
-
-// The blocks without the deadlines a shown calendar already holds on their date: an event whose title, as words,
-// holds the deadline's ("Lab report 3 due" holds "Lab report 3"), or an all-day one the deadline's title holds
-// ("Midterm" in "HIST 110 midterm"; a timed "HIST 110" lecture never hides "HIST 110 essay"). Only those dates are
-// read, and a date that fails to read keeps its deadlines. Zeno's deadlines (knownDeadlines) still list a skipped one.
-export async function withoutKnownDeadlines(accessToken: string, timeZone: string, blocks: CalendarBlock[]): Promise<CalendarBlock[]> {
-  const dates = [...new Set(blocks.flatMap((block) => (block.kind === "deadline" && block.date ? [block.date] : [])))];
-  const read = await Promise.allSettled(dates.map((date) => eventsByDay(accessToken, timeZone, date, 1)));
-  const words = (title: string) => ` ${factKey(title)} `;
-  return blocks.filter((block) => {
-    const day = read[dates.indexOf(block.date ?? "")];
-    const title = words(block.title);
-    return (
-      block.kind !== "deadline" ||
-      day?.status !== "fulfilled" ||
-      !day.value[0].events.some((event) => words(event.title).includes(title) || (event.allDay && title.includes(words(event.title))))
-    );
   });
 }
 
