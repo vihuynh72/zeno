@@ -2,8 +2,25 @@
 
 import { useEffect, useRef } from "react";
 
-// The person's initial in the top bar opens Privacy and Sign out.
-export default function AccountMenu({ initial, onSignOut, open }: { initial: string; onSignOut(): void; open?: boolean }) {
+// The person's initial in the top bar opens Sound, Canvas, Privacy and Sign out. canvas is null until the page knows
+// whose account it is (the link is kept per account), true once Canvas is linked on this device.
+export default function AccountMenu({
+  initial,
+  muted,
+  canvas,
+  onMute,
+  onCanvas,
+  onSignOut,
+  open,
+}: {
+  initial: string;
+  muted: boolean;
+  canvas: boolean | null;
+  onMute(): void;
+  onCanvas(): void;
+  onSignOut(): void;
+  open?: boolean;
+}) {
   const menu = useRef<HTMLDivElement>(null);
   // The /preview gallery shows it open for screenshots.
   useEffect(() => {
@@ -20,6 +37,22 @@ export default function AccountMenu({ initial, onSignOut, open }: { initial: str
         )}
       </button>
       <div ref={menu} id="account-menu" popover="auto" className="menu">
+        {/* The menu stays open, so the switch shows what it did. */}
+        <button type="button" role="switch" aria-checked={!muted} onClick={onMute} className="pill pill-small pill-quiet w-full">
+          Sound<span aria-hidden="true"> · {muted ? "off" : "on"}</span>
+        </button>
+        {canvas !== null && (
+          <button
+            type="button"
+            onClick={() => {
+              menu.current?.hidePopover();
+              onCanvas();
+            }}
+            className="pill pill-small pill-quiet w-full"
+          >
+            {canvas ? "Canvas · connected" : "Connect Canvas"}
+          </button>
+        )}
         {/* A full load, not a client navigation: Back must not repaint the page from this load's saved day. */}
         <a href="/privacy" className="pill pill-small pill-quiet w-full">
           Privacy

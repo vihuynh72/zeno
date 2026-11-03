@@ -4,10 +4,9 @@ import { useRef } from "react";
 import type { CalendarBlock, FirstPick, Goal, Memory, Progress, Step } from "@/lib/day";
 import type { VaultFact } from "@/lib/vault";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
-import { formatTime } from "@/lib/tz";
-import { SETUP, slotLabel, type Fact } from "@/components/day-flow";
+import { foundLine, slotLabel } from "@/components/day-flow";
 import type { Booking } from "@/components/booking-chip";
-import DayView, { type Chip, type DayViewProps, type Today } from "@/components/day-view";
+import DayView, { type DayViewProps, type Today } from "@/components/day-view";
 
 // Sample data only: no network calls, nothing real.
 const step = (id: string, title: string, minutes: number, status: Step["status"], extra: Partial<Step> = {}): Step => ({
@@ -32,8 +31,8 @@ const roadmap = (...statuses: Step["status"][]): Goal => ({
   ],
 });
 
-// The plan with sources already found for its first open step.
-const PREPPED = roadmap("done", "todo", "todo", "todo");
+// Focus with sources already found for its step.
+const PREPPED = roadmap("done", "doing", "todo", "todo");
 PREPPED.steps[1].prep = [
   { title: "How to brainstorm essay points", url: "https://example.com/brainstorm", why: "Three quick ways to find points worth arguing" },
   { title: "Outlining a history essay", url: "https://example.com/outline", why: "Shows how each point maps to one paragraph" },
@@ -129,9 +128,11 @@ const PICK: FirstPick = {
 const RULE_PICK: FirstPick = { goal: "Bio lab report", due: dayFrom(1), stepId: null, steps: [{ title: "Open it and work 5 minutes", minutes: 5 }], why: "Due tomorrow." };
 const STREAK_PICK: FirstPick = { goal: "History essay draft", due: dayFrom(3), stepId: "s2", steps: [{ title: "List three points you want to make", minutes: 5 }], why: "It's next on your plan; 5 minutes gets it going." };
 
-const pickChips = (minutes = 5): Chip[] => [{ label: `Start · ${minutes} min`, tone: "ink" }, { label: "See the plan" }, { label: "Something else", tone: "quiet" }];
+const pickChips = (minutes = 5) => [`Start · ${minutes} min`, "Something else"];
+const FOCUS_CHIPS = ["Done", "Stuck?", "Stop for now", "Sources"];
+const DONE_CHIPS = ["Keep going", "That's enough today"];
 
-// Booking chips for the plan's later steps, around the real clock.
+// A booking offer, around the real clock.
 const block = (stepId: string, title: string, start: number, minutes: number): CalendarBlock => ({ title, kind: "step", start: at(start), end: at(start + minutes), stepId });
 const offer = (key: string, b: CalendarBlock, state: Booking["state"] = "offer"): Booking => ({
   key,
@@ -139,37 +140,18 @@ const offer = (key: string, b: CalendarBlock, state: Booking["state"] = "offer")
   label: `Book ${slotLabel(b.start!, b.end!, zone())}?`,
   state,
 });
-const BOOKINGS: Record<string, Booking> = {
-  s2: offer("s2", block("s2", "List three points you want to make", 60, 10)),
-  s3: offer("s3", block("s3", "Draft the opening paragraph", 1500, 15), "booked"),
-  s4: offer("s4", block("s4", "Read it out loud and fix one thing", 1530, 10), "busy"),
-};
-const BOOKED_PLAN = roadmap("todo", "todo", "todo", "todo");
-BOOKED_PLAN.steps[3].scheduledAt = at(1590);
-const FOCUSED = roadmap("done", "doing", "todo", "todo");
-const BOOKED_FIRST = roadmap("todo", "todo", "todo", "todo");
-BOOKED_FIRST.steps[0].scheduledAt = at(1500);
+// After Stop for now, a plan with an hour or more left: one block tomorrow.
+const TOMORROW = block("s3", "History essay draft", 1500, 90);
 
-const chips = (...labels: string[]): Chip[] => [...labels.map((label) => ({ label })), { label: "Something else", tone: "quiet" }];
-const answers = (at: number): Chip[] =>
-  SETUP[at].answers.map(([label], i) => ({ label, tone: SETUP[at].answers.length === 2 ? (i === 0 ? "ink" : "quiet") : undefined }));
-const setup = (at: number): Fixture => ({
-  screen: "setup",
-  line: at === 0 ? `Hi Sam. ${SETUP[0].ask}` : SETUP[at].ask,
-  dots: { at, of: SETUP.length },
-  chips: answers(at),
-});
-const facts = (...texts: [string, boolean?][]): Fact[] => texts.map(([text, device], i) => ({ id: `f${i}`, text, group: "about", device: Boolean(device) }));
-
-const NOTED = [
-  { key: "m", text: "Noted: Works best right after class.", undo: () => {} },
-  { key: "v", text: "Kept on this device: Mornings feel foggy lately.", undo: () => {} },
-];
+const chips = (...labels: string[]) => [...labels, "Something else"];
+// First sign-in, once the scan answered: one line, Start my day, and two links.
+const FOUND_CHIPS = ["Start my day", "Paste notes", "See what I learned"];
+const CANVAS = { account: "sample", linked: false };
 
 type Fixture = Partial<Omit<DayViewProps, "voice" | "on">> & { phase?: VoicePhase; level?: number; error?: VoiceError };
 
 const STATES: Record<string, Fixture> = {
-  "signed-out": { screen: "signed-out", line: "Zeno helps you start the thing you keep putting off." },
+  "signed-out": { screen: "signed-out", line: "Zeno helps you start the thing you keep putting off.", chips: ["Sign in with Google"] },
   // The very first paint: the card and the browser's greeting, before the day loads.
   shell: { screen: null, line: "Good afternoon." },
   ready: {
@@ -211,7 +193,7 @@ const STATES: Record<string, Fixture> = {
     chips: chips("Start the outline", "Something smaller first"),
     hear: true,
   },
-  "ready-empty": { line: "Good afternoon, Sam.", chips: [{ label: "Let's start", tone: "ink" }] },
+  "ready-empty": { line: "Good afternoon, Sam.", chips: ["Let's start"] },
   "quick-replies": {
     screen: "talk",
     line: "History essay, due Friday. Want the tiniest first step, or a plan for the week?",
@@ -224,140 +206,53 @@ const STATES: Record<string, Fixture> = {
     offers: [{ key: "todo", blocks: [{ title: "Laundry", kind: "todo", start: at(120), end: at(150) }], label: `Book ${slotLabel(at(120), at(150), zone())}?`, state: "offer" }],
     chips: chips("Later tonight"),
   },
-  noted: {
+  // An email Zeno drafted: it opens in their Gmail, where they press Send.
+  draft: {
     screen: "talk",
-    line: "Got it. I'll plan the hard stuff right after class.",
-    quiet: NOTED,
-    chips: chips("Plan tomorrow"),
+    line: "Here's a short draft to Prof Patel asking for two more days. Check it, then hit Send.",
+    chips: ["Open in Gmail", "Not now"],
   },
-  "setup-1": setup(0),
-  "setup-2": setup(1),
-  "setup-3": setup(2),
-  "setup-4": setup(3),
-  "setup-5": setup(4),
-  paste: { ...setup(4), pasting: true, chips: [{ label: "Skip", tone: "quiet" }] },
-  "remember-reading": {
+  // First sign-in (Vi, Nov 2): no questions. The card says what Zeno is reading while the scan runs.
+  "first-reading": { screen: "setup", line: "Reading your calendar and email…", chips: [] },
+  // Then one line says what it learned, written without the model.
+  "first-found": {
     screen: "setup",
-    line: "Here's what I learned.",
-    dots: { at: SETUP.length, of: SETUP.length },
-    list: facts(["Spends most days in classes."], ["Focuses best in the morning."]),
-    reading: ["Reading your calendar and email…", "Reading your notes…"],
-    note: "Tap × to remove anything. You can change this anytime in Memory.",
-    chips: [{ label: "Start my day", tone: "ink" }],
+    line: foundLine((["routines", "routines", "projects", "projects", "projects", "about", "people", "work-style", "interests"] as const).map((group) => ({ group }))),
+    chips: FOUND_CHIPS,
   },
-  // After the scan and pasted notes: the scan's facts first, private ones marked, more than the card holds.
-  remember: {
-    screen: "setup",
-    line: "Here's what I learned.",
-    dots: { at: SETUP.length, of: SETUP.length },
-    list: facts(
-      ["Takes Biology 120 on Mondays, Wednesdays and Fridays at 10 AM."],
-      ["Works shifts at the campus library on Tuesday and Saturday mornings."],
-      ["Mornings feel foggy lately.", true],
-      ["Has a history essay draft due Friday at 11:59 PM."],
-      ["Training for a 5K in December."],
-      ["Focuses best in the morning."],
-    ),
-    note: "Tap × to remove anything. You can change this anytime in Memory.",
-    offers: [
-      {
-        key: "import",
-        blocks: [
-          { title: "Bio lab report", kind: "deadline", date: dayFrom(2) },
-          { title: "Email Prof Patel", kind: "todo", start: at(60), end: at(70) },
-          { title: "Buy lab goggles", kind: "todo", start: at(1500), end: at(1515) },
-        ],
-        label: "Add these 3 to your calendar?",
-        state: "offer",
-      },
-    ],
-    chips: [{ label: "Start my day", tone: "ink" }],
-  },
-  "remember-booked": {
-    screen: "setup",
-    line: "Here's what I learned.",
-    dots: { at: SETUP.length, of: SETUP.length },
-    list: facts(["Takes Biology 120 on Mondays, Wednesdays and Fridays at 10 AM."], ["Focuses best in the morning."]),
-    note: "Tap × to remove anything. You can change this anytime in Memory.",
-    offers: [{ key: "import", blocks: [{ title: "Email Prof Patel", kind: "todo", start: at(60), end: at(70), eventId: "e1" }], label: "", state: "booked" }],
-    quiet: [{ key: "import", text: "Added 3 to your Zeno calendar." }],
-    chips: [{ label: "Start my day", tone: "ink" }],
-  },
+  "first-empty": { screen: "setup", line: foundLine([]), chips: FOUND_CHIPS },
+  // Paste notes, from the first sign-in line.
+  paste: { screen: "setup", line: "Paste a syllabus, a to-do list or notes. I'll pull out what matters.", pasting: true, chips: ["Skip"] },
   talk: { screen: "talk", line: ASK, you: "my history essay, it's due Friday", phase: "listening", level: 0.7 },
   // Hands-free: the mic reopened after Zeno's question, nothing heard yet.
   "hands-free": { screen: "talk", line: "Want the tiniest first step, or a plan for the week?", chips: chips("Tiniest first step", "Plan the week"), phase: "listening", level: 0.1 },
   typing: { screen: "talk", line: ASK, typing: true },
   "typing-sent": { screen: "talk", line: "", you: "My history essay. It's due Friday.", typing: true, phase: "thinking" },
   thinking: { screen: "talk", line: "", you: "My history essay. It's due Friday.", phase: "thinking" },
-  plan: {
-    screen: "plan",
-    goal: roadmap("done", "todo", "todo", "todo"),
-    line: "Here's a plan in small steps. The first one takes ten minutes.",
-  },
-  // Booking chips: one to tap, one booked with Undo, one booking, and a step already on the calendar.
-  "plan-booking": {
-    screen: "plan",
-    goal: BOOKED_PLAN,
-    line: "Here's the plan. The first step takes 5 minutes.",
-    bookings: { s1: offer("s1", block("s1", "Open the essay doc and write a working title", 40, 5)), ...BOOKINGS },
-  },
-  // A booking that failed says so on its chip.
-  "plan-book-failed": {
-    screen: "plan",
-    goal: roadmap("todo", "todo", "todo", "todo"),
-    line: "Here's the plan. The first step takes 5 minutes.",
-    bookings: { s1: offer("s1", block("s1", "Open the essay doc and write a working title", 40, 5), "failed") },
-  },
-  // The first step is already on the calendar.
-  "plan-booked-first": { screen: "plan", goal: BOOKED_FIRST, line: "Here's the plan. The first step takes 5 minutes." },
-  // "See the plan" for a picked later step: that step leads, at the pick's 5 minutes.
-  "plan-lead": {
-    screen: "plan",
-    goal: roadmap("done", "todo", "todo", "todo"),
-    lead: { stepId: "s3", minutes: 5 },
-    line: "Here's the plan. This step first, 5 minutes.",
-  },
-  // After Change the plan: Zeno's question with answers to tap.
-  "plan-change": {
-    screen: "plan",
-    goal: roadmap("todo", "todo", "todo", "todo"),
-    line: "What should change?",
-    chips: [{ label: "Make step one smaller" }, { label: "Fewer steps" }, { label: "Different order" }],
-  },
-  "plan-permission": {
-    screen: "plan",
-    goal: roadmap("todo", "todo", "todo", "todo"),
-    line: "Here's the plan. The first step takes 5 minutes.",
-    calendarAsk: true,
-  },
-  prep: {
-    screen: "plan",
-    goal: PREPPED,
-    line: "Here's a plan in small steps. The first one takes ten minutes.",
-  },
-  focus: { screen: "focus", goal: roadmap("done", "doing", "todo", "todo"), line: "Timer's on. 10 minutes, one thing.", checkins: true },
-  // A heads-up during focus, check-ins muted.
-  // The warning leads (an event 5 to 10 minutes from the real clock), halfway through the timer.
-  "focus-heads-up": {
+  focus: { screen: "focus", goal: roadmap("done", "doing", "todo", "todo"), line: "Timer's on. 10 minutes, one thing.", chips: FOCUS_CHIPS },
+  // An email to write: Focus offers to draft it in Gmail.
+  "focus-email": {
     screen: "focus",
-    goal: { ...FOCUSED, steps: FOCUSED.steps.map((one) => (one.status === "doing" ? { ...one, startedAt: new Date(Date.now() - 300_000).toISOString() } : one)) },
-    line: `Heads up: Bio lab at ${formatTime(new Date(Math.ceil((Date.now() + 5 * 60_000) / 300_000) * 300_000).toISOString(), zone())}.`,
-    checkins: false,
+    goal: { id: "sample-lab", title: PICK.goal, due: PICK.due, steps: [step("e1", PICK.steps[0].title, 5, "doing")] },
+    line: "Timer's on. Just five minutes.",
+    chips: ["Done", "Stuck?", "Stop for now", "Draft it in Gmail"],
   },
-  // Stuck in focus: Zeno's question still has answers to tap.
+  // The Sources link opened the step's sources.
+  "focus-sources": { screen: "focus", goal: PREPPED, line: "Timer's on. 10 minutes, one thing.", chips: FOCUS_CHIPS.slice(0, 3), sources: true },
+  // Stuck in focus: Zeno's question leads with its answers; Done stays one tap away.
   "focus-question": {
     screen: "focus",
     goal: roadmap("done", "doing", "todo", "todo"),
     line: "Want me to shrink it to one point, or find you an example?",
-    chips: [{ label: "One point" }, { label: "Find an example" }],
-    checkins: true,
+    chips: ["One point", "Find an example", "Done", "Stop for now"],
   },
-  done: { screen: "focus", goal: roadmap("done", "doing", "todo", "todo"), stamping: true },
-  // After Done: straight to the next step's card, with the streak and the week.
+  done: { screen: "focus", goal: roadmap("done", "doing", "todo", "todo"), stamping: true, chips: FOCUS_CHIPS, busy: true },
+  // After Done: what is next, with the streak and the week.
   checkin: {
     screen: "checkin",
     goal: roadmap("done", "done", "todo", "todo"),
-    line: "Nice. That's day 4. Next one's ready.",
+    line: "Nice. Next: Draft the opening paragraph, 15 min",
+    chips: DONE_CHIPS,
     celebrate: true,
     progress: progress({ week: week(PAST, "done"), stepsThisWeek: 6 }),
     phase: "speaking",
@@ -366,7 +261,8 @@ const STATES: Record<string, Fixture> = {
   milestone: {
     screen: "checkin",
     goal: roadmap("done", "done", "todo", "todo"),
-    line: "7 days in a row. That's a real habit now.",
+    line: "Nice. Next: Draft the opening paragraph, 15 min",
+    chips: DONE_CHIPS,
     celebrate: true,
     progress: progress({ streak: 7, best: 7, milestone: 7, week: week(["done", "done", "rest", "done", "done", "done"], "done"), stepsThisWeek: 9 }),
   },
@@ -374,46 +270,41 @@ const STATES: Record<string, Fixture> = {
   "day-one-again": {
     screen: "checkin",
     goal: roadmap("done", "done", "todo", "todo"),
-    line: "Day 1 again. Your best is 9.",
+    line: "Nice. Next: Draft the opening paragraph, 15 min",
+    chips: DONE_CHIPS,
     celebrate: true,
     progress: progress({ streak: 1, best: 9, week: week(["done", "rest", "missed", "missed", "missed", "missed"], "done"), stepsThisWeek: 1 }),
   },
   "first-day": {
     screen: "checkin",
     goal: roadmap("done", "todo", "todo", "todo"),
-    line: "Day 1. That's how it starts. Next one's ready.",
+    line: "Nice. Next: List three points you want to make, 10 min",
+    chips: DONE_CHIPS,
     celebrate: true,
     progress: progress({ streak: 1, best: 1, week: week([], "done"), stepsThisWeek: 1, restDaysLeft: 1 }),
   },
   finished: {
     screen: "checkin",
     goal: roadmap("done", "done", "done", "done"),
-    line: "That was the whole plan. Want to pick something else, or stop here?",
+    line: "Nice work. That was the last step.",
+    chips: ["Pick the next thing", "That's enough today"],
   },
-  // "Stop for now": a wrap-up and the next step for tomorrow, one tap.
+  // Stop for now with an hour or more of the plan left: one block tomorrow, one tap.
   wrap: {
     screen: "wrap",
     goal: roadmap("done", "done", "todo", "todo"),
-    line: "Good place to stop. Want me to put “Draft the opening paragraph” on your calendar?",
-    offers: [offer("s3", block("s3", "Draft the opening paragraph", 1500, 15))],
-    chips: [{ label: "Not now", tone: "quiet" }],
+    line: "Saved. I'll bring it back next time.",
+    offers: [offer("s3", TOMORROW)],
+    chips: ["No thanks"],
   },
-  // No calendar to write to: a plain goodbye, nothing to tap.
-  "wrap-quiet": { screen: "wrap", goal: roadmap("done", "done", "todo", "todo"), line: "Good place to stop. See you tomorrow.", chips: [] },
-  // Calendar write not allowed yet: the ask, and Not now.
-  "wrap-permission": {
-    screen: "wrap",
-    goal: roadmap("done", "done", "todo", "todo"),
-    line: "Good place to stop. Want me to put “Draft the opening paragraph” on your calendar?",
-    calendarAsk: true,
-    chips: [{ label: "Not now", tone: "quiet" }],
-  },
+  // A small plan left, or no calendar to write to: nothing offered.
+  "wrap-quiet": { screen: "wrap", goal: roadmap("done", "done", "todo", "todo"), line: "Saved. I'll bring it back next time.", chips: ["Back to my day"] },
   "wrap-booked": {
     screen: "wrap",
     goal: roadmap("done", "done", "todo", "todo"),
     line: "Booked. Tomorrow's streak is planned.",
-    offers: [offer("s3", { ...block("s3", "Draft the opening paragraph", 1500, 15), eventId: "e2" }, "booked")],
-    chips: [{ label: "Not now", tone: "quiet" }],
+    offers: [offer("s3", { ...TOMORROW, eventId: "e2" }, "booked")],
+    chips: ["Back to my day"],
   },
   desk: { line: "Good afternoon, Sam.", goal: roadmap("done", "doing", "todo", "todo"), sheet: "today" },
   "desk-quiet": {
@@ -423,7 +314,11 @@ const STATES: Record<string, Fixture> = {
   },
   memory: { line: "Good afternoon, Sam.", sheet: "memory", device: DEVICE },
   "memory-empty": { line: "Good afternoon, Sam.", sheet: "memory", memories: [] },
+  // The account menu: Sound, Connect Canvas (or Canvas · connected), Privacy, Sign out.
   account: { line: "Good afternoon, Sam.", chips: chips("Work on my essay"), menuOpen: true, progress: progress() },
+  "account-canvas": { line: "Good afternoon, Sam.", chips: chips("Work on my essay"), menuOpen: true, progress: progress(), canvas: { ...CANVAS, linked: true } },
+  // Connect Canvas, opened from the account menu (the desk-ui track fills it).
+  canvas: { line: "Good afternoon, Sam.", sheet: "canvas" },
   error: { screen: "talk", line: "I couldn't think that through just now. Try again?" },
   blocked: {
     screen: "talk",
@@ -473,17 +368,14 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
         signInFailed={false}
         busy={false}
         chips={[]}
-        dots={null}
-        list={null}
         pasting={false}
         hear={false}
         progress={progress()}
         account="S"
+        canvas={CANVAS}
         {...view}
         voice={{ phase, levelRef, muted: false, supported: true, error }}
         on={{
-          primary: noop,
-          secondary: noop,
           chip: noop,
           hear: noop,
           paste: noop,
@@ -493,15 +385,14 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
           send: noop,
           sheet: noop,
           forget: noop,
-          remove: noop,
           add: noop,
           retryMemory: noop,
           book: noop,
           unbook: noop,
-          checkins: noop,
           mute: noop,
           signIn: noop,
           signOut: noop,
+          canvasSynced: noop,
         }}
       />
     </div>

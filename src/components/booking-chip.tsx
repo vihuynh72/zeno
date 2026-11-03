@@ -3,19 +3,19 @@
 import { useEffect, useRef } from "react";
 import type { CalendarBlock } from "@/lib/day";
 
-// One tap books it on the Zeno calendar; nothing is written before that tap. A batch (pasted to-dos) is one chip.
+// One tap books it on the Zeno calendar; nothing is written before that tap.
 export type Booking = { key: string; blocks: CalendarBlock[]; label: string; state: "offer" | "busy" | "booked" | "failed" };
 
 export default function BookingChip({
   booking,
   onBook,
   onUndo,
-  ink,
+  big,
 }: {
   booking: Booking;
   onBook(): void;
   onUndo(): void;
-  ink?: boolean; // the screen's one main answer (Stop for now, pasted notes)
+  big?: boolean; // the screen's one big button (an offer that answers Zeno's line)
 }) {
   // The tapped button turns into Booked · Undo, so keyboard focus moves to Undo instead of falling to the page.
   const undo = useRef<HTMLButtonElement>(null);
@@ -42,7 +42,7 @@ export default function BookingChip({
       // aria-disabled, not disabled, so focus stays put; the parent also ignores a second tap while it books.
       aria-disabled={busy}
       onClick={() => !busy && onBook()}
-      className={`pill pill-small ${ink ? "pill-ink" : "pill-quiet"}`}
+      className={`pill ${big ? "pill-ink pill-big" : "pill-small pill-quiet"}`}
     >
       {busy ? "Booking…" : booking.state === "failed" ? "Couldn't book. Try again?" : booking.label}
     </button>
