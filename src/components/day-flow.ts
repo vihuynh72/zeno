@@ -146,12 +146,14 @@ export function homeChoices(goal: Goal | null, goals: Goal[], deadlines: Deadlin
 export type ChoiceCard = { title: string; minutes: number | null; meta: string; last: string };
 
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+// The sender as an option and a plan name them: a bare address by the part before its "@" (titles never hold an address).
+const sender = (from: string) => senderName(from).split("@")[0] || senderName(from);
 
 // An option card's words: the title (minutes on the right), a grey line, and a last line. `currentId` is the current
 // plan's, which picks up where she stopped.
 export function choiceCard(choice: Choice, currentId: string | null, today: string): ChoiceCard {
   if (choice.kind === "mail") {
-    const name = senderName(choice.email.from);
+    const name = sender(choice.email.from);
     return { title: `Answer ${name}`, minutes: 2, meta: `Email · ${name}`, last: choice.email.subject };
   }
   if (choice.kind === "deadline") {
@@ -175,7 +177,7 @@ export function choiceCard(choice: Choice, currentId: string | null, today: stri
 // characters at a word), or plain words when the API refuses those.
 export function mailPlan(email: DayEmail | null) {
   if (!email) return { title: "Answer an email", steps: [{ title: "Reply to the email", minutes: 2 }] };
-  const name = senderName(email.from);
+  const name = sender(email.from);
   const subject = email.subject.trim();
   const cut = subject.slice(0, 41);
   const about = subject.length <= 40 ? subject : (/\s/.test(cut) && cut.replace(/\s+\S*$/, "")) || subject.slice(0, 40);

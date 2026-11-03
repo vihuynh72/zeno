@@ -410,7 +410,9 @@ const long = mailPlan({ ...asking, subject: "Meeting time for office hours next 
 assert.equal(long, "Reply to Prof. Lin about Meeting time for office hours next week");
 assert.equal(mailPlan({ ...asking, subject: "x".repeat(60) }).steps[0].title, `Reply to Prof. Lin about ${"x".repeat(40)}`);
 assert.equal(mailPlan({ ...asking, subject: "  " }).steps[0].title, "Reply to Prof. Lin");
-assert.equal(mailPlan({ ...asking, from: "dana@school.edu" }).title, "Answer dana@school.edu");
+assert.equal(mailPlan({ ...asking, from: "dana@school.edu" }).title, "Answer dana", "a title never holds an address");
+assert.equal(mailPlan({ ...asking, from: "<registrar@school.edu>" }).steps[0].title, "Reply to registrar about Does Wednesday at 2 work?");
+assert.equal(choiceCard({ kind: "mail", email: { ...asking, from: "dana@school.edu" } }, null, hToday).meta, "Email · dana");
 assert.deepEqual(mailPlan(null), { title: "Answer an email", steps: [{ title: "Reply to the email", minutes: 2 }] });
 
 // The desk proposes the first open step, or the one she tapped; Another step goes round the open ones.
