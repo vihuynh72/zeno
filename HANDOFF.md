@@ -1,14 +1,40 @@
 # Zeno handoff
 
-Last updated: 2026-11-02, by Claude (session 4, the Nov 2 round).
+Last updated: 2026-11-02, 9:30 PM PT, by Claude (session 4, the Nov 2 round, live-tested on production).
 Read this first, then the Linear doc **"Zeno hackathon build plan (Nov 4)"** (project Zeno, team VI).
 
 ## 0. Session 4 (2026-11-02): the Nov 2 round
 
 Spec: `docs/PLAN-NOV2.md` (Vi's 16 answers after using production on Nov 2; it wins over `docs/PLAN-NOV.md`). Four
-tracks built it on `nov2/brain`, `nov2/memory-canvas`, `nov2/desk-ui` and `nov2/flow-ui`; they are merged, made to fit
-and checked on **`nov2/integrate`**, which is not on `main` yet. **`nov2/fix`** adds, on top of it, music for deep work
-(decision 13, merged from `nov2/music` and fitted to the Focus links) and the fixes from three reviews of the round.
+tracks built it on `nov2/brain`, `nov2/memory-canvas`, `nov2/desk-ui` and `nov2/flow-ui`; they were merged, made to
+fit and checked on `nov2/integrate`. `nov2/fix` added music for deep work (decision 13, from `nov2/music`) and the
+fixes from three reviews. **All of it is on `main` and in production** (Nov 2, 9:25 PM PT: `401c81c`), with the fixes
+from the live test below.
+
+### Live test on production (Nov 2 evening, demo account, reset first)
+Verified in Chrome: the screens in `/preview` at 1512x806 and 390 px wide (light and dark), then on production as a new
+user: first sign-in ("Reading your calendar and email…", then "I read your calendar and email and learned 13 things,
+including 4 deadlines.", [Start my day]) → the card ("Open lab instructions · 5 min · Finish BIO 101 lab report · due
+Friday", [Start · 5 min]) → Focus (Sources found a LibreTexts page; Music plays lo-fi from the app and piano from
+archive.org) → Done ("Nice. Next: List data to include, 15 min", streak row) → That's enough today (no block: 55 min
+left, under the 60-minute rule) → Back to my day (the next step's card). Talk: "put the lab report on my calendar"
+offered one block, booked as "Finish BIO 101 lab report" with Undo; a Gmail draft opened compose with a subject and
+body. The Memory list after the scan was tidy (one routines sum-up, dated deadlines, a generic "Has a doctor check-in
+on November 3." on the device only). The Week fits 9 AM-9 PM without scrolling and opens events in Google. The memory
+bench on the new code scored 96.1 overall and 96.9 privacy (no duplicates, no junk, no leaks).
+
+Fixed during the test (all on `main`):
+- **First sign-in found nothing**: the scan's model call needs ~9-13 s and each try had 12 s; it now gets 30 s tries
+  inside 45 s (the route allows 60), the card waits up to 50 s, and a failed first scan is retried on the next open
+  (it used to mark the day as scanned before running).
+- **Dead ends**: Back to my day showed a vague "Let's start"; a booking or a draft in talk left no button. Every way
+  out now lands on the home card with its Start; a booking says "Booked. …" with Back to my day, Undo says "Okay, it's
+  off your calendar." with No thanks.
+- **One name per task**: a block for the whole goal took the model's words ("Work on lab report"); `propose_block` takes
+  ref "goal" and then the goal's saved title.
+- **Pasted notes saved each dated item twice** ("To do: Write final reflection paper" and "COMM 20 final reflection
+  paper, due …"); a to-do a deadline covers is dropped.
+- The card's goal line wrapped around "15 min"; the music picker didn't show which station was on.
 
 ### What changed on nov2/integrate
 - **One card, one big button.** Every other action is a small link under it. Header: the Z mark, the streak and the
@@ -36,8 +62,8 @@ and checked on **`nov2/integrate`**, which is not on `main` yet. **`nov2/fix`** 
   `gmail.check.ts`) and listen-check; day-flow and week-grid also in LA and Tokyo time.
 - Brain's live smoke test against Muse (made-up data): one name per task, a draft to an inbox sender, no block unless
   asked, and "write my essay" refused with an offer to plan it.
-- Not verified: anything in a browser (layout, phone width, dark mode, the fitted Week, the Canvas and Memory sheets),
-  Canvas with a real token, Gmail compose and event links, first sign-in live, and the memory bench.
+- The browser, first sign-in, Gmail compose, the Week and the memory bench were verified afterwards, live (above).
+  Still not verified: Canvas with a real token, and voice (the mic) in this round.
 
 ### Review fixes on nov2/fix
 - **Memory saves**: what the person says is dropped only when known word for word (a reworded scan finding still
@@ -67,17 +93,21 @@ and checked on **`nov2/integrate`**, which is not on `main` yet. **`nov2/fix`** 
   no longer read. A separate switch under Sound is Vi's call.
 - **Canvas:** only `<school>.instructure.com` addresses; course names are Canvas's full names; a slow Canvas can pass
   the route's 30 s; Disconnect keeps the saved Canvas deadlines until they pass or are forgotten in Memory.
-- **Week:** on a short window the 28px minimum row can leave about 15px of scroll. On touch, a title cut short in its
-  box shows whole only in Google Calendar (the peek opens on mouse hover and keyboard focus).
+- **Week:** a one-hour event's title is cut on a laptop ("CS 146 Data…"); hover or keyboard focus shows it whole, and on
+  touch only Google Calendar does. On a short window the 28px minimum row can leave about 15px of scroll.
+- **Demo inbox**: Maya's 8 emails are self-sent, so every sender reads "De Bruyne" and a draft to Prof Patel has no To
+  address (Zeno never guesses one).
+- **The cached card shows at once, its Start about 3 s later** (when the fresh day answers).
 - From session 3, still open: the greeting uses the Google first name ("Hi De"); the mail filter is broad; reload
   shows the saved line for 2.5-4 s; the Google access token is readable from `/api/auth/session`; scanned facts and
   patterns stop saving at about 120 facts in the person's own words.
 
 ### Next steps
-1. A visual pass in `/preview` and the dev server (Focus with Music, the Memory box, the account menu), then merge
-   `nov2/fix` to `main`: production must be stable by the morning of Nov 4.
-2. Vi: connect Canvas with the SJSU token, and try a Gmail draft and an event link.
-3. Reset the demo account (decision 12) and record the video before Nov 4, 6 PM PT.
+1. Vi: connect Canvas with the SJSU token (account menu → Connect Canvas), then a live Canvas test (VI-324).
+2. The demo account was reset on Nov 2 at 9:25 PM PT (no Zeno rows, no Zeno calendar blocks, no device keys; Maya's 18
+   events and 8 emails kept). Reset again on the morning of Nov 4 if it is used before then (VI-326; the steps are in
+   section 0a "The demo account now"). Sound is off in that Chrome: turn it on in the account menu for the video.
+3. Record the video before Nov 4, 6 PM PT.
 
 ## 0a. Session 3 (2026-11-01): the follow-through build and the live test
 
