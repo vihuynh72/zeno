@@ -70,15 +70,15 @@
    five-line card's answers on the first screen. */
 @custom-variant short (@media (min-width: 640px) and (max-height: 900px));
 
-/* The dock's height: Talk in its ring (152px; 128px where VoiceRing shrinks the ring to 96px) over the 44px
-   Type · Today · Memory links, 8px under them, and 8px over the ring on tall screens. */
+/* The dock's height: Talk in its ring (152px; 128px where VoiceRing shrinks the ring to 96px) with the keyboard
+   beside it, 8px under them and 8px over the ring (16px on tall screens). */
 :root {
-  --dock: 180px;
+  --dock: 144px;
 }
 /* Where neither max-sm nor short shrinks the ring. */
 @media (width >= 40rem) and (height > 900px) {
   :root {
-    --dock: 212px;
+    --dock: 176px;
   }
 }
 
@@ -213,15 +213,6 @@ body {
   line-height: 0;
   font-weight: 400;
 }
-/* The goal under a step: that writing as one row, the goal cut with an ellipsis so its due part stays whole. Its own
-   line box, lowered onto the rule as .write is. */
-.goal-line {
-  display: flex;
-  font-size: var(--fs2);
-  font-weight: 400;
-  padding-top: calc((var(--fs) - var(--fs2)) * var(--k));
-  margin-bottom: calc((var(--fs) - var(--fs2)) * var(--k) * -1);
-}
 .timer {
   font-family: var(--font-atkinson-mono);
   font-size: var(--timer);
@@ -322,6 +313,53 @@ body {
   height: 16px;
   background: linear-gradient(transparent, var(--desk));
   pointer-events: none;
+}
+/* Talk stays centered; the round keyboard button sits to its right, level with the ring's middle. */
+.dock-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
+  width: 100%;
+}
+.dock-row > [data-talk] {
+  grid-column: 2;
+}
+.kbd {
+  grid-column: 3;
+  justify-self: start;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin: 22px 0 0 16px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  transition:
+    background-color 0.12s,
+    transform 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (width >= 40rem) and (height > 900px) {
+  .kbd {
+    margin-top: 34px;
+  }
+}
+.kbd[data-lead] {
+  background: var(--ink);
+  color: var(--card);
+}
+@media (hover: hover) {
+  .kbd:hover {
+    background: var(--desk);
+  }
+  .kbd[data-lead]:hover {
+    background: color-mix(in srgb, var(--ink) 82%, var(--card));
+  }
+}
+.kbd:active {
+  transform: scale(0.96);
+  transition-duration: 0s;
 }
 
 /* The cards waiting underneath. */
@@ -838,6 +876,166 @@ button:active .tap {
 .mini .lines {
   min-height: 0;
   font-weight: 400;
+}
+
+/* ---------- The home and a goal's desk (Vi, Nov 3) ---------- */
+/* The hello: her name in the card's hand, bold, and Zeno's line smaller on the rules under it. */
+.card.hello {
+  --fs: 44px;
+  --lh: 64px;
+  --fs2: 28px;
+  --rows: 2;
+  padding-top: 40px;
+  padding-bottom: 24px;
+}
+.card.hello {
+  @variant short {
+    --fs: 36px;
+    --lh: 48px;
+    --fs2: 24px;
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
+}
+@media (max-width: 639px) {
+  .card.hello {
+    --fs: 30px;
+    --lh: 40px;
+    --fs2: 20px;
+    padding-top: 24px;
+    padding-bottom: 16px;
+  }
+}
+
+/* A goal option: a small index card that is one big tap target (the title and its minutes, a grey line, a last line). */
+.choice {
+  --fs: 20px;
+  --lh: 28px;
+  --k: 0.33;
+  --pad-l: 48px;
+  --pad-r: 20px;
+  --rows: 3;
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 8px var(--pad-r) 8px var(--pad-l);
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--edge);
+  text-align: left;
+  transition:
+    box-shadow 0.12s,
+    transform 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.choice::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0 auto 0 28px;
+  width: 2px;
+  background: var(--red);
+}
+.choice .lines {
+  font-weight: 400;
+}
+@media (hover: hover) {
+  .choice:hover {
+    box-shadow: var(--paper);
+  }
+}
+.choice:active {
+  transform: scale(0.99);
+  transition-duration: 0s;
+}
+.choice[aria-disabled="true"] {
+  cursor: default;
+}
+
+/* The goal strip's bar: a segment per step, done in ink, the proposed or running one in margin red, the rest track. */
+.bar {
+  display: flex;
+  gap: 4px;
+}
+.bar li {
+  flex: 1;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--track);
+  transition: background-color 0.3s ease-out;
+}
+.bar [data-state="done"] {
+  background: var(--ink);
+}
+.bar [data-state="now"] {
+  background: var(--red);
+}
+
+/* The desk's steps: a card with wide rules (each row a 44px tap target), done ones ticked in the margin. */
+.steps {
+  --lh: 44px;
+  --pad-l: 56px;
+  padding-block: 4px;
+}
+.mini.steps::before {
+  left: 40px;
+}
+.steps-row {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  width: 100%;
+  min-height: var(--lh);
+  text-align: left;
+}
+.steps-mark {
+  position: absolute;
+  left: calc(var(--pad-l) * -1 + 8px);
+  width: 24px;
+  text-align: center;
+}
+.steps [data-status="done"] .steps-row,
+.steps [data-status="skipped"] .steps-row {
+  color: var(--ink-2);
+}
+.steps [data-status="now"] .steps-row {
+  font-weight: 700;
+}
+.steps [data-status="now"] .steps-mark {
+  color: var(--red);
+}
+@media (hover: hover) {
+  .steps button.steps-row:hover {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+}
+
+/* An email read in full: its paragraphs kept, in a block about 280px tall that scrolls. */
+.mail-text {
+  max-height: 280px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+  scrollbar-color: var(--track) var(--card);
+}
+
+/* "Find sources for this step": a desk card that is one tap. */
+.tool {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  text-align: left;
+  font-weight: 700;
+  transition: box-shadow 0.12s;
+}
+@media (hover: hover) {
+  .tool:hover {
+    box-shadow: var(--paper);
+  }
 }
 
 /* ---------- Motion ---------- */

@@ -2,13 +2,14 @@
 
 import { useEffect, useRef } from "react";
 
-// The person's initial in the top bar opens Sound, Canvas, Privacy and Sign out. canvas is null until the page knows
-// whose account it is (the link is kept per account), true once Canvas is linked on this device. onCalendar is set only
-// when they unticked calendar access on Google's consent screen, so a block they ask for has a way through.
+// The person's initial in the top bar opens Memory, Sound, Canvas, Privacy and Sign out. canvas is null until the page
+// knows whose account it is (the link is kept per account), true once Canvas is linked on this device. onCalendar is
+// set only when they unticked calendar access on Google's consent screen, so a block they ask for has a way through.
 export default function AccountMenu({
   initial,
   muted,
   canvas,
+  onMemory,
   onMute,
   onCanvas,
   onCalendar,
@@ -18,6 +19,7 @@ export default function AccountMenu({
   initial: string;
   muted: boolean;
   canvas: boolean | null;
+  onMemory(): void;
   onMute(): void;
   onCanvas(): void;
   onCalendar?: () => void;
@@ -40,6 +42,16 @@ export default function AccountMenu({
         )}
       </button>
       <div ref={menu} id="account-menu" popover="auto" className="menu">
+        <button
+          type="button"
+          onClick={() => {
+            menu.current?.hidePopover();
+            onMemory();
+          }}
+          className="pill pill-small pill-quiet w-full"
+        >
+          Memory
+        </button>
         {/* The menu stays open, so the switch shows what it did. */}
         <button type="button" role="switch" aria-checked={!muted} onClick={onMute} className="pill pill-small pill-quiet w-full">
           Sound<span aria-hidden="true"> · {muted ? "off" : "on"}</span>

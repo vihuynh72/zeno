@@ -1,13 +1,14 @@
 "use client";
 
 import { useRef, useSyncExternalStore } from "react";
-import type { CalendarBlock, FirstPick, Goal, Memory, Progress, Step } from "@/lib/day";
+import type { CalendarBlock, Choice, Goal, Memory, Progress, Step } from "@/lib/day";
 import type { VaultFact } from "@/lib/vault";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
-import { checkinMinute, FOCUS, foundLine, slotLabel } from "@/components/day-flow";
+import { checkinMinute, choiceCard, FOCUS, foundLine, slotLabel, stoppedLine } from "@/components/day-flow";
 import type { Booking } from "@/components/booking-chip";
 import DayView, { type DayViewProps, type Today } from "@/components/day-view";
 import { CANVAS_DEADLINES, CANVAS_MEMORIES, SAMPLE_CANVAS } from "./canvas-samples";
+import "./mail-samples";
 
 // Sample data only: no network calls, nothing real.
 const step = (id: string, title: string, minutes: number, status: Step["status"], extra: Partial<Step> = {}): Step => ({
@@ -84,18 +85,33 @@ const TODAY: Today = {
   ],
   emails: [
     {
+      from: "Prof. Lin <lin@school.example>",
+      subject: "Office hours this week?",
+      snippet: "Does Wednesday at 2 or Thursday at 11 work for you?",
+      unread: true,
+      id: "sample-mail",
+      address: "lin@school.example",
+      asks: true,
+    },
+    {
       from: "Dana Lee <dana.lee@school.edu>",
       subject: "Lab report feedback",
       snippet: "Looks good overall. Two small fixes on page 3 before you submit, and I&#39;d cite the second source.",
       unread: true,
+      id: "sample-mail-2",
+      address: "dana.lee@school.edu",
+      asks: false,
     },
     {
       from: '"Registrar" <registrar@school.edu>',
       subject: "Spring registration opens Monday",
       snippet: "Your time slot is 9:00 AM. Check for holds on your account before then.",
       unread: true,
+      id: "sample-mail-3",
+      address: "registrar@school.edu",
+      asks: false,
     },
-    { from: "Maya <maya@example.com>", subject: "Lunch?", snippet: "Still on for today? The place by the library works for me.", unread: false },
+    { from: "Maya <maya@example.com>", subject: "Lunch?", snippet: "Still on for today? The place by the library works for me.", unread: false, id: "sample-gone", asks: true },
     {
       from: "Canvas <notifications@instructure.com>",
       subject: "History essay draft due Friday",
@@ -143,23 +159,41 @@ const progress = (over: Partial<Progress> = {}): Progress => ({
   ...over,
 });
 
-const PICK: FirstPick = {
-  goal: "Lab report: enzyme activity",
-  due: dayFrom(2),
-  stepId: null,
-  steps: [
-    { title: "Email Prof Patel about an extension", minutes: 5 },
-    { title: "Paste the results table into the doc", minutes: 10 },
-    { title: "Draft the methods section", minutes: 20 },
-  ],
-  why: "It unblocks everything else, and it's due in two days.",
-};
-const RULE_PICK: FirstPick = { goal: "Bio lab report", due: dayFrom(1), stepId: null, steps: [{ title: "Open it and work 5 minutes", minutes: 5 }], why: "Due tomorrow." };
-const STREAK_PICK: FirstPick = { goal: "History essay draft", due: dayFrom(3), stepId: "s2", steps: [{ title: "List three points you want to make", minutes: 5 }], why: "It's next on your plan; 5 minutes gets it going." };
+const FOCUS_CHIPS = ["Done", "Stuck?", "Stop for now"];
+const DONE_CHIPS = ["Keep going", "Switch goal", "That's enough today"];
 
-const pickChips = (minutes = 5) => [`Start · ${minutes} min`, "Something else"];
-const FOCUS_CHIPS = ["Done", "Stuck?", "Stop for now", "Sources"];
-const DONE_CHIPS = ["Keep going", "That's enough today"];
+// ---- The home and a goal's desk (Vi, Nov 3) ----
+// A step finished `ago` minutes back that took `took` minutes, so "Where you stopped" and the steps' minutes are real.
+const finished = (s: Step, ago: number, took: number): Step => ({
+  ...s,
+  status: "done",
+  startedAt: new Date(Date.now() - (ago + took) * 60_000).toISOString(),
+  doneAt: new Date(Date.now() - ago * 60_000).toISOString(),
+});
+const ESSAY = roadmap("done", "done", "todo", "todo");
+ESSAY.steps[0] = finished(ESSAY.steps[0], 26 * 60, 6);
+ESSAY.steps[1] = finished(ESSAY.steps[1], 25 * 60, 12);
+const LAB: Goal = {
+  id: "sample-lab-goal",
+  title: "CHEM 1A: Lab 6 writeup",
+  due: dayFrom(5),
+  steps: [step("b1", "Paste the results table into the doc", 10, "todo"), step("b2", "Draft the methods section", 20, "todo"), step("b3", "Write one paragraph on the error", 15, "todo")],
+};
+const QUIZ = { title: "BIO 101: Quiz 6 (Ch. 6)", date: dayFrom(1), daysLeft: 1 };
+const ASKING = TODAY.emails[0];
+const today = () => dayFrom(0);
+const cards = (...choices: Choice[]) => choices.map((choice) => choiceCard(choice, ESSAY.id, today()));
+const zoneNow = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+const HOME_LINE = "You finished two essay steps yesterday. You're free until Biology lecture at 1:30.";
+// The desk's Start and its links, for a plan with more than one step open.
+const DESK_CHIPS = (minutes: number) => [`Start · ${minutes} min`, "Something smaller", "Another step"];
+// An email's reply plan, its email remembered by id.
+const REPLY: Goal = { id: "sample-reply-goal", title: "Answer Prof. Lin", due: null, steps: [step("r1", "Reply to Prof. Lin about Office hours this week?", 2, "todo")] };
+// Focus on the essay's third step, 9 minutes in.
+const ESSAY_FOCUS: Goal = { ...ESSAY, steps: ESSAY.steps.map((s) => (s.id === "s3" ? { ...s, status: "doing", startedAt: ago(9) } : s)) };
+// After its Done: 3 of 4, over halfway.
+const ESSAY_DONE: Goal = { ...ESSAY, steps: ESSAY.steps.map((s) => (s.id === "s3" ? finished(s, 0, 14) : s)) };
+const ESSAY_ALL: Goal = { ...ESSAY_DONE, steps: ESSAY_DONE.steps.map((s) => (s.id === "s4" ? finished(s, 0, 9) : s)) };
 
 // A booking offer, around the real clock.
 const block = (stepId: string, title: string, start: number, minutes: number): CalendarBlock => ({ title, kind: "step", start: at(start), end: at(start + minutes), stepId });
@@ -181,48 +215,111 @@ type Fixture = Partial<Omit<DayViewProps, "voice" | "on">> & { phase?: VoicePhas
 
 const STATES: Record<string, Fixture> = {
   "signed-out": { screen: "signed-out", line: "Zeno helps you start the thing you keep putting off.", chips: ["Sign in with Google"] },
-  // The very first paint: the card and the browser's greeting, before the day loads.
-  shell: { screen: null, line: "Good afternoon." },
+  // The very first paint: the hello card with the browser's greeting, before the day loads.
+  shell: { screen: null, hello: "Hey.", line: "" },
+  // The home with no goal options: Zeno's line and its quick replies, as before.
   ready: {
-    line: "Good afternoon, Sam. You're clear until your 4:30 study group.",
+    line: "You're clear until your 4:30 study group.",
     chips: chips("Work on my essay", "Plan my afternoon", "Help me pick one thing"),
     progress: progress(),
   },
-  // The first card: the opening's pick, ready to start with one tap.
-  pick: {
-    line: "Afternoon, Sam. The lab report is the one: start by emailing Prof Patel?",
-    pick: PICK,
-    chips: pickChips(),
-    progress: progress(),
-  },
-  // The rule's pick, when the model is unavailable: it must look just as good.
-  "pick-rule": {
-    line: "Good afternoon, Sam. Your Bio lab report is due tomorrow. Five minutes on it?",
-    pick: RULE_PICK,
-    chips: pickChips(),
-    progress: progress({ streak: 0, best: 0, week: week([], "today"), stepsThisWeek: 0 }),
-  },
-  // Evening, a live streak and nothing done today: the card leads with saving it.
-  "pick-at-risk": {
-    line: "Evening, Sam. One 5-minute step keeps your 6-day streak going. List your three points?",
-    pick: STREAK_PICK,
-    chips: pickChips(),
-    progress: progress({ streak: 6, atRisk: true }),
-  },
-  // A reload paints the saved card at once; its chips wait for /api/day.
-  "pick-cached": { line: "Afternoon, Sam. The lab report is the one: start by emailing Prof Patel?", pick: PICK, chips: [], progress: progress() },
   "ready-model": {
-    line: "Afternoon, Sam. You've got a clear hour before study group. Want to knock out the essay outline?",
+    line: "You've got a clear hour before study group. Want to knock out the essay outline?",
     chips: chips("Start the outline", "Something smaller first"),
     phase: "speaking",
     level: 0.5,
   },
   hear: {
-    line: "Afternoon, Sam. You've got a clear hour before study group. Want to knock out the essay outline?",
+    line: "You've got a clear hour before study group. Want to knock out the essay outline?",
     chips: chips("Start the outline", "Something smaller first"),
     hear: true,
   },
-  "ready-empty": { line: "Good afternoon, Sam.", chips: ["Let's start"] },
+  "ready-empty": { line: "", chips: ["Let's start"] },
+  // The home (Vi, Nov 3): the hello, then up to 3 goals to choose from; the current plan first, none marked as a pick.
+  "home-goals": {
+    line: HOME_LINE,
+    choices: cards({ kind: "plan", goal: ESSAY }, { kind: "deadline", deadline: QUIZ }, { kind: "plan", goal: LAB }),
+    chips: ["Something else"],
+    hear: true,
+  },
+  // An email that asks something takes the third slot.
+  "home-goals-mail": {
+    line: HOME_LINE,
+    choices: cards({ kind: "plan", goal: ESSAY }, { kind: "deadline", deadline: QUIZ }, { kind: "mail", email: ASKING }),
+    chips: ["Something else"],
+  },
+  // Nothing open, nothing due this week, no asking mail: Zeno's line and its quick replies.
+  "home-empty": { line: "Nothing is due this week, and your afternoon is open.", chips: chips("Start something new", "Plan my week") },
+  // A goal's desk: the strip, Zeno's next step with Start, the steps, and what lies on the desk.
+  "goal-desk": {
+    view: "desk",
+    goal: ESSAY,
+    proposed: ESSAY.steps[2],
+    chips: DESK_CHIPS(15),
+    materials: { stopped: stoppedLine(ESSAY, zoneNow(), today()) },
+  },
+  // A Canvas assignment's plan: its prompt lies on the desk, with Open in Canvas.
+  "goal-desk-canvas": {
+    view: "desk",
+    goal: { ...CANVAS_PLAN, steps: CANVAS_PLAN.steps.map((s) => ({ ...s, status: "todo" as const })) },
+    proposed: { ...CANVAS_PLAN.steps[0], status: "todo" },
+    chips: DESK_CHIPS(5),
+    materials: {
+      prompt: {
+        course: "ENGL 1A",
+        text: "Read two classmates' thesis statements in the Week 9 discussion. For each, write one question the thesis raises and one suggestion that would make it more arguable. Keep each comment under 120 words and be specific.",
+        url: "https://sample.instructure.com/courses/1/assignments/1",
+      },
+    },
+  },
+  // An email's reply plan: the email opens in full on the desk (made-up, from mail-samples).
+  "goal-desk-email": {
+    view: "desk",
+    goal: REPLY,
+    proposed: REPLY.steps[0],
+    chips: ["Start · 2 min", "Something smaller"],
+    materials: { mail: { id: "sample-mail", gmail: "https://mail.google.com/mail/?authuser=sam%40example.com#inbox/sample-mail" } },
+  },
+  // A deadline tapped with no plan yet: Muse breaks it into steps, with no Start until it has.
+  "goal-desk-planning": { view: "desk", planning: { title: QUIZ.title, due: QUIZ.date, line: "Breaking it into steps…" }, chips: [] },
+  // Focus on the desk: the step card with its stopwatch, the bar's running segment red, the steps and materials below.
+  "desk-focus": {
+    screen: "focus",
+    goal: ESSAY_FOCUS,
+    line: FOCUS.calm,
+    quiet: true,
+    chips: FOCUS_CHIPS,
+    materials: { stopped: stoppedLine(ESSAY, zoneNow(), today()) },
+  },
+  // Stuck? asks nothing: a smaller piece, or another goal.
+  "desk-stuck": {
+    screen: "focus",
+    goal: ESSAY_FOCUS,
+    line: FOCUS.calm,
+    quiet: true,
+    chips: ["Done", "Make it smaller", "Switch goal"],
+    materials: { stopped: stoppedLine(ESSAY, zoneNow(), today()) },
+  },
+  // After Done: the bar fills, over halfway, and the free time before the next event.
+  "desk-done": {
+    screen: "checkin",
+    goal: ESSAY_DONE,
+    line: "Nice. Next: Read it out loud and fix one thing, 10 min. You have 1 h 25 min until Biology lecture.",
+    chips: DONE_CHIPS,
+    celebrate: true,
+    progress: progress({ week: week(PAST, "done"), stepsThisWeek: 6 }),
+    materials: { stopped: stoppedLine(ESSAY_DONE, zoneNow(), today()) },
+  },
+  // The plan's last step: back to the goals.
+  "desk-last-step": {
+    screen: "checkin",
+    goal: ESSAY_ALL,
+    line: "That's all of History essay draft.",
+    chips: ["Back to my goals", "That's enough today"],
+    celebrate: true,
+    progress: progress({ week: week(PAST, "done"), stepsThisWeek: 7 }),
+    materials: { stopped: stoppedLine(ESSAY_ALL, zoneNow(), today()) },
+  },
   "quick-replies": {
     screen: "talk",
     line: "History essay, due Friday. Want the tiniest first step, or a plan for the week?",
@@ -282,22 +379,23 @@ const STATES: Record<string, Fixture> = {
   // An email to write: Focus offers to draft it in Gmail.
   "focus-email": {
     screen: "focus",
-    goal: focusing({ id: "sample-lab", title: PICK.goal, due: PICK.due, steps: [step("e1", PICK.steps[0].title, 5, "doing")] }, 1),
+    goal: focusing({ ...REPLY, steps: [{ ...REPLY.steps[0], status: "doing" }] }, 1),
     line: FOCUS.calm,
     quiet: true,
     chips: ["Done", "Stuck?", "Stop for now", "Draft it in Gmail"],
+    materials: { mail: { id: "sample-mail" } },
   },
-  // A plan for a Canvas assignment: Open in Canvas joins the links (nothing opens on its own).
+  // A plan for a Canvas assignment: Open in Canvas is on its prompt's card (nothing opens on its own).
   "focus-canvas": {
     screen: "focus",
     goal: focusing(CANVAS_PLAN, 2),
     line: FOCUS.calm,
     quiet: true,
     chips: FOCUS_CHIPS,
-    canvasUrl: "https://sample.instructure.com/courses/1/assignments/1",
+    materials: { prompt: { course: "ENGL 1A", text: "Read two classmates' thesis statements and comment on each.", url: "https://sample.instructure.com/courses/1/assignments/1" } },
   },
-  // The Sources link opened the step's sources: one ruled card, a title and a why on a line each.
-  "focus-sources": { screen: "focus", goal: focusing(PREPPED, 3), line: FOCUS.calm, quiet: true, chips: FOCUS_CHIPS.slice(0, 3), sources: true },
+  // "Find sources for this step" tapped: the sources in their desk card, a title and a why on a line each.
+  "focus-sources": { screen: "focus", goal: focusing(PREPPED, 3), line: FOCUS.calm, quiet: true, chips: FOCUS_CHIPS, materials: { sourcesOpen: true } },
   // Stuck in focus: Zeno's question leads with its answers; Done stays one tap away.
   "focus-question": {
     screen: "focus",
@@ -310,7 +408,7 @@ const STATES: Record<string, Fixture> = {
   checkin: {
     screen: "checkin",
     goal: roadmap("done", "done", "todo", "todo"),
-    line: "Nice. Next: Draft the opening paragraph, 15 min",
+    line: "Nice. Next: Draft the opening paragraph, 15 min.",
     chips: DONE_CHIPS,
     celebrate: true,
     progress: progress({ week: week(PAST, "done"), stepsThisWeek: 6 }),
@@ -320,7 +418,7 @@ const STATES: Record<string, Fixture> = {
   milestone: {
     screen: "checkin",
     goal: roadmap("done", "done", "todo", "todo"),
-    line: "Nice. Next: Draft the opening paragraph, 15 min",
+    line: "Nice. Next: Draft the opening paragraph, 15 min.",
     chips: DONE_CHIPS,
     celebrate: true,
     progress: progress({ streak: 7, best: 7, milestone: 7, week: week(["done", "done", "rest", "done", "done", "done"], "done"), stepsThisWeek: 9 }),
@@ -329,7 +427,7 @@ const STATES: Record<string, Fixture> = {
   "day-one-again": {
     screen: "checkin",
     goal: roadmap("done", "done", "todo", "todo"),
-    line: "Nice. Next: Draft the opening paragraph, 15 min",
+    line: "Nice. Next: Draft the opening paragraph, 15 min.",
     chips: DONE_CHIPS,
     celebrate: true,
     progress: progress({ streak: 1, best: 9, week: week(["done", "rest", "missed", "missed", "missed", "missed"], "done"), stepsThisWeek: 1 }),
@@ -337,7 +435,7 @@ const STATES: Record<string, Fixture> = {
   "first-day": {
     screen: "checkin",
     goal: roadmap("done", "todo", "todo", "todo"),
-    line: "Nice. Next: List three points you want to make, 10 min",
+    line: "Nice. Next: List three points you want to make, 10 min.",
     chips: DONE_CHIPS,
     celebrate: true,
     progress: progress({ streak: 1, best: 1, week: week([], "done"), stepsThisWeek: 1, restDaysLeft: 1 }),
@@ -345,14 +443,14 @@ const STATES: Record<string, Fixture> = {
   finished: {
     screen: "checkin",
     goal: roadmap("done", "done", "done", "done"),
-    line: "Nice work. That was the last step.",
-    chips: ["Pick the next thing", "That's enough today"],
+    line: "That's all of History essay draft.",
+    chips: ["Back to my goals", "That's enough today"],
   },
   // Stop for now with an hour or more of the plan left: one block tomorrow, one tap.
   wrap: {
     screen: "wrap",
     goal: roadmap("done", "done", "todo", "todo"),
-    line: "Saved. I'll bring it back next time.",
+    line: "Saved. I'll bring it back next time. Today: 2 steps, 41 min.",
     offers: [offer("s3", TOMORROW)],
     chips: ["No thanks"],
   },
@@ -365,25 +463,25 @@ const STATES: Record<string, Fixture> = {
     offers: [offer("s3", { ...TOMORROW, eventId: "e2" }, "booked")],
     chips: ["Back to my day"],
   },
-  desk: { line: "Good afternoon, Sam.", goal: roadmap("done", "doing", "todo", "todo"), sheet: "today" },
+  desk: { line: HOME_LINE, goal: roadmap("done", "doing", "todo", "todo"), sheet: "today" },
   "desk-quiet": {
-    line: "Good afternoon, Sam.",
+    line: HOME_LINE,
     sheet: "today",
     today: { events: [], emails: [], unreadEmail: 0, sources: { calendar: "ok", email: "error", goals: "ok" } },
   },
   // Canvas deadlines with long titles: two lines at most each, cut with an ellipsis.
-  "desk-deadlines": { line: "Good afternoon, Sam.", sheet: "today", today: { ...TODAY, deadlines: CANVAS_DEADLINES } },
-  memory: { line: "Good afternoon, Sam.", sheet: "memory", device: DEVICE },
+  "desk-deadlines": { line: HOME_LINE, sheet: "today", today: { ...TODAY, deadlines: CANVAS_DEADLINES } },
+  memory: { line: HOME_LINE, sheet: "memory", device: DEVICE },
   // Canvas deadlines fold into one line at the end of Projects & deadlines, which opens them there, each with its ×.
-  "memory-canvas": { line: "Good afternoon, Sam.", sheet: "memory", memories: [...MEMORIES, ...CANVAS_MEMORIES] },
-  "memory-empty": { line: "Good afternoon, Sam.", sheet: "memory", memories: [] },
+  "memory-canvas": { line: HOME_LINE, sheet: "memory", memories: [...MEMORIES, ...CANVAS_MEMORIES] },
+  "memory-empty": { line: HOME_LINE, sheet: "memory", memories: [] },
   // The account menu: Sound, Connect Canvas (or Canvas · connected), Privacy, Sign out.
-  account: { line: "Good afternoon, Sam.", chips: chips("Work on my essay"), menuOpen: true, progress: progress() },
-  "account-canvas": { line: "Good afternoon, Sam.", chips: chips("Work on my essay"), menuOpen: true, progress: progress(), canvas: { ...CANVAS, linked: true } },
+  account: { line: HOME_LINE, chips: chips("Work on my essay"), menuOpen: true, progress: progress() },
+  "account-canvas": { line: HOME_LINE, chips: chips("Work on my essay"), menuOpen: true, progress: progress(), canvas: { ...CANVAS, linked: true } },
   // Connect Canvas, opened from the account menu.
-  canvas: { line: "Good afternoon, Sam.", sheet: "canvas" },
+  canvas: { line: HOME_LINE, sheet: "canvas" },
   // Connected: the last sync's work by the day it is due, a line or two each, with a time only when it isn't 11:59 PM.
-  "canvas-connected": { line: "Good afternoon, Sam.", sheet: "canvas", canvas: SAMPLE_CANVAS },
+  "canvas-connected": { line: HOME_LINE, sheet: "canvas", canvas: SAMPLE_CANVAS },
   error: { screen: "talk", line: "I couldn't think that through just now. Try again?" },
   blocked: {
     screen: "talk",
@@ -423,9 +521,11 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
     <div data-theme={theme} className="still">
       <DayView
         screen="ready"
+        hello="Hey Sam."
         line=""
         you=""
         goal={null}
+        goals={[ESSAY, LAB]}
         today={TODAY}
         memories={MEMORIES}
         typing={false}
@@ -445,6 +545,9 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
         voice={{ phase, levelRef, muted: false, supported: true, error }}
         on={{
           chip: noop,
+          choose: noop,
+          home: noop,
+          propose: noop,
           hear: noop,
           paste: noop,
           talk: noop,
@@ -461,9 +564,9 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
           signIn: noop,
           signOut: noop,
           canvasSynced: noop,
-          openGoal: () => {},
-          openDeadline: () => {},
-          reply: () => {},
+          openGoal: noop,
+          openDeadline: noop,
+          reply: noop,
         }}
       />
     </div>
@@ -473,7 +576,7 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
 // ---- The desk's free time, deadlines and Week view (week track) ----
 // week-samples answers the calendar API itself, so these states never read or book a real calendar.
 import { WEEK_STATES, withPlans } from "./week-samples";
-const DESK: Fixture = { line: "Good afternoon, Sam.", goal: roadmap("done", "doing", "todo", "todo") };
+const DESK: Fixture = { line: HOME_LINE, goal: roadmap("done", "doing", "todo", "todo") };
 STATES["desk-plans"] = { ...DESK, sheet: "today", today: withPlans(TODAY) };
 // A block booked from a talk offer: it joins today's list and leaves Free.
 STATES["desk-booked"] = {

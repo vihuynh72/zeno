@@ -1,16 +1,18 @@
 // Self-check for day-flow.ts, run like Vercel does, in UTC: TZ=UTC node src/components/day-flow.check.ts
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
-import type { FirstPick, Goal, MemoryGroup, Progress, Step, TalkAction } from "@/lib/day";
+import type { Choice, DayEmail, Deadline, Goal, MemoryGroup, Progress, Step, TalkAction } from "@/lib/day";
 
 registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
 const flow = await import("./day-flow.ts");
-const { addHeard, asks, canvasFor, cardSize, checkinMinute, clock, dayPart, doneLine, draftGoal, dueLabel, FOCUS, foundLine, greeting, groupFacts } = flow;
-const { isEmailStep, isNotes, laterBlock, laterMinutes, nextScreen, openingReusable, openingSig, openSteps, pickFits, quickReplies } = flow;
-const { replanOnCanvas, slotLabel, soonEvent, stepCard, streakLine, withStatus } = flow;
+const { addHeard, asks, canvasFor, cardSize, checkinMinute, clock, dayPart, doneLine, dueLabel, FOCUS, foundLine, greeting, groupFacts } = flow;
+const { isEmailStep, isNotes, laterBlock, laterMinutes, nextScreen, openingReusable, openingSig, openSteps, quickReplies } = flow;
+const { replanOnCanvas, slotLabel, soonEvent, streakLine, withStatus } = flow;
+const { addedStep, barCaption, choiceCard, duration, homeChoices, mailPlan, nextProposal, openPlans, proposedStep, realMinutes, runningStep } = flow;
+const { sameTitle, spoken, stoppedLine, todayLine, untilNext } = flow;
 
 const step = (id: string, status: Step["status"], extra: Partial<Step> = {}): Step => ({
   id,
@@ -24,11 +26,16 @@ const step = (id: string, status: Step["status"], extra: Partial<Step> = {}): St
 const goal = (...steps: Step[]): Goal => ({ id: "g", title: "Essay", steps });
 const acts = (...types: TalkAction["type"][]) => types.map((type) => ({ type, label: type }));
 
-assert.equal(greeting(9, "Vi"), "Good morning, Vi.");
-assert.equal(greeting(15, "Vi"), "Good afternoon, Vi.");
-assert.equal(greeting(17, null), "Good evening.");
-assert.equal(greeting(1, "Vi"), "Still up, Vi?");
-assert.equal(greeting(5, null), "Good morning.");
+// The home's hello (Vi, Nov 3), by the hour: still the night before until 5 AM.
+assert.equal(greeting(9, "Maya"), "Morning, Maya.");
+assert.equal(greeting(11, null), "Morning.");
+assert.equal(greeting(12, "Maya"), "Hey Maya.");
+assert.equal(greeting(16, null), "Hey.");
+assert.equal(greeting(17, "Maya"), "Evening, Maya.");
+assert.equal(greeting(23, null), "Evening.");
+assert.equal(greeting(1, "Maya"), "Still up, Maya?");
+assert.equal(greeting(4, null), "Still up?");
+assert.equal(greeting(5, null), "Morning.");
 
 // A step already started comes before earlier ones still to do; done and skipped drop out.
 const mixed = goal(step("1", "done"), step("2", "todo"), step("3", "doing"), step("4", "skipped"), step("5", "todo"));
@@ -47,26 +54,27 @@ assert.equal(nextScreen("checkin", [], fresh), "talk", "talking after Done leave
 assert.equal(nextScreen("focus", acts("remembered"), fresh), "focus");
 assert.equal(nextScreen("talk", acts("goal-set"), goal(step("1", "done"))), "talk");
 assert.equal(nextScreen("focus", acts("forgot"), goal(step("1", "done"))), "talk");
-// The card for a plan made in talk is its first open step.
-assert.deepEqual(stepCard({ ...goal(step("1", "done"), step("2", "todo", { minutes: null })), due: "2026-11-06" }), {
-  goal: "Essay",
-  due: "2026-11-06",
-  stepId: "2",
-  steps: [{ title: "Step 2", minutes: 5 }],
-  why: "",
-});
-assert.equal(stepCard(goal(step("1", "done"))), null);
 // After Done: the next step and its minutes, or the end of the plan.
-assert.equal(doneLine(goal(step("1", "done"), step("2", "todo", { minutes: 15 }))), "Nice. Next: Step 2, 15 min");
-assert.equal(doneLine(goal(step("1", "done"), step("2", "todo", { minutes: null }))), "Nice. Next: Step 2");
-assert.equal(doneLine(goal(step("1", "done"))), "Nice work. That was the last step.");
+assert.equal(doneLine(goal(step("1", "done"), step("2", "todo", { minutes: 15 }))), "Nice. Next: Step 2, 15 min.");
+assert.equal(doneLine(goal(step("1", "done"), step("2", "todo", { minutes: null }))), "Nice. Next: Step 2.");
+assert.equal(doneLine(goal(step("1", "done"), step("2", "todo", { title: "Read it out loud.", minutes: null }))), "Nice. Next: Read it out loud.");
+assert.equal(doneLine(goal(step("1", "done"))), "That's all of Essay.");
+assert.equal(doneLine({ ...goal(step("1", "done")), title: "Lab report!" }), "That's all of Lab report.");
 // A skip is never praised as a Done.
-assert.equal(doneLine(goal(step("1", "skipped"), step("2", "todo", { minutes: 15 })), true), "Skipped. Next: Step 2, 15 min");
-assert.equal(doneLine(goal(step("1", "skipped")), true), "Skipped. That was the last step.");
+assert.equal(doneLine(goal(step("1", "skipped"), step("2", "todo", { minutes: 15 })), true), "Skipped. Next: Step 2, 15 min.");
+assert.equal(doneLine(goal(step("1", "skipped")), true), "Skipped. That's all of Essay.");
+// Said aloud, the minutes and hours are words.
+assert.equal(spoken("Nice. Next: Step 2, 15 min."), "Nice. Next: Step 2, 15 minutes.");
+assert.equal(spoken("Next: Step 2, 1 min. You have 1 h 25 min until BIO 101."), "Next: Step 2, 1 minute. You have 1 hour 25 minutes until BIO 101.");
+assert.equal(spoken("You have 2 h until CS 146. Today: 2 steps, 41 min."), "You have 2 hours until CS 146. Today: 2 steps, 41 minutes.");
+assert.equal(spoken("Read the 11 min-max notes"), "Read the 11 min-max notes", "only a count of minutes");
 // An email to write gets "Draft it in Gmail".
 for (const title of [
   "Email Prof Patel about an extension", "E-mail the TA", "write to the registrar", "Reply to Dana", "Message the study group",
   "Draft an email to Prof Patel", "Ask Prof Patel for an extension by email", "Send Ana a quick email",
+  // An asking email's plan (mailPlan) gets it too.
+  mailPlan({ from: "Prof. Lin <lin@school.edu>", subject: "Office hours?", snippet: "", unread: true }).steps[0].title,
+  mailPlan(null).steps[0].title,
 ]) {
   assert.equal(isEmailStep(title), true, title);
 }
@@ -128,15 +136,6 @@ const startedAt = "2026-11-03T17:00:00.000Z";
 assert.equal(FOCUS.back(startedAt, Date.parse(startedAt) + 23.9 * 60_000), "Back. 23 min on this.");
 assert.equal(FOCUS.back(startedAt, Date.parse(startedAt) + 125 * 60_000), "Back. 125 min on this.");
 for (const line of [FOCUS.calm, FOCUS.checkin(15), FOCUS.back(startedAt, Date.parse(startedAt))]) assert.equal(asks(line), false, line);
-
-// A saved first card is shown again only while it still fits the day's plan.
-const pickStep: FirstPick = { goal: "Essay", due: null, stepId: "2", steps: [{ title: "Step 2", minutes: 5 }], why: "Next." };
-const pickNew: FirstPick = { goal: "Lab report", due: "2026-11-04", stepId: null, steps: [{ title: "Open it", minutes: 5 }, { title: "Draft", minutes: 15 }], why: "Due Wednesday." };
-assert.equal(pickFits(pickStep, goal(step("1", "done"), step("2", "todo"))), true);
-assert.equal(pickFits(pickStep, goal(step("2", "done"))), false, "its step is finished");
-assert.equal(pickFits(pickNew, null), true);
-assert.equal(pickFits(pickNew, goal(step("1", "todo"))), false, "a plan is open now");
-assert.equal(pickFits(null, null), false);
 
 // A saved model opening shows again on load, with no model call, while under 20 minutes old and its day is unchanged:
 // the plan's id, each step's id, status, title and minutes, and the Canvas list's assignments and due times.
@@ -230,10 +229,7 @@ for (const screen of ["focus", "checkin", "talk", "wrap", "setup", null] as cons
   assert.equal(replanOnCanvas(screen, false, []), false, `${screen}, disconnected`);
 }
 
-// A new plan shows at once, step 1 running.
 const now = new Date("2026-11-02T17:00:00Z");
-const draft = draftGoal(pickNew, now);
-assert.deepEqual(draft.steps.map((s) => [s.status, s.startedAt]), [["doing", now.toISOString()], ["todo", null]]);
 // Starting one step puts any other running one back to todo, as the server does.
 const started = withStatus(goal(step("1", "doing", { startedAt: "x" }), step("2", "todo")), "2", "doing", now);
 assert.deepEqual(started.steps.map((s) => s.status), ["todo", "doing"]);
@@ -246,6 +242,8 @@ assert.equal(dueLabel("2026-11-06", "2026-11-02"), "due Friday");
 assert.equal(dueLabel("2026-11-06", ""), "", "no date before the browser's clock");
 assert.equal(dueLabel("2026-11-20", "2026-11-02"), "due Nov 20");
 assert.equal(dueLabel("2026-10-30", "2026-11-02"), "was due Oct 30");
+assert.equal(dueLabel("2026-11-06", "2026-11-02", "short"), "due Fri", "the option cards' short weekday");
+assert.equal(dueLabel("2026-11-20", "2026-11-02", "short"), "due Nov 20");
 
 // Stopping offers a block only for an hour or more left, at most two hours, never when the plan is already booked.
 const big = goal(step("1", "done"), step("2", "doing", { minutes: 30 }), step("3", "todo", { minutes: 20 }), step("4", "todo", { minutes: null }));
@@ -334,5 +332,179 @@ assert.equal(isNotes("x".repeat(200)), false);
 assert.equal(isNotes("📚".repeat(200)), false, "200 characters as /api/memory counts them, not UTF-16 units");
 assert.equal(isNotes("x".repeat(201)), true);
 assert.equal(isNotes("BIO 120 syllabus\nLab report due Nov 6"), true);
+
+// ---------- The home and a goal's desk (Vi, Nov 3) ----------
+// Titles match as lowercase words with punctuation as spaces, when either holds the other.
+assert.equal(sameTitle("HIST 110: Essay 2", "essay 2"), true);
+assert.equal(sameTitle("SOC-15 Field report #2", "soc 15: field report 2"), true);
+assert.equal(sameTitle("Lab report", "Essay 2"), false);
+assert.equal(sameTitle("!!!", "Essay"), false, "a title of only symbols matches nothing");
+
+// The home's options: the current plan first, then plans and deadlines by due date (none last), 3 at most; an asking
+// email takes the third slot.
+const hToday = "2026-11-02"; // a Monday
+const mk = (id: string, title: string, due: string | null, ...steps: Step[]): Goal => ({ id, title, due, steps });
+const current = mk("p1", "SOC 15: Field report", "2026-11-06", step("a", "done"), step("b", "todo", { title: "Outline the findings", minutes: 10 }));
+const other = mk("p2", "Essay 2", "2026-11-04", step("c", "todo", { title: "Read the prompt", minutes: 5 }));
+const undated = mk("p3", "Portfolio site", null, step("d", "todo"));
+const finished = mk("p4", "Lab 5", "2026-11-03", step("e", "done"));
+const dl = (title: string, date: string): Deadline => ({ title, date, daysLeft: 0 });
+const deadlines = [
+  dl("HIST 110: Essay 2", "2026-11-04"), // the plan "Essay 2" covers it
+  dl("BIO 101 quiz", "2026-11-03"),
+  dl("CHEM 1A lab", "2026-11-12"), // 10 days out
+  dl("bio 101 QUIZ!", "2026-11-03"), // the same deadline twice
+  dl("Old thing", "2026-11-01"), // a list kept since yesterday
+  dl("MATH 30 problem set", "2026-11-09"), // 7 days out
+];
+const asking: DayEmail = { from: "Prof. Lin <lin@school.edu>", subject: "Does Wednesday at 2 work?", snippet: "", unread: true, id: "m1", address: "lin@school.edu", asks: true };
+const notAsking: DayEmail = { ...asking, id: "m0", asks: false, subject: "Newsletter" };
+const names = (choices: Choice[]) => choices.map((one) => (one.kind === "plan" ? one.goal.id : one.kind === "deadline" ? one.deadline.title : `mail:${one.email.id}`));
+const plans = [other, undated, finished, current];
+assert.deepEqual(names(homeChoices(current, plans, deadlines, [], hToday)), ["p1", "BIO 101 quiz", "p2"]);
+assert.deepEqual(names(homeChoices(current, plans, deadlines.slice(5), [], hToday)), ["p1", "p2", "MATH 30 problem set"], "7 days out counts");
+assert.deepEqual(names(homeChoices(null, [undated, other], [], [], hToday)), ["p2", "p3"], "no due date last");
+assert.deepEqual(names(homeChoices(finished, [undated], [], [], hToday)), ["p3"], "a finished current plan is no option");
+assert.deepEqual(names(homeChoices(current, plans, deadlines, [notAsking, asking], hToday)), ["p1", "BIO 101 quiz", "mail:m1"]);
+assert.deepEqual(names(homeChoices(other, [], [], [asking], hToday)), ["p2", "mail:m1"]);
+assert.deepEqual(names(homeChoices(null, [], [], [asking], hToday)), ["mail:m1"]);
+assert.deepEqual(names(homeChoices(current, plans, deadlines, [asking], hToday, ["m1"])), ["p1", "BIO 101 quiz", "p2"], "already a plan here");
+assert.deepEqual(names(homeChoices(null, [], [], [{ ...asking, id: undefined }], hToday)), [], "a saved day's email can't open");
+assert.deepEqual(names(homeChoices(null, [], deadlines, [], "")), [], "no deadlines before the browser's clock");
+// The plan as it is now (the page's copy) wins over the day's older copy of it.
+const stale = { ...current, steps: current.steps.map((one) => ({ ...one, status: "todo" as const })) };
+const newest = homeChoices(current, [stale], [], [], hToday)[0];
+assert.equal(newest.kind === "plan" && newest.goal, current);
+// The Desk's Goals: the same open plans, the current one first.
+assert.deepEqual(openPlans(current, plans).map((plan) => plan.id), ["p1", "p2", "p3"]);
+assert.deepEqual(openPlans(finished, [undated]).map((plan) => plan.id), ["p3"]);
+assert.deepEqual(openPlans(null, []), []);
+
+// An option card's words.
+assert.deepEqual(choiceCard({ kind: "plan", goal: current }, "p1", hToday), {
+  title: "SOC 15: Field report",
+  minutes: 10,
+  meta: "1 of 2 done · due Fri",
+  last: "Picks up where you stopped.",
+});
+assert.deepEqual(choiceCard({ kind: "plan", goal: other }, "p1", hToday), { title: "Essay 2", minutes: 5, meta: "0 of 1 done · due Wed", last: "Next: Read the prompt" });
+assert.equal(choiceCard({ kind: "plan", goal: other }, "p2", hToday).last, "Next: Read the prompt", "nothing to pick up yet");
+assert.equal(choiceCard({ kind: "plan", goal: undated }, null, hToday).meta, "0 of 1 done");
+assert.deepEqual(choiceCard({ kind: "deadline", deadline: dl("BIO 101 quiz", "2026-11-03") }, null, hToday), {
+  title: "BIO 101 quiz",
+  minutes: null,
+  meta: "not started · due tomorrow",
+  last: "Due tomorrow.",
+});
+assert.equal(choiceCard({ kind: "deadline", deadline: dl("x", "2026-11-02") }, null, hToday).last, "Due today.");
+assert.deepEqual(
+  [choiceCard({ kind: "deadline", deadline: dl("x", "2026-11-05") }, null, hToday).meta, choiceCard({ kind: "deadline", deadline: dl("x", "2026-11-05") }, null, hToday).last],
+  ["not started · due Thu", "Due Thursday."],
+);
+assert.equal(choiceCard({ kind: "deadline", deadline: dl("x", "2026-11-09") }, null, hToday).last, "Due Nov 9.");
+assert.deepEqual(choiceCard({ kind: "mail", email: asking }, null, hToday), { title: "Answer Prof. Lin", minutes: 2, meta: "Email · Prof. Lin", last: "Does Wednesday at 2 work?" });
+
+// An asking email's plan: one 2-minute reply; a long subject is cut at a word, within 40 characters.
+assert.deepEqual(mailPlan(asking), { title: "Answer Prof. Lin", steps: [{ title: "Reply to Prof. Lin about Does Wednesday at 2 work?", minutes: 2 }] });
+const long = mailPlan({ ...asking, subject: "Meeting time for office hours next week and the week after" }).steps[0].title;
+assert.equal(long, "Reply to Prof. Lin about Meeting time for office hours next week");
+assert.equal(mailPlan({ ...asking, subject: "x".repeat(60) }).steps[0].title, `Reply to Prof. Lin about ${"x".repeat(40)}`);
+assert.equal(mailPlan({ ...asking, subject: "  " }).steps[0].title, "Reply to Prof. Lin");
+assert.equal(mailPlan({ ...asking, from: "dana@school.edu" }).title, "Answer dana", "a title never holds an address");
+assert.equal(mailPlan({ ...asking, from: "<registrar@school.edu>" }).steps[0].title, "Reply to registrar about Does Wednesday at 2 work?");
+assert.equal(choiceCard({ kind: "mail", email: { ...asking, from: "dana@school.edu" } }, null, hToday).meta, "Email · dana");
+assert.deepEqual(mailPlan(null), { title: "Answer an email", steps: [{ title: "Reply to the email", minutes: 2 }] });
+
+// The desk proposes the first open step, or the one she tapped; Another step goes round the open ones.
+const desk = goal(step("1", "done"), step("2", "todo"), step("3", "todo"), step("4", "skipped"), step("5", "todo"));
+assert.equal(proposedStep(desk, null)?.id, "2");
+assert.equal(proposedStep(desk, "3")?.id, "3");
+assert.equal(proposedStep(desk, "1")?.id, "2", "a done step is never proposed");
+assert.equal(proposedStep(null, null), null);
+assert.equal(nextProposal(desk, null), "3");
+assert.equal(nextProposal(desk, "3"), "5");
+assert.equal(nextProposal(desk, "5"), "2", "round again");
+assert.equal(nextProposal(desk, "gone"), "3");
+assert.equal(nextProposal(goal(step("1", "todo")), "1"), "1");
+assert.equal(nextProposal(goal(step("1", "done")), null), null);
+// Something smaller: the plan's first new step is proposed.
+const smaller = { ...desk, steps: [desk.steps[0], step("n1", "todo"), step("n2", "todo"), ...desk.steps.slice(2)] };
+assert.equal(addedStep(desk, smaller), "n1");
+assert.equal(addedStep(desk, desk), null);
+assert.equal(addedStep(null, desk), "2", "a new plan: its first step");
+
+// A step still running when the page opens goes to Focus, unless it was left 3 hours ago or more.
+const t0 = Date.parse("2026-11-03T17:00:00Z");
+const run = (minutes: number) => goal(step("1", "done"), step("2", "doing", { startedAt: new Date(t0 - minutes * 60_000).toISOString() }));
+assert.equal(runningStep(run(20), t0)?.id, "2");
+assert.equal(runningStep(run(179), t0)?.id, "2");
+assert.equal(runningStep(run(180), t0), null, "left running 3 hours ago");
+assert.equal(runningStep(run(-5), t0), null, "started in the future: the clock moved");
+assert.equal(runningStep(goal(step("1", "doing")), t0), null, "no start time");
+assert.equal(runningStep(goal(step("1", "todo")), t0), null);
+
+// Real minutes and how long, said short.
+assert.equal(realMinutes(step("1", "done", { startedAt: "2026-11-03T17:00:00Z", doneAt: "2026-11-03T17:12:20Z" })), 12);
+assert.equal(realMinutes(step("1", "done", { startedAt: "2026-11-03T17:00:00Z", doneAt: "2026-11-03T17:00:10Z" })), 1, "never 0");
+assert.equal(realMinutes(step("1", "done", { doneAt: "2026-11-03T17:00:00Z" })), null);
+assert.equal(realMinutes(step("1", "done", { startedAt: "2026-11-03T17:00:00Z", doneAt: "2026-11-03T16:00:00Z" })), null);
+assert.equal(duration(45), "45 min");
+assert.equal(duration(120), "2 h");
+assert.equal(duration(85.9), "1 h 25 min");
+assert.equal(duration(0.2), "1 min");
+
+// The goal strip's caption: over halfway only right after a Done that took it past half.
+assert.equal(barCaption(3, 7), "3 of 7 done");
+assert.equal(barCaption(4, 7, true), "4 of 7 · over halfway");
+assert.equal(barCaption(4, 7), "4 of 7 done");
+assert.equal(barCaption(3, 7, true), "3 of 7 done", "not over half yet");
+assert.equal(barCaption(2, 4, true), "2 of 4 done", "half is not over half");
+assert.equal(barCaption(7, 7, true), "7 of 7 done");
+
+// Where you stopped: the newest done step, by the person's day (Tuesday, Nov 3, in Los Angeles).
+const t1 = new Date("2026-11-03T18:00:00Z"); // 10 AM in Los Angeles
+const tue = "2026-11-03";
+const doneStep = (iso: string, minutes: number | null, id = "x", title = "Draft the thesis") =>
+  step(id, "done", { title, doneAt: iso, startedAt: minutes === null ? null : new Date(Date.parse(iso) - minutes * 60_000).toISOString() });
+assert.equal(stoppedLine(goal(doneStep("2026-11-03T17:30:00Z", 12)), LA, tue), "Draft the thesis · done today in 12 min");
+assert.equal(stoppedLine(goal(doneStep("2026-11-03T06:30:00Z", null)), LA, tue), "Draft the thesis · done yesterday", "10:30 PM in Los Angeles");
+assert.equal(stoppedLine(goal(doneStep("2026-10-31T18:00:00Z", 5)), LA, tue), "Draft the thesis · done Saturday in 5 min");
+assert.equal(stoppedLine(goal(doneStep("2026-10-20T18:00:00Z", 5)), LA, tue), "Draft the thesis · done Oct 20 in 5 min");
+assert.equal(
+  stoppedLine(goal(doneStep("2026-11-02T18:00:00Z", 5, "a"), doneStep("2026-11-03T17:00:00Z", 9, "b", "Find two quotes"), step("c", "todo")), LA, tue),
+  "Find two quotes · done today in 9 min",
+);
+assert.equal(stoppedLine(goal(step("1", "todo")), LA, tue), null);
+assert.equal(stoppedLine(null, LA, tue), null);
+assert.equal(stoppedLine(goal(doneStep("2026-11-03T17:30:00Z", 12)), LA, ""), null, "not before the browser's clock");
+// 10:30 PM on Nov 2 in Los Angeles is 3:30 PM on Nov 3 in Tokyo: the person's own zone decides.
+assert.equal(stoppedLine(goal(doneStep("2026-11-03T06:30:00Z", null)), "Asia/Tokyo", tue), "Draft the thesis · done today");
+
+// The wrap line counts today's finished steps across the plans, each once, with the minutes they really took.
+const g1 = goal(doneStep("2026-11-03T17:30:00Z", 12, "a"), doneStep("2026-11-03T16:00:00Z", 29, "b"), doneStep("2026-11-02T18:00:00Z", 30, "c"), step("d", "todo"));
+const g2 = { ...goal(doneStep("2026-11-03T15:00:00Z", null, "e")), id: "g2" };
+assert.equal(todayLine([g1], LA, t1), "Today: 2 steps, 41 min.");
+assert.equal(todayLine([g1, g2, g1], LA, t1), "Today: 3 steps, 41 min.", "a step counted once; an untimed one adds no minutes");
+assert.equal(todayLine([g2], LA, t1), "Today: 1 step.");
+assert.equal(todayLine([null, goal(step("1", "todo"))], LA, t1), null);
+
+// After a Done: the free time left before the next event, when now is in a free slot that event ends.
+const t2 = Date.parse("2026-11-03T18:00:00Z");
+const ev = (title: string, from: number, to: number, extra: { allDay?: boolean; zeno?: boolean } = {}) => ({
+  title,
+  start: new Date(t2 + from * 60_000).toISOString(),
+  end: new Date(t2 + to * 60_000).toISOString(),
+  allDay: false,
+  ...extra,
+});
+const freeNow = [{ start: new Date(t2 - 30 * 60_000).toISOString(), end: new Date(t2 + 85 * 60_000).toISOString() }];
+assert.equal(untilNext([ev("BIO 101", 85, 160)], freeNow, t2), "You have 1 h 25 min until BIO 101.");
+assert.equal(untilNext([ev("Write", 85, 95, { zeno: true }), ev("BIO 101", 85, 160)], freeNow, t2), "You have 1 h 25 min until BIO 101.", "never Zeno's own block");
+assert.equal(untilNext([ev("Write", 85, 95, { zeno: true })], freeNow, t2), null);
+assert.equal(untilNext([ev("BIO 101", 85, 160)], [{ ...freeNow[0], start: new Date(t2 + 5 * 60_000).toISOString() }], t2), null, "busy now");
+assert.equal(untilNext([ev("BIO 101", 200, 260)], freeNow, t2), null, "the slot ends with the waking day");
+assert.equal(untilNext([ev("Birthday", 85, 160, { allDay: true })], freeNow, t2), null);
+assert.equal(untilNext([ev("BIO 101", 85, 160)], [], t2), null);
+assert.equal(untilNext([ev("CS 146", 85.5, 160)], freeNow, t2 + 84 * 60_000), "You have 1 min until CS 146.");
 
 console.log("day-flow self-check passed");

@@ -22,12 +22,12 @@ async function findSources(stepId: string, canvas: CanvasBrief | undefined): Pro
   }
 }
 
-// A few web sources for the step in focus, opened from its Sources link: it looks at once unless the step already has
-// some. Key it by step id.
+// A few web sources for the desk's step, opened from "Find sources for this step" inside its card: it looks at once
+// unless the step already has some. Key it by step id.
 export default function PrepPack({ step, canvas }: { step: Step; canvas?: CanvasBrief }) {
   const [sources, setSources] = useState<PrepSource[]>(step.prep ?? []);
   const [status, setStatus] = useState<"idle" | "loading" | "failed" | "found">(step.prep?.length ? "idle" : "loading");
-  const pack = useRef<HTMLElement>(null);
+  const pack = useRef<HTMLDivElement>(null);
 
   // Each look (on opening, or Try again) is status "loading" until its answer lands.
   useEffect(() => {
@@ -54,36 +54,34 @@ export default function PrepPack({ step, canvas }: { step: Step; canvas?: Canvas
   }, [status]);
 
   return (
-    <section ref={pack} aria-label="Sources for this step" className="mt-6 flex w-full max-w-[640px] flex-col items-center">
+    <div ref={pack}>
       {sources.length > 0 && (
-        <div className="mini w-full">
-          <ul className="lines">
-            {sources.map((source, i) => (
-              <li key={i}>
-                <a
-                  ref={i === 0 && status === "found" ? focusOnMount : undefined}
-                  href={source.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block truncate font-bold underline underline-offset-4"
-                >
-                  {source.title}
-                  <span className="sr-only"> (opens in a new tab)</span>
-                </a>
-                <p className="truncate text-ink-2">{source.why}</p>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <ul className="lines mt-1">
+          {sources.map((source, i) => (
+            <li key={i}>
+              <a
+                ref={i === 0 && status === "found" ? focusOnMount : undefined}
+                href={source.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block truncate font-bold underline underline-offset-4"
+              >
+                {source.title}
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+              <p className="truncate text-ink-2">{source.why}</p>
+            </li>
+          ))}
+        </ul>
       )}
-      <p role="status" className="text-center text-ink-2">
+      <p role="status" className="text-ink-2 empty:hidden">
         {status === "loading" ? "Looking for good sources…" : status === "failed" ? "Couldn't find sources just now." : ""}
       </p>
       {status === "failed" && (
-        <button type="button" onClick={() => setStatus("loading")} className="link">
+        <button type="button" onClick={() => setStatus("loading")} className="link -ml-1">
           Try again
         </button>
       )}
-    </section>
+    </div>
   );
 }

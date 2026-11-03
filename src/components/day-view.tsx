@@ -1,24 +1,27 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
-import type { CanvasAssignment, CanvasBrief, DayEmail, DayEvent, Deadline, FirstPick, FreeSlot, Goal, Memory, Progress, SourceState, Step } from "@/lib/day";
+import type { CanvasAssignment, CanvasBrief, DayEmail, DayEvent, Deadline, FreeSlot, Goal, Memory, Progress, SourceState, Step } from "@/lib/day";
 import { localDate } from "@/lib/tz";
 import type { VaultFact } from "@/lib/vault";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
-import { cardSize, clock, dueLabel, openSteps, type Fact, type Screen } from "@/components/day-flow";
+import { barCaption, cardSize, clock, openSteps, type ChoiceCard, type Fact, type Screen } from "@/components/day-flow";
 import AccountMenu from "@/components/account-menu";
 import BookingChip, { type Booking } from "@/components/booking-chip";
 import CanvasSheet from "@/components/canvas-sheet";
 import Desk from "@/components/desk";
 import { bookedEvents } from "@/components/desk-rows";
 import FocusMusic from "@/components/focus-music";
+import { DeskMaterials, GoalStrip, StepsList, type Materials } from "@/components/goal-desk";
 import MemorySheet from "@/components/memory-sheet";
-import PrepPack from "@/components/prep-pack";
 import StreakRow from "@/components/streak-row";
 import VoiceRing from "@/components/voice-ring";
 
 // "week" opens the desk on its Week view.
 export type Sheet = "today" | "week" | "memory" | "canvas" | null;
+
+// home: the hello and the goal options; desk: the current plan's desk, the workstation around its step (Vi, Nov 3).
+export type View = "home" | "desk";
 
 export type Today = {
   events: DayEvent[];
@@ -33,10 +36,17 @@ export type Today = {
 
 export type DayViewProps = {
   screen: Screen | null; // null until the browser knows whose day it is
+  // The ready screen and talk show the home or the plan's desk; Focus and the screen after Done are always on the desk.
+  view?: View;
+  hello?: string; // the home's greeting, "Hey Maya."
   line: string; // Zeno's latest line
   you: string; // the person's words: live while listening, then what they sent
   goal: Goal | null;
   goals?: Goal[]; // every open plan, for the home's options and the Desk (Vi, Nov 3)
+  choices?: ChoiceCard[]; // the home's goal options, 3 at most
+  planning?: { title: string; due: string | null; line: string } | null; // a desk whose plan is still being made
+  proposed?: Step | null; // the step Zeno proposes on the desk
+  materials?: Materials; // what lies on the desk beside the step
   today: Today | null; // null when the day couldn't load
   memories: Memory[] | "loading" | "error";
   sheet: Sheet;
@@ -52,14 +62,11 @@ export type DayViewProps = {
   pasting: boolean; // the first sign-in card takes pasted notes
   hear: boolean; // the browser held Zeno's voice back until a tap
   progress: Progress | null; // the streak for the top bar and the row after a Done
-  pick?: FirstPick | null; // the card's one thing, on the ready screen
   celebrate?: boolean; // a Done just happened: show the streak row
   bookings?: Record<string, Booking>; // booking chips by key
   offers?: Booking[]; // booking chips that answer Zeno's line
   timer?: number | null; // Focus's planned minutes when the tap said so ("Start · 5 min"), shown beside the stopwatch
   quiet?: boolean; // the line under the Focus card is one of Zeno's quiet ones (calm, check-in, welcome back): muted
-  canvasUrl?: string; // the Canvas assignment the focus plan is for, offered as Open in Canvas
-  sources?: boolean; // Focus shows the step's sources (its Sources link was tapped)
   brief?: CanvasBrief; // the Canvas assignment the plan is for, so the sources search uses its instructions
   device?: VaultFact[]; // this device's private facts, for Memory
   account?: string | null; // the person's initial
@@ -69,6 +76,9 @@ export type DayViewProps = {
   voice: { phase: VoicePhase; levelRef: { current: number }; muted: boolean; supported: boolean; error: VoiceError };
   on: {
     chip(index: number): void;
+    choose(index: number): void; // a home option: its plan's desk
+    home(): void; // the Zeno mark and "← All goals"
+    propose(stepId: string): void; // a todo step tapped on the desk becomes the proposed one
     hear(): void;
     paste(text: string): void;
     talk(): void;
@@ -110,24 +120,36 @@ const everyMinute = (onChange: () => void) => {
 };
 
 // The person's date as YYYY-MM-DD; "" on the server, so due labels wait for the browser's clock.
-function useToday() {
+export function useToday() {
   return useSyncExternalStore(everyMinute, () => localDate(zone()), () => "");
 }
 
 export default function DayView(props: DayViewProps) {
   const { screen, goal, voice, on, progress } = props;
   const bookings = props.bookings ?? {};
-  // Focus is the step's own card, with its timer; the ready card holds the pick; every other card holds Zeno's line.
+  const planning = props.planning ?? null;
+  // Focus and the screen after Done are always on the plan's desk; the card and talk are once she opened it (Vi, Nov 3).
+  const desk = Boolean(planning || goal) && (screen === "focus" || screen === "checkin" || ((screen === "ready" || screen === "talk") && props.view === "desk"));
+  const home = !desk && (screen === "ready" || screen === null);
+  // Focus is the step's own card, with its timer; the desk's card proposes the next step; every other card holds Zeno's
+  // line (while a plan is made, what is happening).
   const top = screen === "focus" ? openSteps(goal)[0] ?? null : null;
-  const pick = screen === "ready" && props.pick ? props.pick : null;
-  const lineOnCard = !top && !pick;
-  const doneCount = (goal?.steps.filter((s) => s.status === "done").length ?? 0) - (props.leaving ? 1 : 0);
+  const next = desk && screen === "ready" && !planning ? props.proposed ?? null : null;
+  const cardLine = planning && screen === "ready" ? planning.line : props.line;
+  // The step the bar and the steps mark: the proposed one, the running one, or after a Done the one up next.
+  const marked = next?.id ?? top?.id ?? (screen === "checkin" ? openSteps(goal)[0]?.id : props.proposed?.id);
+  const steps = goal?.steps ?? [];
+  const done = steps.filter((s) => s.status === "done").length;
+  const choices = home ? props.choices ?? [] : [];
+  const lineOnCard = !top && !next;
+  const doneCount = done - (props.leaving ? 1 : 0);
   const pile = (screen === "focus" || screen === "checkin") && doneCount > 0;
   const blocked = voice.error === "blocked";
   // A booking offer that answers Zeno's line (in talk, or after stopping) is the big button; the answers are then links.
-  // Once booked it is a status line, so the first answer is the big button again.
+  // Once booked it is a status line, so the first answer is the big button again. On the home the options are the
+  // choice, so its answers are links under them.
   const lead = screen === "talk" || screen === "wrap" ? props.offers?.[0] : undefined;
-  const big = (lead && lead.state !== "booked") || props.pasting ? null : props.chips[0] ?? null;
+  const big = (lead && lead.state !== "booked") || props.pasting || choices.length > 0 ? null : props.chips[0] ?? null;
   const firstLink = big === null ? 0 : 1;
   const links = props.chips.slice(firstLink);
   const otherOffers = (props.offers ?? []).filter((offer) => offer !== lead);
@@ -138,20 +160,30 @@ export default function DayView(props: DayViewProps) {
   const youHint =
     screen === "talk" && !props.you && !listening && props.chips.length === 0 && !props.offers?.length
       ? voice.supported && !props.note
-        ? "Tap Talk or Type to answer."
-        : "Tap Type to answer."
+        ? "Tap Talk or the keyboard to answer."
+        : "Tap the keyboard to answer."
       : "";
   const today = useToday();
   const streak = progress?.streak ?? 0;
+  const signedIn = screen !== null && screen !== "signed-out" && screen !== "setup";
+  // Sources are found for the step the desk shows (after a Done, the one up next).
+  const sourceStep = next ?? top ?? (screen === "checkin" ? openSteps(goal)[0] : props.proposed) ?? null;
 
+  const mainRef = useRef<HTMLElement>(null);
   const pillsRef = useRef<HTMLDivElement>(null);
   const typeRef = useRef<HTMLButtonElement>(null);
   const pressed = useRef(false);
-  const answersKey = `${screen}:${hear}:${props.chips.join("|")}:${(props.offers ?? []).map((offer) => offer.state).join(",")}`;
+  const answersKey = `${screen}:${desk}:${next?.id}:${hear}:${props.chips.join("|")}:${choices.length}:${(props.offers ?? []).map((offer) => offer.state).join(",")}`;
+  // Home, a plan's desk or a card: each opens at the top of the page, so the strip and the hello are never scrolled off.
+  const place = desk ? `desk:${planning?.title ?? goal?.id}` : home ? "home" : "card";
   useEffect(() => {
-    // After a press, keyboard focus follows the screen to its big button, unless it went somewhere else on its own.
-    const area = pillsRef.current;
-    const button = area?.querySelector<HTMLElement>(".pill-big");
+    window.scrollTo({ top: 0 });
+  }, [place]);
+  useEffect(() => {
+    // After a press, keyboard focus follows the screen to its big button (on the home, its first option), unless it
+    // went somewhere else on its own.
+    const area = mainRef.current;
+    const button = area?.querySelector<HTMLElement>(".pill-big, .choice");
     if (!pressed.current || !button) return;
     pressed.current = false;
     const active = document.activeElement;
@@ -199,29 +231,45 @@ export default function DayView(props: DayViewProps) {
     pressed.current = true;
     on.chip(i);
   };
+  const choose = (i: number) => {
+    if (props.busy) return;
+    pressed.current = true;
+    on.choose(i);
+  };
+  const goHome = () => {
+    pressed.current = true;
+    on.home();
+  };
   const offerChip = (booking: Booking, isBig = false) => (
     <BookingChip key={booking.key} booking={booking} big={isBig} onBook={() => on.book(booking.key)} onUndo={() => on.unbook(booking.key)} />
   );
-  // What a step is for, small on one rule under it: "<goal> · due <when>", a long goal cut so the due part stays whole
-  // (the due part waits for the browser's clock).
-  const goalLine = (title: string, due: string | null | undefined) => (
-    <p className="goal-line text-ink-2">
-      <span className="truncate" title={title}>
-        {title}
-      </span>
-      {due && today ? <span className="shrink-0 whitespace-pre"> · {dueLabel(due, today)}</span> : null}
-    </p>
+  const mark = (
+    <>
+      <svg width="36" height="36" viewBox="0 0 34 34" aria-hidden="true">
+        <rect width="34" height="34" rx="9" fill="var(--ink)" />
+        <path d="M10 11h14l-9.5 12H24" fill="none" stroke="var(--card)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      Zeno
+    </>
   );
 
   return (
     <div className="flex min-h-dvh flex-col overflow-x-clip bg-desk text-ink">
       <header className="mx-auto flex w-full max-w-[1224px] items-center justify-between gap-2 px-4 pt-4 sm:px-8 sm:pt-6 short:pt-3">
-        <div className="flex items-center gap-2 text-[24px] font-bold">
-          <svg width="36" height="36" viewBox="0 0 34 34" aria-hidden="true">
-            <rect width="34" height="34" rx="9" fill="var(--ink)" />
-            <path d="M10 11h14l-9.5 12H24" fill="none" stroke="var(--card)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          Zeno
+        <div className="flex items-center gap-3 sm:gap-6">
+          {/* The mark goes home, to the goal options; Desk opens the working cards (Vi, Nov 3). */}
+          {signedIn ? (
+            <button type="button" onClick={goHome} className="flex items-center gap-2 rounded-xl text-[24px] font-bold" aria-label="Zeno: all goals">
+              {mark}
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 text-[24px] font-bold">{mark}</div>
+          )}
+          {signedIn && (
+            <button type="button" onClick={() => on.sheet("today")} className="link" data-lead>
+              Desk
+            </button>
+          )}
         </div>
         <div className="flex min-h-14 items-center gap-2 sm:gap-4">
           {screen && screen !== "signed-out" && streak > 0 && (
@@ -237,6 +285,7 @@ export default function DayView(props: DayViewProps) {
               initial={props.account}
               muted={voice.muted}
               canvas={props.canvas ? props.canvas.linked : null}
+              onMemory={() => on.sheet("memory")}
               onMute={on.mute}
               onCanvas={() => on.sheet("canvas")}
               onCalendar={props.calendarAsk ? on.signIn : undefined}
@@ -247,107 +296,164 @@ export default function DayView(props: DayViewProps) {
         </div>
       </header>
 
-      <main className="flex flex-1 flex-col items-center px-4 pb-2 sm:pb-4 short:pb-2">
+      <main ref={mainRef} className="flex flex-1 flex-col items-center px-4 pb-2 sm:pb-4 short:pb-2">
         <p className="sr-only" aria-live="polite">
-          {props.line}
+          {cardLine}
         </p>
 
-        <div className="relative mt-6 mb-6 w-full max-w-[760px] short:mt-4 short:mb-4">
-          {[3, 2, 1].map((n) => (
-            <i key={n} className="edge" style={{ inset: `${8 * n}px ${16 * n}px ${-8 * n}px` }} />
-          ))}
-
-          <article
-            // The shell and the ready card are one card, so the first paint never jumps.
-            key={
-              top
-                ? // By title, not id: a plan saved behind its draft swaps ids, and the card must not rise twice.
-                  `focus:${top.title}`
-                : pick
-                  ? `pick:${pick.stepId ?? pick.goal}`
-                  : screen ?? "ready"
-            }
-            className="card rise z-10"
-            // Sized by the step and its goal on the ready card and in Focus alike, so Start keeps the hand's size.
-            data-size={cardSize(pick ? `${pick.steps[0].title} ${pick.goal}` : top && goal ? `${top.title} ${goal.title}` : props.line)}
-            // A step card: its title, its goal line and the stopwatch, each on its own rule (the stamp lands right of
-            // the stopwatch on a laptop), so Focus keeps the title on screen; after a Done the line sits over the streak
-            // row and Keep going.
-            style={top || pick ? ({ "--rows": 3 } as CSSProperties) : screen === "checkin" ? ({ "--rows": 2 } as CSSProperties) : undefined}
-          >
-            <div className="lines">
-              {pick ? (
-                <>
+        {home ? (
+          <>
+            {/* The hello (Vi, Nov 3): her name and Zeno's line on one card, then the goals to choose from. */}
+            <article className="card hello rise z-10 mt-6 w-full max-w-[760px] short:mt-4">
+              <div className="lines">
+                {props.hello && <h1 className="font-bold">{props.hello}</h1>}
+                {props.line && (
                   <p>
-                    <span className="mins">{pick.steps[0].minutes} min</span>
-                    {pick.steps[0].title}
-                  </p>
-                  {goalLine(pick.goal, pick.due)}
-                </>
-              ) : top ? (
-                <>
-                  <p>{top.title}</p>
-                  {goal && goalLine(goal.title, goal.due)}
-                  <Stopwatch startedAt={top.startedAt} planned={props.timer ?? top.minutes} />
-                </>
-              ) : (
-                <>
-                  {props.line && (
-                    <p>
+                    <span className="hand">
                       <Said key={props.line} text={props.line} fade={props.line !== firstLine} />
+                    </span>
+                  </p>
+                )}
+                {screen !== null && youLine}
+              </div>
+            </article>
+            {choices.length > 0 && (
+              <section aria-labelledby="choices" className="mt-6 w-full max-w-[760px] short:mt-4">
+                <h2 id="choices" className="text-[20px] leading-8 font-bold">
+                  What are we working on?
+                </h2>
+                {/* A few options, each one big tap target; none is marked as Zeno's pick. */}
+                <ul className="mt-2 flex flex-col gap-2">
+                  {choices.map((choice, i) => (
+                    <li key={`${i}:${choice.title}`}>
+                      <button type="button" data-answer aria-disabled={props.busy} onClick={() => choose(i)} className="choice">
+                        <span className="lines block">
+                          <span className="flex items-baseline justify-between gap-4">
+                            <span className="line-clamp-2 min-w-0 font-bold">{choice.title}</span>
+                            {choice.minutes ? <span className="shrink-0 font-mono text-ink-2">{choice.minutes} min</span> : null}
+                          </span>
+                          <span className="block truncate text-[18px] text-ink-2">{choice.meta}</span>
+                          {choice.last && <span className="block truncate text-[18px]">{choice.last}</span>}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </>
+        ) : (
+          <>
+            {desk && (
+              <div className="mt-2 w-full max-w-[760px] sm:mt-4 short:mt-0">
+                <button type="button" onClick={goHome} className="link -ml-1">
+                  ← All goals
+                </button>
+                <GoalStrip
+                  title={planning?.title ?? goal?.title ?? ""}
+                  due={planning ? planning.due : goal?.due}
+                  steps={planning ? [] : steps}
+                  marked={marked}
+                  caption={barCaption(done, steps.length, screen === "checkin" && Boolean(props.celebrate))}
+                  today={today}
+                />
+              </div>
+            )}
+
+            <div className={`relative mb-6 w-full max-w-[760px] short:mb-4 ${desk ? "mt-4" : "mt-6 short:mt-4"}`}>
+              {[3, 2, 1].map((n) => (
+                <i key={n} className="edge" style={{ inset: `${8 * n}px ${16 * n}px ${-8 * n}px` }} />
+              ))}
+
+              <article
+                key={
+                  top
+                    ? // By title, not id: a plan changed in talk can swap ids, and the card must not rise twice.
+                      `focus:${top.title}`
+                    : next
+                      ? `next:${next.id}`
+                      : planning
+                        ? "planning"
+                        : screen ?? "ready"
+                }
+                className="card rise z-10"
+                // Sized by the step on the desk and in Focus alike, so Start keeps the hand's size.
+                data-size={cardSize(top ? top.title : next ? `Next: ${next.title}` : cardLine)}
+                // A step card: its title and the stopwatch, each on its own rule, and room for the stamp, so Focus keeps
+                // the title on screen; after a Done the line sits over the streak row and Keep going.
+                style={top || next ? ({ "--rows": 3 } as CSSProperties) : screen === "checkin" || planning ? ({ "--rows": 2 } as CSSProperties) : undefined}
+              >
+                <div className="lines">
+                  {next ? (
+                    <p>
+                      {next.minutes ? <span className="mins">{next.minutes} min</span> : null}
+                      Next: {next.title}
                     </p>
+                  ) : top ? (
+                    <>
+                      <p>{top.title}</p>
+                      <Stopwatch startedAt={top.startedAt} planned={props.timer ?? top.minutes} />
+                    </>
+                  ) : (
+                    <>
+                      {cardLine && (
+                        <p>
+                          <Said key={cardLine} text={cardLine} fade={cardLine !== firstLine} />
+                        </p>
+                      )}
+                      {props.pasting && (
+                        <Paste
+                          onSave={(text) => {
+                            pressed.current = true;
+                            on.paste(text);
+                          }}
+                        />
+                      )}
+                      {screen !== "signed-out" && youLine}
+                    </>
                   )}
-                  {props.pasting && (
-                    <Paste
-                      onSave={(text) => {
-                        pressed.current = true;
-                        on.paste(text);
-                      }}
-                    />
-                  )}
-                  {screen !== "signed-out" && youLine}
-                </>
+                </div>
+                {props.stamping && <span className="stamp">DONE</span>}
+              </article>
+
+              {props.leaving && (
+                <article className="card leaving" aria-hidden="true">
+                  <div className="lines" style={{ minHeight: 0 }}>
+                    <p>{props.leaving.title}</p>
+                  </div>
+                  <span className="stamp" style={{ animation: "none" }}>
+                    DONE
+                  </span>
+                </article>
+              )}
+
+              {pile && (
+                <div className="pile">
+                  {Array.from({ length: Math.min(doneCount, 3) }, (_, i) => (
+                    <i key={i} />
+                  ))}
+                  <b aria-hidden="true">DONE</b>
+                  <p className="absolute top-[96px] w-full text-center text-ink-2">
+                    <span className="font-mono">{doneCount}</span> done
+                  </p>
+                </div>
               )}
             </div>
-            {props.stamping && <span className="stamp">DONE</span>}
-          </article>
 
-          {props.leaving && (
-            <article className="card leaving" aria-hidden="true">
-              <div className="lines" style={{ minHeight: 0 }}>
-                <p>{props.leaving.title}</p>
+            {props.celebrate && progress && progress.week.length > 0 && screen === "checkin" && <StreakRow progress={progress} />}
+
+            {/* Under a step card, Zeno's quiet Focus line and the person's words. */}
+            {!lineOnCard && (
+              <div className="caption mt-2 w-full max-w-[640px] text-center text-[20px] leading-8 empty:hidden">
+                {top && props.line && (
+                  <p className={props.quiet ? "text-ink-2" : undefined}>
+                    <Said key={props.line} text={props.line} fade={props.line !== firstLine} />
+                  </p>
+                )}
+                {youLine}
               </div>
-              <span className="stamp" style={{ animation: "none" }}>
-                DONE
-              </span>
-            </article>
-          )}
-
-          {pile && (
-            <div className="pile">
-              {Array.from({ length: Math.min(doneCount, 3) }, (_, i) => (
-                <i key={i} />
-              ))}
-              <b aria-hidden="true">DONE</b>
-              <p className="absolute top-[96px] w-full text-center text-ink-2">
-                <span className="font-mono">{doneCount}</span> done
-              </p>
-            </div>
-          )}
-        </div>
-
-        {props.celebrate && progress && progress.week.length > 0 && screen === "checkin" && <StreakRow progress={progress} />}
-
-        {/* Under the ready card only the person's words show: Zeno's line there is spoken (Vi, Nov 2). */}
-        {!lineOnCard && (
-          <div className="caption mt-2 w-full max-w-[640px] text-center text-[20px] leading-8 empty:hidden">
-            {top && props.line && (
-              <p className={props.quiet ? "text-ink-2" : undefined}>
-                <Said key={props.line} text={props.line} fade={props.line !== firstLine} />
-              </p>
             )}
-            {youLine}
-          </div>
+          </>
         )}
 
         <p role="status" className="mt-2 max-w-[560px] text-center text-ink-2 empty:mt-0">
@@ -397,23 +503,18 @@ export default function DayView(props: DayViewProps) {
                   </button>
                 </span>
               )}
-              {top && props.canvasUrl && (
-                <span className="flex items-center gap-2">
-                  <span aria-hidden="true" className="max-sm:hidden">
-                    ·
-                  </span>
-                  <a href={props.canvasUrl} target="_blank" rel="noopener noreferrer" className="link">
-                    Open in Canvas
-                  </a>
-                </span>
-              )}
               <FocusMusic active={screen === "focus"} />
             </div>
           )}
         </div>
 
-        {/* Title in the key: a renamed step drops its sources on the server, so the pack starts fresh too. */}
-        {top && props.sources && <PrepPack key={`${top.id}:${top.title}`} step={top} canvas={props.brief} />}
+        {/* The steps and the materials stay below the step, in Focus too. */}
+        {desk && !planning && goal && (
+          <>
+            <StepsList steps={steps} marked={marked} onPropose={screen === "ready" ? on.propose : undefined} />
+            <DeskMaterials key={sourceStep?.id ?? "none"} materials={props.materials} step={sourceStep} brief={props.brief} />
+          </>
+        )}
 
         {screen === "signed-out" && (
           <p className="mt-6 max-w-[560px] text-center text-ink-2">
@@ -422,22 +523,17 @@ export default function DayView(props: DayViewProps) {
         )}
       </main>
 
-      {/* First sign-in is one card and its links, so the dock waits until it's done. */}
-      {screen && screen !== "signed-out" && screen !== "setup" && (
+      {/* First sign-in is one card and its links, so the dock waits until it's done. Talk, and typing one tap beside it. */}
+      {signedIn && (
         <nav aria-label="Zeno" className="dock">
-          <VoiceRing phase={voice.phase} levelRef={voice.levelRef} blocked={blocked} onClick={on.talk} />
-          <div className="links">
-            {/* A blocked mic makes Type the way that still works, so it reads in ink. */}
-            <button ref={typeRef} type="button" onClick={on.type} className="link" data-lead={blocked || undefined}>
-              Type
-            </button>
-            <span aria-hidden="true">·</span>
-            <button type="button" onClick={() => on.sheet("today")} className="link">
-              Today
-            </button>
-            <span aria-hidden="true">·</span>
-            <button type="button" onClick={() => on.sheet("memory")} className="link">
-              Memory
+          <div className="dock-row">
+            <VoiceRing phase={voice.phase} levelRef={voice.levelRef} blocked={blocked} onClick={on.talk} />
+            {/* A blocked mic makes typing the way that still works, so it fills in ink. */}
+            <button ref={typeRef} type="button" onClick={on.type} className="kbd" aria-label="Type to Zeno" data-lead={blocked || undefined}>
+              <svg viewBox="0 0 24 24" className="h-6 w-6" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2.5" y="6" width="19" height="12" rx="2" />
+                <path d="M6.5 10h.01M10 10h.01M13.5 10h.01M17 10h.5M7.5 14h9" />
+              </svg>
             </button>
           </div>
         </nav>
