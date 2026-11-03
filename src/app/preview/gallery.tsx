@@ -4,7 +4,7 @@ import { useRef } from "react";
 import type { CalendarBlock, FirstPick, Goal, Memory, Progress, Step } from "@/lib/day";
 import type { VaultFact } from "@/lib/vault";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
-import { SETUP, slotLabel, type Fact } from "@/components/day-flow";
+import { foundLine, slotLabel } from "@/components/day-flow";
 import type { Booking } from "@/components/booking-chip";
 import DayView, { type DayViewProps, type Today } from "@/components/day-view";
 
@@ -144,14 +144,9 @@ const offer = (key: string, b: CalendarBlock, state: Booking["state"] = "offer")
 const TOMORROW = block("s3", "History essay draft", 1500, 90);
 
 const chips = (...labels: string[]) => [...labels, "Something else"];
-const answers = (at: number) => SETUP[at].answers.map(([label]) => label);
-const setup = (at: number): Fixture => ({
-  screen: "setup",
-  line: at === 0 ? `Hi Sam. ${SETUP[0].ask}` : SETUP[at].ask,
-  dots: { at, of: SETUP.length },
-  chips: answers(at),
-});
-const facts = (...texts: [string, boolean?][]): Fact[] => texts.map(([text, device], i) => ({ id: `f${i}`, text, group: "about", device: Boolean(device) }));
+// First sign-in, once the scan answered: one line, Start my day, and two links.
+const FOUND_CHIPS = ["Start my day", "Paste notes", "See what I learned"];
+const CANVAS = { account: "sample", linked: false };
 
 type Fixture = Partial<Omit<DayViewProps, "voice" | "on">> & { phase?: VoicePhase; level?: number; error?: VoiceError };
 
@@ -217,37 +212,17 @@ const STATES: Record<string, Fixture> = {
     line: "Here's a short draft to Prof Patel asking for two more days. Check it, then hit Send.",
     chips: ["Open in Gmail", "Not now"],
   },
-  "setup-1": setup(0),
-  "setup-2": setup(1),
-  "setup-3": setup(2),
-  "setup-4": setup(3),
-  "setup-5": setup(4),
-  paste: { ...setup(4), pasting: true, chips: ["Skip"] },
-  "remember-reading": {
+  // First sign-in (Vi, Nov 2): no questions. The card says what Zeno is reading while the scan runs.
+  "first-reading": { screen: "setup", line: "Reading your calendar and email…", chips: [] },
+  // Then one line says what it learned, written without the model.
+  "first-found": {
     screen: "setup",
-    line: "Here's what I learned.",
-    dots: { at: SETUP.length, of: SETUP.length },
-    list: facts(["Spends most days in classes."], ["Focuses best in the morning."]),
-    reading: ["Reading your calendar and email…", "Reading your notes…"],
-    note: "Tap × to remove anything. You can change this anytime in Memory.",
-    chips: ["Start my day"],
+    line: foundLine((["routines", "routines", "projects", "projects", "projects", "about", "people", "work-style", "interests"] as const).map((group) => ({ group }))),
+    chips: FOUND_CHIPS,
   },
-  // After the scan and pasted notes: the scan's facts first, private ones marked, more than the card holds.
-  remember: {
-    screen: "setup",
-    line: "Here's what I learned.",
-    dots: { at: SETUP.length, of: SETUP.length },
-    list: facts(
-      ["Takes Biology 120 on Mondays, Wednesdays and Fridays at 10 AM."],
-      ["Works shifts at the campus library on Tuesday and Saturday mornings."],
-      ["Mornings feel foggy lately.", true],
-      ["Has a history essay draft due Friday at 11:59 PM."],
-      ["Training for a 5K in December."],
-      ["Focuses best in the morning."],
-    ),
-    note: "Tap × to remove anything. You can change this anytime in Memory.",
-    chips: ["Start my day"],
-  },
+  "first-empty": { screen: "setup", line: foundLine([]), chips: FOUND_CHIPS },
+  // Paste notes, from the first sign-in line.
+  paste: { screen: "setup", line: "Paste a syllabus, a to-do list or notes. I'll pull out what matters.", pasting: true, chips: ["Skip"] },
   talk: { screen: "talk", line: ASK, you: "my history essay, it's due Friday", phase: "listening", level: 0.7 },
   // Hands-free: the mic reopened after Zeno's question, nothing heard yet.
   "hands-free": { screen: "talk", line: "Want the tiniest first step, or a plan for the week?", chips: chips("Tiniest first step", "Plan the week"), phase: "listening", level: 0.1 },
@@ -339,7 +314,11 @@ const STATES: Record<string, Fixture> = {
   },
   memory: { line: "Good afternoon, Sam.", sheet: "memory", device: DEVICE },
   "memory-empty": { line: "Good afternoon, Sam.", sheet: "memory", memories: [] },
+  // The account menu: Sound, Connect Canvas (or Canvas · connected), Privacy, Sign out.
   account: { line: "Good afternoon, Sam.", chips: chips("Work on my essay"), menuOpen: true, progress: progress() },
+  "account-canvas": { line: "Good afternoon, Sam.", chips: chips("Work on my essay"), menuOpen: true, progress: progress(), canvas: { ...CANVAS, linked: true } },
+  // Connect Canvas, opened from the account menu (the desk-ui track fills it).
+  canvas: { line: "Good afternoon, Sam.", sheet: "canvas" },
   error: { screen: "talk", line: "I couldn't think that through just now. Try again?" },
   blocked: {
     screen: "talk",
@@ -389,12 +368,11 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
         signInFailed={false}
         busy={false}
         chips={[]}
-        dots={null}
-        list={null}
         pasting={false}
         hear={false}
         progress={progress()}
         account="S"
+        canvas={CANVAS}
         {...view}
         voice={{ phase, levelRef, muted: false, supported: true, error }}
         on={{
@@ -407,7 +385,6 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
           send: noop,
           sheet: noop,
           forget: noop,
-          remove: noop,
           add: noop,
           retryMemory: noop,
           book: noop,
@@ -415,6 +392,7 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
           mute: noop,
           signIn: noop,
           signOut: noop,
+          canvasSynced: noop,
         }}
       />
     </div>

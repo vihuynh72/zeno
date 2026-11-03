@@ -1,18 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { PrepResponse, PrepSource, Step } from "@/lib/day";
+import type { CanvasBrief, PrepResponse, PrepSource, Step } from "@/lib/day";
 
 // Stable, so it runs once, when the first source found by a search appears.
 const focusOnMount = (link: HTMLAnchorElement | null) => link?.focus();
 
-// POST /api/prep: up to 3 sources for the step, or null when there are none just now.
-async function findSources(stepId: string): Promise<PrepSource[] | null> {
+// POST /api/prep: up to 3 sources for the step, or null when there are none just now. A Canvas assignment's brief
+// rides along, so the search can use its instructions.
+async function findSources(stepId: string, canvas: CanvasBrief | undefined): Promise<PrepSource[] | null> {
   try {
     const response = await fetch("/api/prep", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stepId }),
+      body: JSON.stringify({ stepId, canvas }),
     });
     const data = (await response.json()) as PrepResponse;
     return data.state === "ok" && data.sources.length > 0 ? data.sources : null;
@@ -23,7 +24,7 @@ async function findSources(stepId: string): Promise<PrepSource[] | null> {
 
 // A few web sources for the step in focus, opened from its Sources link: it looks at once unless the step already has
 // some. Key it by step id.
-export default function PrepPack({ step }: { step: Step }) {
+export default function PrepPack({ step, canvas }: { step: Step; canvas?: CanvasBrief }) {
   const [sources, setSources] = useState<PrepSource[]>(step.prep ?? []);
   const [status, setStatus] = useState<"idle" | "loading" | "failed" | "found">(step.prep?.length ? "idle" : "loading");
 
@@ -31,7 +32,7 @@ export default function PrepPack({ step }: { step: Step }) {
   useEffect(() => {
     if (status !== "loading") return;
     let live = true;
-    void findSources(step.id).then((found) => {
+    void findSources(step.id, canvas).then((found) => {
       if (!live) return;
       if (found) setSources(found);
       setStatus(found ? "found" : "failed");
@@ -39,7 +40,7 @@ export default function PrepPack({ step }: { step: Step }) {
     return () => {
       live = false;
     };
-  }, [status, step.id]);
+  }, [status, step.id, canvas]);
 
   return (
     <section aria-label="Sources for this step" className="mt-6 flex w-full max-w-[640px] flex-col items-center">

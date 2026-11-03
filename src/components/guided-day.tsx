@@ -5,6 +5,7 @@ import { signIn, signOut } from "next-auth/react";
 import type {
   BookResponse,
   CalendarBlock,
+  CanvasBrief,
   DayResponse,
   EmailDraft,
   FirstPick,
@@ -25,6 +26,7 @@ import type {
   TalkResponse,
   Turn,
 } from "@/lib/day";
+import { canvasBriefs, readCanvas, syncCanvas } from "@/lib/canvas-store";
 import { listenAuto, type ListenHandlers } from "@/lib/listen";
 import { audioContext } from "@/lib/speak";
 import { localDate } from "@/lib/tz";
@@ -36,10 +38,11 @@ import {
   dayPart,
   doneLine,
   draftGoal,
-  forPlanning,
+  foundLine,
   greeting,
   isDraft,
   isEmailStep,
+  isNotes,
   isTomorrow,
   laterBlock,
   laterMinutes,
@@ -47,7 +50,6 @@ import {
   openSteps,
   pickFits,
   quickReplies,
-  SETUP,
   slotLabel,
   soonEvent,
   stepCard,
@@ -62,6 +64,8 @@ const SIGNED_OUT_LINE = "Zeno helps you start the thing you keep putting off.";
 const THINK_FAIL = "I couldn't think that through just now. Try again?";
 const SAVE_FAIL = "I couldn't save that just now. Try again?";
 const WRAP_LINE = "Saved. I'll bring it back next time.";
+const READING_LINE = "Reading your calendar and email…";
+const PASTE_LINE = "Paste a syllabus, a to-do list or notes. I'll pull out what matters.";
 const VOICE_NOTE = {
   blocked: "Your microphone is blocked, so typing works for now. To talk, allow the microphone from the icon in your browser's address bar.",
   unsupported: "Voice isn't available in this browser, so typing works for now.",
@@ -142,8 +146,9 @@ function patchStep(id: string, status: StepStatus) {
   });
 }
 
-// The device's private facts ride in the body (never the URL) and only for the account they belong to.
-const fetchOpening = (account: string | null) => post<OpeningResponse>("/api/day/opening", { private: account ? vaultTexts(account) : [] });
+// The device's private facts and Canvas briefs ride in the body (never the URL) and only for the account they belong to.
+const fetchOpening = (account: string | null) =>
+  post<OpeningResponse>("/api/day/opening", { private: account ? vaultTexts(account) : [], canvas: account ? canvasBriefs(account) : [] });
 
 // Browsers play sound before any tap only for sites the person uses often (or after a tap); otherwise the context stays suspended.
 async function audioAllowed() {
@@ -172,8 +177,6 @@ const offerLabel = (block: CalendarBlock) =>
   block.start && block.end
     ? `Book ${slotLabel(block.start, block.end, zone())}?`
     : `Add “${block.title}” on ${new Date(`${block.date}T12:00:00Z`).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric" })}?`;
-const asFact = (memory: Memory): Fact => ({ id: memory.id, text: memory.text, group: memory.group, device: false });
-const asDeviceFact = (fact: VaultFact): Fact => ({ id: fact.id, text: fact.text, group: fact.group, device: true });
 // Only a Gmail compose window opens from Open in Gmail.
 const gmailDraft = (draft: EmailDraft | null | undefined) => (typeof draft?.url === "string" && draft.url.startsWith("https://mail.google.com/") ? draft : null);
 // "15 min" on the screen is said as "15 minutes".
@@ -220,16 +223,13 @@ export default function GuidedDay() {
   const [timer, setTimer] = useState<number | null>(null);
   const [hear, setHear] = useState(false);
   const [draft, setDraft] = useState<EmailDraft | null>(null); // an email Zeno wrote, offered as Open in Gmail
-  const [sources, setSources] = useState(false); // Focus shows its step's sources
+  const [sources, setSources] = useState<{ canvas?: CanvasBrief } | null>(null); // Focus shows its step's sources
   const [bookings, setBookings] = useState<Record<string, Booking>>({});
   const [offerKeys, setOfferKeys] = useState<string[]>([]);
-  const [setupAt, setSetupAt] = useState(0);
   const [pasting, setPasting] = useState(false);
-  const [learned, setLearned] = useState<Memory[]>([]);
-  const [setupDevice, setSetupDevice] = useState<VaultFact[]>([]);
+  const [learned, setLearned] = useState<PrivateFact[]>([]); // what first sign-in's scan learned, private facts too
   const [scanning, setScanning] = useState(false);
-  const [unsaved, setUnsaved] = useState(0); // setup answers and pasted notes that failed to save
-  const [reading, setReading] = useState(0);
+  const [canvasOn, setCanvasOn] = useState(false); // Canvas is linked on this device for this account
   const history = useRef<Turn[]>([]);
   const cache = useRef<Saved | null>(null);
   const tapped = useRef(false); // the turn in flight came from a chip, not the type box
@@ -237,7 +237,7 @@ export default function GuidedDay() {
   const spoke = useRef(false); // the opening has been said (or offered with Hear Zeno)
   const talking = useRef(false); // hands-free: the person tapped Talk, so Zeno listens after each question it says
   const nextOpening = useRef<Promise<OpeningResponse | { state: "error" }> | null>(null);
-  const saves = useRef<Promise<unknown>[]>([]); // setup answers and pasted notes still being saved
+  const saves = useRef<Promise<unknown>[]>([]); // the first scan and pasted notes still being saved
   const starting = useRef<Promise<Goal | null> | null>(null); // a plan from the first card still being saved
   const booking = useRef(new Set<string>()); // booking chips with a request in flight, so a double tap books once
   const replied = useRef<string[]>([]); // the last talk turn's quick replies, which came with its booking offers
@@ -245,7 +245,7 @@ export default function GuidedDay() {
   const cardAt = useRef(0); // when the card last changed, so the second tap of a double tap can't answer the next one
   useEffect(() => {
     cardAt.current = performance.now();
-  }, [screen, setupAt, pasting]);
+  }, [screen, pasting]);
   // The voice hook calls onUserTurn later, so it reads the screen, goal and phase from here, not a stale render.
   const latest = useRef({ screen, goal, line, progress });
   useEffect(() => {
@@ -310,6 +310,41 @@ export default function GuidedDay() {
     return addToVault(mine, facts);
   }
 
+  // Declared before onDay, which calls this and startScan: React's lint rejects a function used above its declaration.
+  function showSignedOut() {
+    writeSaved(null);
+    cache.current = null;
+    setCanvasOn(false);
+    voice.stop();
+    talking.current = false;
+    setTyping(false);
+    setSheet(null);
+    setHear(false);
+    setPick(null);
+    setDraft(null);
+    setOfferKeys([]);
+    setBookings({});
+    setLine(SIGNED_OUT_LINE);
+    setScreen("signed-out");
+  }
+
+  // No questions (Vi, Nov 2): the card says Zeno is reading calendar and email while the profile scan runs (4-10 s),
+  // then one line says what it learned.
+  function startScan(mine: string) {
+    writeLocal(scannedKey(mine), localDate(zone()));
+    setScanning(true);
+    // A slow scan stops holding the card after 20 s; what it learns still saves, and the line catches up.
+    setTimeout(() => setScanning(false), 20_000);
+    const scan = post<ProfileResponse>("/api/profile/scan", { first: true, private: vaultTexts(mine), removed: vaultRemoved(mine) }).then((res) => {
+      setScanning(false);
+      if (res.state === "signed-out") return showSignedOut();
+      if (res.state === "ok") setLearned([...(res.learned ?? []), ...keep(res.private)]);
+    });
+    saves.current.push(scan);
+    // Asked for once the scan settles, so the first card's opening is written with what it learned.
+    nextOpening.current = scan.then(() => fetchOpening(mine));
+  }
+
   // Returns whether the model's opening should follow.
   const onDay = useEffectEvent((data: DayResponse | { state: "error" }) => {
     if (data.state === "signed-out") {
@@ -330,6 +365,7 @@ export default function GuidedDay() {
     cache.current = { v: 3, part: booted?.part ?? "", day: { ...data, emails: [] }, opening: kept, setupDone: prior?.setupDone ?? false };
     writeSaved(cache.current);
     setDay(data);
+    setCanvasOn(Boolean(readCanvas(data.account)));
     if (!prior) setPick(null);
     else if (!moved.current) setPick(pickFits(kept?.pick, data.goal) ? kept?.pick ?? null : null);
     if (moved.current) return false;
@@ -388,13 +424,17 @@ export default function GuidedDay() {
     const { saved } = readBoot();
     const allowed = audioAllowed();
     // Someone who was here before gets the model's opening asked for at once; anyone else once the day says who they are.
-    // The early ask carries no private facts: the saved day may be another account's until /api/day answers.
+    // The early ask carries no private facts or Canvas: the saved day may be another account's until /api/day answers.
     const early = saved && (!saved.day.isNew || saved.setupDone) ? fetchOpening(null) : null;
     void getJson<DayResponse>("/api/day").then(async (data) => {
       if (!live || !onDay(data)) return;
-      // The early opening stands only for this account, and only when it has no private facts to add.
-      const mine = data.state === "ok" && early && saved?.day.account === data.account && vaultTexts(data.account).length === 0 ? early : null;
-      const [res, ok] = await Promise.all([mine ?? fetchOpening(data.state === "ok" ? data.account : null), allowed]);
+      const mine = data.state === "ok" ? data.account : null;
+      // Canvas linked here is read again first, so the opening knows its assignments, but never waited on past 4 s.
+      const canvas = mine && readCanvas(mine) ? syncCanvas(mine).then(() => setCanvasOn(Boolean(readCanvas(mine)))) : null;
+      // The early opening stands only for this account, and only when it has no private facts or Canvas briefs to add.
+      const reuse = early && mine && saved?.day.account === mine && !canvas && vaultTexts(mine).length === 0 ? early : null;
+      const synced = canvas ? Promise.race([canvas, wait(4000)]) : Promise.resolve();
+      const [res, ok] = await Promise.all([reuse ?? synced.then(() => fetchOpening(mine)), allowed]);
       if (live) onOpening(res, ok);
     });
     return () => {
@@ -415,22 +455,6 @@ export default function GuidedDay() {
       live = false;
     };
   }, [wantOpening]);
-
-  function showSignedOut() {
-    writeSaved(null);
-    cache.current = null;
-    voice.stop();
-    talking.current = false;
-    setTyping(false);
-    setSheet(null);
-    setHear(false);
-    setPick(null);
-    setDraft(null);
-    setOfferKeys([]);
-    setBookings({});
-    setLine(SIGNED_OUT_LINE);
-    setScreen("signed-out");
-  }
 
   function remember(turns: Turn[]) {
     history.current = [...history.current, ...turns].slice(-12);
@@ -468,6 +492,7 @@ export default function GuidedDay() {
       // This page shows and books proposals.
       proposals: true,
       private: mine ? vaultTexts(mine) : [],
+      canvas: mine ? canvasBriefs(mine) : [],
     });
     setHeard("");
     if (res.state === "signed-out") {
@@ -552,7 +577,7 @@ export default function GuidedDay() {
     setOptions([]);
     setOfferKeys([]);
     setDraft(null);
-    setSources(false);
+    setSources(null);
     setCelebrate(false);
     setScreen("focus");
     const said = CHECKINS.start(minutes ?? 0);
@@ -842,61 +867,18 @@ export default function GuidedDay() {
     };
   }, [watching]);
 
-  // ---------- First-run setup ----------
-  // The profile scan (4-10 s) runs while the person answers the cards; its facts join the summary.
-  function startScan(mine: string) {
-    writeLocal(scannedKey(mine), localDate(zone()));
-    setScanning(true);
-    // Among the setup saves, so the first card's opening is written with what the scan learned.
-    const scan = post<ProfileResponse>("/api/profile/scan", { first: true, private: vaultTexts(mine), removed: vaultRemoved(mine) }).then((res) => {
-      setScanning(false);
-      if (res.state === "signed-out") return showSignedOut();
-      if (res.state !== "ok") return;
-      const found = res.learned ?? [];
-      setLearned((list) => [...list.filter((m) => !found.some((n) => n.id === m.id)), ...found]);
-      const added = keep(res.private);
-      setSetupDevice((list) => [...added, ...list]);
-    });
-    saves.current.push(scan);
-  }
-
-  function learn(res: SaveMemoryResponse | ImportResponse | { state: "error" }) {
-    if (res.state === "signed-out") return showSignedOut();
-    if (res.state !== "ok" || !Array.isArray(res.memories)) return setUnsaved((n) => n + 1);
-    setLearned((list) => [...list.filter((m) => !res.memories.some((n) => n.id === m.id)), ...res.memories]);
-  }
-
-  function nextSetupCard() {
-    setPasting(false);
-    setSetupAt(setupAt + 1);
-    // The opening waits for every answer and pasted note to be saved, so it can use what was just shared.
-    if (setupAt + 1 === SETUP.length) {
-      nextOpening.current = Promise.allSettled(saves.current).then(() => fetchOpening(account()));
-    }
-  }
-
-  function answerSetup(i: number) {
-    if (setupAt === SETUP.length) return finishSetup();
-    if (setupAt === 0 && i === 1) return finishSetup();
-    if (setupAt === SETUP.length - 1 && i === 0 && !pasting) return setPasting(true);
-    const memory = pasting ? null : SETUP[setupAt].answers[i]?.[1];
-    if (memory) saves.current.push(post<SaveMemoryResponse>("/api/memory", { text: memory }).then(learn));
-    nextSetupCard();
-  }
-
-  // Pasted notes become memories (ImportResponse.proposal is always empty since Nov 2: no to-dos on the calendar).
+  // ---------- First sign-in ----------
+  // Pasted notes become memories (POST /api/import only saves since Nov 2); the first card's opening waits for them.
   function savePaste(text: string) {
-    setReading((n) => n + 1);
     saves.current.push(
       post<ImportResponse>("/api/import", { text }).then((res) => {
-        setReading((n) => n - 1);
-        learn(res);
-        if (res.state !== "ok") return;
-        const added = keep(res.private);
-        setSetupDevice((list) => [...added, ...list]);
+        if (res.state === "signed-out") return showSignedOut();
+        if (res.state === "ok") keep(res.private);
+        else setNote("I couldn't save your notes just now. You can add them in Memory.");
       }),
     );
-    nextSetupCard();
+    nextOpening.current = null;
+    finishSetup();
   }
 
   function finishSetup() {
@@ -911,20 +893,17 @@ export default function GuidedDay() {
     setWantOpening((n) => n + 1);
   }
 
-  async function removeFact(fact: Fact) {
-    const mine = account();
-    if (fact.device) {
-      if (mine) removeFromVault(mine, fact.id);
-      setSetupDevice((list) => list.filter((one) => one.id !== fact.id));
-      if (mine) setDevice(readVault(mine));
-      return;
+  // ---------- Memory ----------
+  function openSheet(next: Sheet) {
+    setSheet(next);
+    setNote(null);
+    if (next === "memory") {
+      const mine = account();
+      setDevice(mine ? readVault(mine) : []);
+      void loadMemories();
     }
-    const before = learned;
-    setLearned((list) => list.filter((m) => m.id !== fact.id));
-    if (!(await forgetMemory(fact.id))) setLearned(before);
   }
 
-  // ---------- Memory ----------
   async function loadMemories() {
     setMemories((list) => (Array.isArray(list) ? list : "loading"));
     const res = await getJson<MemoryResponse>("/api/memory");
@@ -958,39 +937,47 @@ export default function GuidedDay() {
     setDevice(readVault(mine));
   }
 
-  // The route sorts it (feat/vault): a private fact comes back in `private`, unsaved, for this device; a never-list one is "not-kept".
+  // One line is one memory, notes are read like pasted notes. The routes sort them: a private fact comes back in
+  // `private`, unsaved, for this device; a never-list one is "not-kept".
   async function addMemory(text: string) {
-    setNote(null);
-    const res = await post<SaveMemoryResponse>("/api/memory", { text });
+    const notes = isNotes(text);
+    setNote(notes ? "Reading your notes…" : null);
+    const res = notes ? await post<ImportResponse>("/api/import", { text }) : await post<SaveMemoryResponse>("/api/memory", { text });
     if (res.state === "signed-out") return showSignedOut();
-    if ((res.state as string) === "not-kept") return setNote("Zeno never keeps that kind of thing, so it isn't saved.");
+    if (res.state === "not-kept") return setNote("Zeno never keeps that kind of thing, so it isn't saved.");
     if (res.state !== "ok" || !Array.isArray(res.memories)) return setNote(SAVE_FAIL);
+    setNote(null);
     setMemories(res.memories);
     const mine = account();
-    if (mine && keep((res as { private?: PrivateFact[] }).private).length > 0) setDevice(readVault(mine));
+    if (mine && keep(res.private).length > 0) setDevice(readVault(mine));
+  }
+
+  // ---------- Canvas ----------
+  // The Canvas brief for a plan that is one of their assignments (the same title, any case), for the prep pack.
+  function briefFor(plan: Goal | null): CanvasBrief | undefined {
+    const mine = account();
+    const title = plan?.title.trim().toLowerCase();
+    return mine && title ? canvasBriefs(mine).find((brief) => brief.title.trim().toLowerCase() === title) : undefined;
+  }
+
+  // Linked or unlinked in its sheet: the day (its deadlines) and the card's opening are read again.
+  async function canvasSynced() {
+    const mine = account();
+    if (!mine) return;
+    setCanvasOn(Boolean(readCanvas(mine)));
+    nextOpening.current = null;
+    const data = await getJson<DayResponse>("/api/day");
+    if (data.state === "signed-out") return showSignedOut();
+    if (data.state === "ok" && data.account === account()) {
+      store({ day: { ...data, emails: [] } });
+      setDay(data);
+    }
+    if (latest.current.screen === "ready") await refreshOpening();
   }
 
   // ---------- The screen's answers ----------
-  const setupCard = SETUP[setupAt];
   const name = day?.firstName ?? saved?.day.firstName;
-  const setupFacts = [...learned].sort((a, b) => Number(a.source === "you") - Number(b.source === "you"));
-  const summary: Fact[] = forPlanning([
-    ...setupFacts.filter((m) => m.source !== "you").map(asFact),
-    ...setupDevice.map(asDeviceFact),
-    ...setupFacts.filter((m) => m.source === "you").map(asFact),
-  ]);
-  const stillReading = [...(scanning ? ["Reading your calendar and email…"] : []), ...(reading ? ["Reading your notes…"] : [])];
-  const setupLine =
-    setupAt === 0
-      ? `Hi${name ? ` ${name}` : ""}. ${setupCard.ask}`
-      : setupCard
-        ? setupCard.ask
-        : summary.length || stillReading.length
-          ? "Here's what I learned."
-          : "All set. Tell me more anytime.";
-  const setupNote = unsaved
-    ? `I couldn't save ${unsaved} of your answers. Tell me again anytime.`
-    : "Tap × to remove anything. You can change this anytime in Memory.";
+  const setupLine = scanning ? READING_LINE : pasting ? PASTE_LINE : foundLine(learned);
   const offers = offerKeys.flatMap((key) => (bookings[key] ? [bookings[key]] : []));
   const step = openSteps(goal)[0];
 
@@ -1002,9 +989,9 @@ export default function GuidedDay() {
     const other = say("Something else", () => (voice.supported ? talk() : setTyping(true)));
     if (screen === "signed-out") return [say("Sign in with Google", () => void signIn("google", { redirectTo: "/" }))];
     if (screen === "setup") {
-      if (!setupCard) return [say("Start my day", finishSetup)];
-      if (pasting) return [say("Skip", () => answerSetup(1))];
-      return setupCard.answers.map(([label], i) => say(label, () => answerSetup(i)));
+      if (scanning) return [];
+      if (pasting) return [say("Skip", finishSetup)];
+      return [say("Start my day", finishSetup), say("Paste notes", () => setPasting(true)), say("See what I learned", () => openSheet("memory"))];
     }
     if (draft) {
       return [
@@ -1031,7 +1018,7 @@ export default function GuidedDay() {
         ? [say("Draft it in Gmail", () => tap(`Draft the email for: ${step.title}`))]
         : sources || isDraft(goal)
           ? []
-          : [say("Sources", () => setSources(true))];
+          : [say("Sources", () => setSources({ canvas: briefFor(goal) }))];
       return [done, say("Stuck?", () => tap(`I'm stuck on: ${step.title}.`)), stop, ...extra];
     }
     if (screen === "checkin") {
@@ -1046,6 +1033,8 @@ export default function GuidedDay() {
     }
     return [];
   }
+  // Render reads only the labels: the runs touch refs, but only chip() calls them, on a tap, which the rule can't tell.
+  // eslint-disable-next-line react-hooks/refs
   const answers = screenAnswers();
 
   function chip(i: number) {
@@ -1065,13 +1054,10 @@ export default function GuidedDay() {
       typing={typing && screen !== "setup"}
       stamping={stamping}
       leaving={leaving}
-      note={voice.error ? VOICE_NOTE[voice.error] : screen === "setup" && !setupCard ? setupNote : note}
+      note={voice.error ? VOICE_NOTE[voice.error] : note}
       signInFailed={signInFailed}
       busy={busy || voice.phase === "thinking"}
       chips={answers.map((one) => one.label)}
-      dots={screen === "setup" ? { at: setupAt, of: SETUP.length } : null}
-      list={screen === "setup" && !setupCard ? summary : null}
-      reading={screen === "setup" && !setupCard ? stillReading : []}
       pasting={screen === "setup" && pasting}
       hear={hear && screen === "ready"}
       progress={progress}
@@ -1080,9 +1066,11 @@ export default function GuidedDay() {
       bookings={bookings}
       offers={offers}
       timer={timer}
-      sources={sources}
+      sources={sources !== null}
+      brief={sources?.canvas}
       device={device}
       account={screen && screen !== "signed-out" ? (name?.trim()[0]?.toUpperCase() ?? "") : null}
+      canvas={daySet ? { account: daySet.account, linked: canvasOn } : null}
       voice={voice}
       on={{
         chip,
@@ -1100,17 +1088,8 @@ export default function GuidedDay() {
         },
         closeTyping: () => setTyping(false),
         send: (text) => void voice.submit(text),
-        sheet(next) {
-          setSheet(next);
-          setNote(null);
-          if (next === "memory") {
-            const mine = account();
-            setDevice(mine ? readVault(mine) : []);
-            void loadMemories();
-          }
-        },
+        sheet: openSheet,
         forget,
-        remove: (fact) => void removeFact(fact),
         add: (text) => void addMemory(text),
         retryMemory: () => void loadMemories(),
         book: (key) => void book(key),
@@ -1123,10 +1102,10 @@ export default function GuidedDay() {
           void signIn("google", { redirectTo: "/" });
         },
         signOut() {
-          // The next person at a shared computer must not read anyone's private facts, even before /api/day said whose
-          // browser this is (keys as in src/lib/vault.ts).
+          // The next person at a shared computer must not read anyone's private facts or Canvas link, even before
+          // /api/day said whose browser this is (keys as in src/lib/vault.ts and src/lib/canvas-store.ts).
           try {
-            for (const key of Object.keys(localStorage)) if (key.startsWith("zeno.vault.")) localStorage.removeItem(key);
+            for (const key of Object.keys(localStorage)) if (/^zeno\.(vault|canvas)\./.test(key)) localStorage.removeItem(key);
           } catch {
             // Unreadable storage holds nothing to clear.
           }
@@ -1134,6 +1113,7 @@ export default function GuidedDay() {
           cache.current = null;
           void signOut({ redirectTo: "/" });
         },
+        canvasSynced: () => void canvasSynced(),
         // A step booked or taken off in the Week: the goal says so, so nothing offers to book it twice.
         // Through linkSteps, so the saved day gets the time too and a reload never offers it again.
         booked({ event, stepId, undone }) {

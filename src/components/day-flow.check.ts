@@ -1,16 +1,15 @@
 // Self-check for day-flow.ts, run like Vercel does, in UTC: TZ=UTC node src/components/day-flow.check.ts
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
-import type { FirstPick, Goal, Progress, Step, TalkAction } from "@/lib/day";
-import type { Fact } from "@/components/day-flow";
+import type { FirstPick, Goal, MemoryGroup, Progress, Step, TalkAction } from "@/lib/day";
 
 registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
 const flow = await import("./day-flow.ts");
-const { asks, cardSize, clock, dayPart, doneLine, draftGoal, dueLabel, greeting, groupFacts, isEmailStep, laterBlock, laterMinutes, nextScreen } = flow;
-const { openSteps, pickFits, quickReplies, SETUP, slotLabel, soonEvent, stepCard, streakLine, withStatus } = flow;
+const { asks, cardSize, clock, dayPart, doneLine, draftGoal, dueLabel, foundLine, greeting, groupFacts, isEmailStep, isNotes, laterBlock, laterMinutes } = flow;
+const { nextScreen, openSteps, pickFits, quickReplies, slotLabel, soonEvent, stepCard, streakLine, withStatus } = flow;
 
 const step = (id: string, status: Step["status"], extra: Partial<Step> = {}): Step => ({
   id,
@@ -88,7 +87,6 @@ assert.deepEqual(quickReplies(["Book 9 AM instead", "Book a later time"], true),
 assert.deepEqual(quickReplies(["Earlier", "Later tonight", "Not now"], true), ["Earlier", "Later tonight"]);
 assert.deepEqual(quickReplies(["Book 9:30", "9 works", "Yes"], true), ["Book 9:30", "9 works"], "a time in digits is more than yes");
 assert.deepEqual(quickReplies(["Yes, book it", "Not now"]), ["Yes, book it", "Not now"], "no offer: a yes is the answer");
-assert.ok(SETUP.every((card) => card.answers.length >= 2 && card.answers.length <= 4));
 
 // Hands-free listens only after a question.
 assert.equal(asks("Want to start the outline?"), true);
@@ -195,11 +193,22 @@ const grouped = groupFacts([
 ]);
 assert.deepEqual(grouped.map((g) => g.name), ["About you", "Routines", "How you work best"]);
 assert.equal(grouped[0].facts[0].device, true);
-// Setup's summary leads with what helps plan (projects, routines, how you work); About you last; ties keep their order.
-const fact = (id: string, group: string) => ({ id, text: id, group, device: false }) as Fact;
-assert.deepEqual(
-  flow.forPlanning([fact("a1", "about"), fact("p1", "people"), fact("r1", "routines"), fact("x", "nope"), fact("j1", "projects"), fact("w1", "work-style"), fact("i1", "interests"), fact("j2", "projects")]).map((f) => f.id),
-  ["j1", "j2", "r1", "w1", "i1", "p1", "a1", "x"],
+
+// First sign-in says what the scan found, counting the projects group as deadlines; nothing found says so plainly.
+const found = (...groups: MemoryGroup[]) => groups.map((group) => ({ group }));
+assert.equal(
+  foundLine(found("routines", "projects", "projects", "about", "routines", "people", "projects", "work-style", "interests")),
+  "I read your calendar and email and learned 9 things, including 3 deadlines.",
 );
+assert.equal(foundLine(found("projects")), "I read your calendar and email and learned 1 thing, including 1 deadline.");
+assert.equal(foundLine(found("routines", "about")), "I read your calendar and email and learned 2 things.");
+assert.equal(foundLine([]), "I couldn't find much yet. I'll learn as you go.");
+
+// Memory's Add box: one line is one memory; a line break or more than 200 characters is pasted notes.
+assert.equal(isNotes("Works library shifts on Saturdays."), false);
+assert.equal(isNotes("x".repeat(200)), false);
+assert.equal(isNotes("📚".repeat(200)), false, "200 characters as /api/memory counts them, not UTF-16 units");
+assert.equal(isNotes("x".repeat(201)), true);
+assert.equal(isNotes("BIO 120 syllabus\nLab report due Nov 6"), true);
 
 console.log("day-flow self-check passed");

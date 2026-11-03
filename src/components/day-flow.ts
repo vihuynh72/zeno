@@ -2,11 +2,12 @@
 import { MEMORY_GROUPS, type CalendarBlock, type DayEvent, type FirstPick, type FreeSlot, type Goal, type MemoryGroup, type Progress, type Step, type StepStatus, type TalkAction } from "@/lib/day";
 import { dayBounds, formatTime, localDate } from "@/lib/tz";
 
-// ready is the card, checkin the screen after Done, wrap the one after Stop for now or That's enough today.
+// setup is first sign-in (the scan, then what it found), ready the card, checkin the screen after Done, wrap the one
+// after Stop for now or That's enough today.
 export type Screen = "signed-out" | "setup" | "ready" | "talk" | "focus" | "checkin" | "wrap";
 
-// First-run cards, each answered with one tap; an answer with a sentence saves it as a memory.
-// The first question follows "Hi {name}."; the last card's first answer opens a box for pasted notes.
+// shortcut: no screen asks these since Nov 2 (Zeno learns from use); kept only because src/lib/agent.check.ts reads
+// the focus answers' sentences. Delete once that check stops importing it.
 export const SETUP: { ask: string; answers: [label: string, memory: string | null][] }[] = [
   {
     ask: "I'm Zeno. I help you start the thing you keep putting off. Thirty seconds to set me up?",
@@ -268,10 +269,17 @@ export const CHECKINS = {
 
 export type Fact = { id: string; text: string; group: MemoryGroup; device: boolean };
 
-// Setup's "Here's what I learned" leads with what helps plan a day; the Memory sheet keeps MEMORY_GROUPS order.
-const PLANNING: MemoryGroup[] = ["projects", "routines", "work-style", "interests", "people", "about", "patterns"];
-const planningRank = (fact: Fact) => (PLANNING.includes(fact.group) ? PLANNING.indexOf(fact.group) : PLANNING.indexOf("about"));
-export const forPlanning = (facts: Fact[]) => [...facts].sort((a, b) => planningRank(a) - planningRank(b));
+// What first sign-in's scan learned, said in one line without the model. The scan files exams and deadlines under
+// projects, so that group is the deadline count.
+export function foundLine(facts: { group: MemoryGroup }[]): string {
+  if (facts.length === 0) return "I couldn't find much yet. I'll learn as you go.";
+  const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const deadlines = facts.filter((fact) => fact.group === "projects").length;
+  return `I read your calendar and email and learned ${count(facts.length, "thing")}${deadlines ? `, including ${count(deadlines, "deadline")}` : ""}.`;
+}
+
+// Memory's Add box: a line break, or more than one memory's 200 characters, is pasted notes (POST /api/import).
+export const isNotes = (text: string) => text.includes("\n") || [...text].length > 200;
 
 // The Memory sheet's groups in order, each with its plain name; empty groups are left out.
 export function groupFacts(facts: Fact[]): { group: MemoryGroup; name: string; facts: Fact[] }[] {
