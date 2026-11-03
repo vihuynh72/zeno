@@ -65,13 +65,13 @@ export function ruleOpening(context: UserContext, firstName: string | null, now 
     unread.length > 0 && `I couldn't check your ${unread.join(" or ")} just now.`,
     !late && context.progress.atRisk && `One 5-minute step keeps your ${context.progress.streak}-day streak going.`,
     late
-      ? "Want to set up tomorrow's first step before you sleep?"
+      ? "Set up tomorrow's first step before you sleep?"
       : goal && next
-        ? `Next up for ${goal.title}: ${next.title}. Want to pick it up?`
+        ? `Next up for ${goal.title}: ${next.title}. Start now?`
         : deadline
-          ? `${deadline.title} is due ${dueIn(deadline.daysLeft)}. Want to open it for 5 minutes?`
+          ? `${deadline.title} is due ${dueIn(deadline.daysLeft)}. Open it for 5 minutes?`
           : todo
-            ? `From your list: ${todo}. Want to give it 5 minutes?`
+            ? `From your list: ${todo}. Give it 5 minutes?`
             : "What's one thing you want to move forward today?",
   ]
     .filter(Boolean)

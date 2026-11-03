@@ -393,7 +393,7 @@ assert.equal(calendarFailure(new Error("network down")), "error");
         summary: "Email Prof Patel",
         start: { dateTime: "2026-11-02T17:30:00.000Z", timeZone: LA },
         end: { dateTime: "2026-11-02T17:40:00.000Z", timeZone: LA },
-        reminders: { useDefault: false, overrides: [{ method: "popup", minutes: 10 }] },
+        reminders: { useDefault: false, overrides: [] },
         extendedProperties: { private: { zenoKind: "step", zenoStepId: stepId } },
       },
     },
@@ -405,6 +405,7 @@ assert.equal(calendarFailure(new Error("network down")), "error");
     start: { date: "2026-12-31" },
     end: { date: "2027-01-01" },
     transparency: "transparent",
+    reminders: { useDefault: false, overrides: [] },
     extendedProperties: { private: { zenoKind: "deadline" } },
   });
   assert.deepEqual(eventFor({ title: "Buy stamps", kind: "todo", start: timed.start, end: timed.end }, LA).extendedProperties, {

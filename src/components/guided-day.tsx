@@ -29,11 +29,12 @@ import type {
 } from "@/lib/day";
 import { canvasBriefs, canvasList, readCanvas, syncCanvas } from "@/lib/canvas-store";
 import { listenAuto, type ListenHandlers } from "@/lib/listen";
-import { audioContext } from "@/lib/speak";
+import { audioContext, playDone, wakeAudio } from "@/lib/speak";
 import { formatTime, localDate } from "@/lib/tz";
 import { useVoice } from "@/lib/use-voice";
 import { addToVault, readVault, removeFromVault, vaultRemoved, vaultTexts, type VaultFact } from "@/lib/vault";
 import {
+  addHeard,
   asks,
   canvasFor,
   checkinMinute,
@@ -94,6 +95,7 @@ type Answer = { label: string; run(): void };
 
 const SAVED_KEY = "zeno:day";
 const scannedKey = (account: string) => `zeno:scanned:${account}`;
+const heardKey = (account: string) => `zeno:heard:${account}`;
 // The day as this browser keeps it: no email snippets (nothing on screen shows them), and no Gmail link, which holds the
 // address that the opaque account key keeps out of storage. Both come back with each /api/day.
 const toKeep = (day: Day): Day => ({ ...day, emails: [], mailUrl: undefined });
@@ -134,6 +136,15 @@ function writeLocal(key: string, value: string) {
   }
 }
 
+// The pattern memory ids this browser's openings already named (nothing private), so the server never names one twice.
+function readHeard(account: string): string[] {
+  try {
+    return addHeard([], JSON.parse(readLocal(heardKey(account)) ?? "[]"));
+  } catch {
+    return [];
+  }
+}
+
 // Read once per page load, so the first paint and every later render agree.
 let boot: { part: string; hour: number; saved: Saved | null } | undefined;
 const readBoot = () => (boot ??= { part: dayPart(new Date()), hour: new Date().getHours(), saved: readSaved() });
@@ -158,9 +169,14 @@ function patchStep(id: string, status: StepStatus) {
   });
 }
 
-// The device's private facts and Canvas briefs ride in the body (never the URL) and only for the account they belong to.
-const fetchOpening = (account: string | null) =>
-  post<OpeningResponse>("/api/day/opening", { private: account ? vaultTexts(account) : [], canvas: account ? canvasBriefs(account) : [] });
+// The device's private facts and Canvas briefs ride in the body (never the URL) and only for the account they belong to;
+// the early ask, made before that is known, sends only the saved day's heard ids.
+const fetchOpening = (account: string | null, heardBy = account) =>
+  post<OpeningResponse>("/api/day/opening", {
+    private: account ? vaultTexts(account) : [],
+    canvas: account ? canvasBriefs(account) : [],
+    heard: heardBy ? readHeard(heardBy) : [],
+  });
 
 // Browsers play sound before any tap only for sites the person uses often (or after a tap); otherwise the context stays suspended.
 async function audioAllowed() {
@@ -307,9 +323,11 @@ export default function GuidedDay() {
   }
 
   // A model opening is saved with when it came and the day it was asked for, so a reload soon after shows it again
-  // without asking the model.
-  function keepOpening(text: string, options: string[], pick: FirstPick | null, sig: string) {
+  // without asking the model. The pattern it names (noticed) is heard from now on, so no later opening names it again.
+  function keepOpening(text: string, options: string[], pick: FirstPick | null, sig: string, noticed: unknown) {
     store({ opening: { text, options, pick, at: new Date().toISOString(), sig } });
+    const mine = account();
+    if (mine && Array.isArray(noticed) && noticed.length > 0) writeLocal(heardKey(mine), JSON.stringify(addHeard(readHeard(mine), noticed)));
   }
 
   // After a talk turn or a Memory change the saved opening may be wrong: a reload still paints it, but asks again.
@@ -449,7 +467,7 @@ export default function GuidedDay() {
     const text = ok ? res.opening.trim() : (cache.current?.day.opening ?? line);
     const next = quickReplies(ok ? res.options : cache.current?.day.options);
     const card = ok && pickFits(res.pick, latest.current.goal) ? res.pick : null;
-    if (ok && sig !== null) keepOpening(text, next, card, sig);
+    if (ok && sig !== null) keepOpening(text, next, card, sig, res.noticed);
     setLine(text);
     setOptions(next);
     setPick(card);
@@ -483,7 +501,7 @@ export default function GuidedDay() {
       !readCanvas(saved.day.account) &&
       vaultTexts(saved.day.account).length === 0 &&
       !(recent?.sig && openingReusable(recent, recent.sig, Date.now(), saved.day.events));
-    const early = asksEarly ? fetchOpening(null) : null;
+    const early = asksEarly ? fetchOpening(null, saved.day.account) : null;
     void getJson<DayResponse>("/api/day").then(async (data) => {
       if (!live || !onDay(data) || data.state !== "ok") return;
       const mine = data.account;
@@ -594,8 +612,10 @@ export default function GuidedDay() {
     const now = latest.current;
     const next = nextScreen(now.screen ?? "ready", res.actions ?? [], res.goal);
     const done = now.screen === "focus" && next === "checkin" ? openSteps(now.goal)[0] : undefined;
+    // A skip said in Focus leaves it this way too, so only a step really marked done gets the stamp, the sound and "Nice".
+    const status = done ? res.goal?.steps.find((one) => one.id === done.id)?.status : undefined;
     // After a Done, said or tapped, Zeno says what is next.
-    const said = next === "checkin" ? doneLine(res.goal) : res.reply;
+    const said = next === "checkin" ? doneLine(res.goal, status === "skipped") : res.reply;
     if (now.screen === "focus" && next === "focus") answered.current = said;
     if (next === "checkin") setCelebrate(Boolean(res.progress));
     // A step's timer and its sources end with its focus, so a new step never opens on the last one's search.
@@ -606,13 +626,16 @@ export default function GuidedDay() {
     // A plan made or changed here is the card now: its first step, ready to start.
     if (next === "ready") changePick(stepCard(res.goal));
     if (done) {
-      // Said "done" out loud: same stamp as the Done button, so the card and its answers wait for it too.
-      setStamping(true);
+      // Said "done" out loud: same stamp and sound as the Done button, so the card and its answers wait for it too.
+      if (status === "done") {
+        setStamping(true);
+        if (!voice.muted) playDone();
+      }
       setBusy(true);
       setTimeout(() => {
         setBusy(false);
         changeGoal(res.goal);
-        fileAway(done, said);
+        fileAway(status === "done" ? done : null, said);
       }, 400);
     } else {
       changeGoal(res.goal);
@@ -628,8 +651,8 @@ export default function GuidedDay() {
     return spoken(said);
   }
 
-  // The finished card slides onto the pile while the next card rises with Zeno's line.
-  function fileAway(step: Step, nextLine: string) {
+  // The finished card slides onto the pile while the next card rises with Zeno's line; a skipped one (null) never does.
+  function fileAway(step: Step | null, nextLine: string) {
     setStamping(false);
     setLeaving(step);
     setLine(nextLine);
@@ -715,7 +738,7 @@ export default function GuidedDay() {
     const res = await fetchOpening(account());
     if (res.state !== "ok" || moved.current) return;
     const card = pickFits(res.pick, latest.current.goal) ? res.pick : null;
-    keepOpening(res.opening, quickReplies(res.options), card, sig);
+    keepOpening(res.opening, quickReplies(res.options), card, sig, res.noticed);
     setLine(res.opening);
     setOptions(quickReplies(res.options));
     setPick(card);
@@ -723,6 +746,7 @@ export default function GuidedDay() {
   }
 
   async function finishStep(step: Step) {
+    if (!voice.muted) wakeAudio();
     setStamping(true);
     setBusy(true);
     const real = await realStep(step);
@@ -734,6 +758,7 @@ export default function GuidedDay() {
       setLine(SAVE_FAIL);
       return;
     }
+    if (!voice.muted) playDone();
     changeGoal(res.goal);
     changePick(null);
     if (res.progress) changeProgress(res.progress);

@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { cleanCanvas, OPENING_SCHEMA, openingPrompt, parseOpening, systemPrompt, type Refs } from "@/lib/agent";
+import { cleanCanvas, cleanHeard, newPattern, OPENING_SCHEMA, openingPrompt, parseOpening, systemPrompt, type Refs } from "@/lib/agent";
 import { aiConfigured, askModel } from "@/lib/ai";
 import { ruleOpening, ruleOptions, rulePick } from "@/lib/brief";
 import { loadUserContext } from "@/lib/context";
@@ -15,18 +15,18 @@ export const maxDuration = 30;
 
 // The model-written opening, options and first-card pick in one call; the screens show the rule line until it
 // lands. When the model fails, the rule line and rule pick answer instead, so the first card always has one thing.
-// POST sends the device's private facts and Canvas briefs in the body (never the URL; never saved or logged); GET is the
-// same without them.
+// POST sends the device's private facts and Canvas briefs in the body (never the URL; never saved or logged), and the
+// pattern ids its openings already named; GET is the same without them.
 export async function GET() {
   return opening([], []);
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as { private?: unknown; canvas?: unknown } | null;
-  return opening(cleanPrivate(body?.private), cleanCanvas(body?.canvas));
+  const body = (await request.json().catch(() => null)) as { private?: unknown; canvas?: unknown; heard?: unknown } | null;
+  return opening(cleanPrivate(body?.private), cleanCanvas(body?.canvas), cleanHeard(body?.heard));
 }
 
-async function opening(privateFacts: string[], canvas: CanvasBrief[]) {
+async function opening(privateFacts: string[], canvas: CanvasBrief[], heard: string[] = []) {
   const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ state: "signed-out" } satisfies OpeningResponse, { status: 401 });
@@ -43,6 +43,8 @@ async function opening(privateFacts: string[], canvas: CanvasBrief[]) {
     databaseConfigured() ? stepsFinishedBetween(email, yesterday.start, yesterday.end).catch(() => []) : [],
   ]);
   const context = { ...loaded, canvas };
+  // Only the model's opening names it, so only that answer says it was noticed.
+  const pattern = newPattern(context.memories, heard, timeZone);
   const rule = () =>
     NextResponse.json({
       state: "ok",
@@ -57,7 +59,7 @@ async function opening(privateFacts: string[], canvas: CanvasBrief[]) {
     const text = await askModel(
       [
         { role: "system", content: systemPrompt(firstName, context.memories, refs, privateFacts) },
-        { role: "user", content: openingPrompt(context, firstName, finished, refs) },
+        { role: "user", content: openingPrompt(context, firstName, finished, refs, new Date(), pattern?.text) },
       ],
       // Measured live on three days: low averaged 3.5 s to minimal's 2.9 s, for no better lines.
       { effort: "minimal", maxTokens: 2048, schema: OPENING_SCHEMA },
@@ -68,7 +70,7 @@ async function opening(privateFacts: string[], canvas: CanvasBrief[]) {
     if (!reply.pick && rulePick(context)) return rule();
     // Measured live: the model can ask a question and still offer nothing to tap.
     const options = reply.options.length > 0 ? reply.options : ruleOptions(context);
-    return NextResponse.json({ state: "ok", opening: reply.say, options, pick: reply.pick } satisfies OpeningResponse);
+    return NextResponse.json({ state: "ok", opening: reply.say, options, pick: reply.pick, ...(pattern && { noticed: [pattern.id] }) } satisfies OpeningResponse);
   } catch (error) {
     // Never log the reply itself: it quotes the person's calendar and email.
     console.error("Opening model call failed:", error instanceof Error ? error.message.slice(0, 120) : "unknown");

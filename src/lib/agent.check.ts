@@ -24,8 +24,8 @@ registerHooks({
   load: (url, context, nextLoad) => (url in FAKES ? { format: "module", source: FAKES[url], shortCircuit: true } : nextLoad(url, context)),
 });
 const {
-  ASKS_FOR_BLOCK, checkCall, checkPick, checkPlan, cleanCanvas, cleanHistory, draftUrl, extractNotes, goalText, isDate, keepNotes,
-  notesFrom, openingPrompt, parseOpening, parseReply, roundSlots, slotsText, systemPrompt, talk, TOOLS,
+  ASKS_FOR_BLOCK, checkCall, checkPick, checkPlan, cleanCanvas, cleanHeard, cleanHistory, draftUrl, extractNotes, goalText, isDate, keepNotes,
+  newPattern, notesFrom, openingPrompt, parseOpening, parseReply, roundSlots, slotsText, systemPrompt, talk, TOOLS,
 } = await import("./agent.ts");
 const { rulePick, ruleOpening, ruleOptions, senderName } = await import("./brief.ts");
 const { dayToText, knownDeadlines } = await import("./context.ts");
@@ -85,6 +85,23 @@ assert.match(system, /Never ask questions to learn about them, like when they fo
 assert.match(system, /Offer a calendar block only when they ask for one or for work of 60 minutes or more; never offer to book a small to-do\./);
 assert.match(system, /help them find the first small step, prep or untangle the task; never write answers, essays or the work itself\./);
 assert.match(system, /call draft_email\. You never send mail/);
+// Direct by default (Vi, Nov 3: "I hate whenever it sugarcoats"): it pushes and names putting things off, blunt but
+// never cruel, and asks only a yes or no it needs; the soft friend is gone, the no-pet-names line stays.
+assert.match(system, /be direct and unfiltered: straight to the point, no sugarcoating, no filler\. Never use pet names like love, babe or sweetie\./);
+assert.match(system, /Push them toward the next step: say what to do and why[^"]*If they're putting something off, say so plainly; if they're stuck, give one concrete way in\./);
+assert.match(system, /No softeners like 'Want to\.\.\.\?' or 'How about\.\.\.\?', and no cheerleading\. When you point them to a next step, end with one short yes or no question, like 'Start now\?', so they can answer with a tap\./);
+assert.match(system, /Be blunt about the work, never cruel to them: never shame, mock, guilt-trip or use sarcasm about them\./);
+// Pushy, never nagging (Maya: "A slip is not a failure"; brief: "a rest day, never guilt"). Measured live: "You lost
+// yesterday, don't lose today."
+assert.match(system, /A slip is not a failure: about a missed day or a skipped step, say what's next, never what they lost\./);
+assert.match(system, /When they choose to stop or rest, take it in one short line and say where they'll start next; never push past a stop\./);
+// Measured live: the terse tone saved "Paying off credit card before summer." for "$2,000" (2 of 6; main 0 of 6).
+assert.match(system, /call remember with one short sentence that keeps any amount, date or time they gave, and its group\./);
+// A plan that won't fit is cut only when they say so: update_steps deletes every todo step it leaves out.
+assert.match(system, /if a plan won't fit the time they have, say so plainly and offer a smaller cut, like 'Only the outline fits\. Just that\?'\./);
+// Measured live: the direct tone said "I held one forty five" for a time only suggested.
+assert.match(system, /A time you suggest is free, not theirs yet: say it like 'Four thirty is open\. Book it\?', never that you held or set it\./);
+assert.doesNotMatch(system, /warm, candid friend|kind, sharp friend|Offer, don't order|kindly/);
 
 // Memories show under readable headings in MEMORY_GROUPS order, freshest first within a group, refs in that order.
 const grouped = systemPrompt(
@@ -453,7 +470,7 @@ assert.deepEqual(rulePick({ ...context, memories: todos }, nine), {
 });
 assert.equal(rulePick({ ...context, memories: [todos[0]] }, nine)?.goal, "Email Prof Patel about the project groups");
 assert.equal(rulePick({ ...context, memories: [{ ...todos[0], group: "about" }] }, nine), null, "only Projects to-dos");
-assert.match(ruleOpening({ ...context, memories: todos }, "Vi", nine), /From your list: Read chapter 4\. Want to give it 5 minutes\?$/);
+assert.match(ruleOpening({ ...context, memories: todos }, "Vi", nine), /From your list: Read chapter 4\. Give it 5 minutes\?$/);
 assert.equal(rulePick({ ...context, deadlines, memories: todos }, nine)?.goal, "CS 146 final project", "a calendar deadline comes first");
 assert.equal(rulePick({ ...context, goal, deadlines }, new Date("2026-10-30T08:10:00Z")), null, "1:10 AM offers tomorrow, not a start");
 
@@ -470,7 +487,7 @@ const afternoon = new Date("2026-10-29T22:15:00Z"); // 3:15 PM in Los Angeles
 assert.equal(ruleOpening(context, "Vi", afternoon), "Good afternoon, Vi. What's one thing you want to move forward today?");
 assert.equal(
   ruleOpening({ ...context, goal }, null, new Date("2026-10-29T16:00:00Z")),
-  "Good morning. Next up for History essay: Write a thesis. Want to pick it up?",
+  "Good morning. Next up for History essay: Write a thesis. Start now?",
 );
 assert.equal(
   ruleOpening({ ...context, calendarState: "error", emailState: "no-access" }, "Vi", new Date("2026-10-30T03:00:00Z")),
@@ -479,12 +496,12 @@ assert.equal(
 // Late night an open step waits too, so the line matches the one late-night option.
 assert.equal(
   ruleOpening({ ...context, goal }, "Sam", new Date("2026-10-30T08:10:00Z")),
-  "Still up, Sam? Want to set up tomorrow's first step before you sleep?",
+  "Still up, Sam? Set up tomorrow's first step before you sleep?",
 );
-assert.equal(ruleOpening({ ...context, deadlines }, "Vi", afternoon), "Good afternoon, Vi. CS 146 final project is due tomorrow. Want to open it for 5 minutes?");
+assert.equal(ruleOpening({ ...context, deadlines }, "Vi", afternoon), "Good afternoon, Vi. CS 146 final project is due tomorrow. Open it for 5 minutes?");
 assert.equal(
   ruleOpening({ ...context, goal, progress: { ...progress, streak: 6, atRisk: true } }, "Vi", new Date("2026-10-30T03:00:00Z")),
-  "Good evening, Vi. One 5-minute step keeps your 6-day streak going. Next up for History essay: Write a thesis. Want to pick it up?",
+  "Good evening, Vi. One 5-minute step keeps your 6-day streak going. Next up for History essay: Write a thesis. Start now?",
 );
 
 // Replies are strict JSON; tappable answers only follow a question, and stay short and distinct.
@@ -494,6 +511,8 @@ assert.deepEqual(parseReply('{"say":" Want to start? ","options":["Yes"," yes ",
 });
 assert.deepEqual(parseReply('{"say":"Saved it.","options":["Okay"]}'), { say: "Saved it.", options: [] });
 assert.deepEqual(parseReply(`{"say":"Ready?","options":[3,null,"${"x".repeat(49)}","Go"]}`), { say: "Ready?", options: ["Go"] });
+// A chip is an answer, never Zeno's question back: "Start now?" loses its "?", and then a copy of it goes.
+assert.deepEqual(parseReply('{"say":"Start now?","options":["Start now?","Start now","Plan CS ?","?"]}'), { say: "Start now?", options: ["Start now", "Plan CS"] });
 for (const bad of [null, "", "I'll add that to your plan.", '{"say":"  "}', '{"options":[]}', "null", "[1]"]) {
   assert.equal(parseReply(bad), null, String(bad));
 }
@@ -750,10 +769,51 @@ assert.match(risky, /how they work best or the patterns you noticed in what they
 assert.match(risky, /and goal, due and steps are empty\. The card shows that step as it is saved, so name it as written and never reword it\./);
 assert.doesNotMatch(risky, /way into it|5-minute way in/);
 // Learn from use: the opening's question offers the pick, never asks about them.
-assert.match(risky, /one soft question that offers it\.[^\n]*Never ask a question to learn about them, like when they focus best or what feels hard\./);
+assert.match(risky, /one short, direct question that offers it, like "Start now\?"\.[^\n]*Never ask a question to learn about them, like when they focus best or what feels hard\./);
 // Canvas: a new plan can break an assignment into steps from its instructions, which the prompt carries.
 assert.match(night, /from their deadlines, Canvas assignments, calendar or what you remember \(a Canvas assignment's steps come from its instructions\)/);
 assert.match(openingPrompt({ ...context, canvas: briefs }, "Vi", [], new Map(), at), /\nTheir Canvas assignments[^\n]*\n- <<<Essay 2[^\n]*Write 1500 words on the New Deal/);
+
+// Day 2 names what Zeno learned, once: the newest pattern from the 7 days before the person's today that this browser
+// hasn't heard. Their day starts at 5 AM: one learned this morning waits for tomorrow, one from 12:20 AM is last night's.
+// Now is Wed Nov 4, 9:10 AM in Los Angeles (17:10 UTC).
+const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const learnedAt = (n: number, createdAt: string, source = "pattern") => ({ id: uuid(n), text: `Pattern ${n}.`, group: "patterns", source, createdAt });
+const wed = new Date("2026-11-04T17:10:00Z");
+const thisMorning = learnedAt(1, "2026-11-04T14:00:00Z"); // 6 AM in LA
+const ownWords = learnedAt(2, "2026-11-04T07:00:00Z", "you"); // the person's own words are never a pattern Zeno noticed
+const lastNight = learnedAt(3, "2026-11-04T08:20:00Z"); // 12:20 AM in LA: day 1's fifth step, finished after midnight
+const monday = learnedAt(4, "2026-11-02T18:00:00Z");
+const patterns = [thisMorning, ownWords, monday, lastNight];
+assert.equal(newPattern(patterns, [], zone, wed)?.id, lastNight.id, "before today only, the newest wins");
+assert.equal(newPattern(patterns, [lastNight.id], zone, wed)?.id, monday.id, "a heard one is never news again");
+assert.equal(newPattern(patterns, [lastNight.id, monday.id], zone, wed), null);
+assert.equal(newPattern([], [], zone, wed), null);
+// Before 5 AM it is still last night: a pattern learned at 11:40 PM waits for the morning instead of being used up.
+const elevenForty = learnedAt(8, "2026-11-04T07:40:00Z");
+assert.equal(newPattern([elevenForty], [], zone, new Date("2026-11-04T08:10:00Z")), null, "12:10 AM");
+assert.equal(newPattern([elevenForty], [], zone, new Date("2026-11-04T13:00:00Z"))?.id, elevenForty.id, "5 AM");
+// The window is the 7 days before LA's today, which starts at 13:00 UTC (5 AM PST); UTC's today starts at 05:00.
+const weekEdge = learnedAt(5, "2026-10-28T13:00:00Z");
+const tooOld = learnedAt(6, "2026-10-28T12:59:00Z");
+assert.equal(newPattern([weekEdge], [], zone, wed)?.id, weekEdge.id);
+assert.equal(newPattern([tooOld], [], zone, wed), null);
+assert.equal(newPattern([tooOld], [], "UTC", wed)?.id, tooOld.id);
+const tuesdayNight = learnedAt(7, "2026-11-04T06:00:00Z"); // Tue 10 PM in LA, already Wed 6 AM in UTC
+assert.equal(newPattern([tuesdayNight], [], zone, wed)?.id, tuesdayNight.id);
+assert.equal(newPattern([tuesdayNight], [], "UTC", wed), null);
+// heard comes from the browser: only ids count, the last 20 of them.
+assert.deepEqual(cleanHeard([uuid(1), "not-an-id", 42, null, { id: uuid(2) }, uuid(3)]), [uuid(1), uuid(3)]);
+assert.deepEqual(cleanHeard(Array.from({ length: 25 }, (_, i) => uuid(i))), Array.from({ length: 20 }, (_, i) => uuid(i + 5)));
+assert.deepEqual(cleanHeard("ids"), []);
+assert.deepEqual(cleanHeard(undefined), []);
+assert.equal(newPattern(patterns, cleanHeard(["junk", 7, [lastNight.id]]), zone, wed)?.id, lastNight.id, "junk heard hides nothing");
+// The opening says it first, in its own words, and lets it shape the pick; with no new pattern there is no line.
+assert.match(
+  openingPrompt(context, "Vi", [], new Map(), wed, "Works best in the morning."),
+  /\nNew since their last day, a pattern you noticed in what they did: "Works best in the morning\." Say it once at the start of say, in a few words of your own [^\n]*, and let it shape the pick when it fits\.\n/,
+);
+assert.doesNotMatch(openingPrompt(context, "Vi", [], new Map(), wed), /New since their last day/);
 
 // Rule options come only from real context: the open step, one unread email (only important mail is read), the next
 // event worth prepping.
@@ -1064,7 +1124,7 @@ assert.match(results()[0].to, /^empty/);
 reset();
 replies.push(tools(call("draft_email", { to: "", subject: "Hi", body: "Hello" })), new TypeError("fetch failed"));
 turn = await talk(talkContext, null, [], "Draft a hello");
-assert.deepEqual([turn.draft?.subject, turn.reply], ["Hi", "I wrote a draft. Want to open it in Gmail?"]);
+assert.deepEqual([turn.draft?.subject, turn.reply], ["Hi", "I wrote a draft. Open it in Gmail?"]);
 
 // A set_goal that fails its checks saves nothing, so it never holds back a start in the same batch.
 reset();
@@ -1135,7 +1195,7 @@ saved = { id: "mem-10", text: "Junior.", group: "about", source: "you", createdA
 replies.push(tools(call("remember", { text: "Junior.", group: "about", private: false })), new TypeError("fetch failed"), say("Never sent."));
 turn = await talk(talkContext, null, [], "I'm a junior");
 assert.equal(sent.length, 2, "the final call is not retried once a tool ran");
-assert.deepEqual([turn.actions.length, turn.reply], [1, "I made that change, but lost my words for a second. Want to keep going?"]);
+assert.deepEqual([turn.actions.length, turn.reply], [1, "I made that change, but lost my words for a second. Keep going?"]);
 console.log = quietLog;
 
 console.log("agent self-check passed");

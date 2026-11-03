@@ -133,6 +133,12 @@ export function openingReusable(opening: { at?: string; sig?: string } | null | 
   return now - at >= 0 && now - at < 20 * 60_000 && opening?.sig === sig && !changed;
 }
 
+// The pattern ids this device's openings named, newest last and at most 20, with the ids in `noticed` added.
+export function addHeard(heard: string[], noticed: unknown): string[] {
+  const added = Array.isArray(noticed) ? noticed.filter((id): id is string => typeof id === "string") : [];
+  return [...heard.filter((id) => !added.includes(id)), ...added].slice(-20);
+}
+
 const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // The Canvas item a plan is for: the plan's title holds the item's as whole words, any case ("Essay 2", or "HIST 110:
@@ -154,10 +160,11 @@ export function canvasFor<T extends { title: string; course?: string }>(plan: Go
 export const replanOnCanvas = (screen: Screen | null, linked: boolean, found: Pick<CanvasAssignment, "submitted">[]) =>
   screen === "ready" && (!linked || found.some((item) => !item.submitted));
 
-// What the screen after Done says: the next step, or that the plan is finished.
-export function doneLine(goal: Goal | null): string {
+// What the screen after Done, or after a skip said in Focus, says: the next step, or that the plan is finished.
+export function doneLine(goal: Goal | null, skipped = false): string {
   const next = openSteps(goal)[0];
-  return next ? `Nice. Next: ${next.title}${next.minutes ? `, ${next.minutes} min` : ""}` : "Nice work. That was the last step.";
+  if (!next) return `${skipped ? "Skipped." : "Nice work."} That was the last step.`;
+  return `${skipped ? "Skipped." : "Nice."} Next: ${next.title}${next.minutes ? `, ${next.minutes} min` : ""}`;
 }
 
 // A step that is an email to write, so Focus offers to draft it in Gmail ("Draft an email to…", "Ask … by email"), never
@@ -239,9 +246,10 @@ export function slotLabel(start: string, end: string, timeZone: string, now = ne
   return `${dayWord(start, timeZone, now)}${same ? from.slice(0, -3) : from}–${to}`;
 }
 
-// The first of today's timed events starting in the next `within` ms (not already started).
+// The first of today's timed events starting in the next `within` ms (not already started). Never Zeno's own block:
+// Zeno's items never notify (Vi), in the app either.
 export function soonEvent(events: DayEvent[], now: number, within = 10 * 60_000): DayEvent | null {
-  return events.find((event) => !event.allDay && Date.parse(event.start) > now && Date.parse(event.start) - now <= within) ?? null;
+  return events.find((event) => !event.allDay && !event.zeno && Date.parse(event.start) > now && Date.parse(event.start) - now <= within) ?? null;
 }
 
 // ---------- Streaks ----------
