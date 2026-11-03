@@ -12,7 +12,10 @@ Object.assign(globalThis, {
 });
 let answer = () => {};
 let reply: object = { state: "ok", courses: 1, assignments: [] };
-globalThis.fetch = (async () => {
+const methods: string[] = [];
+globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+  methods.push(init?.method ?? "GET");
+  if (init?.method === "DELETE") return Response.json({ state: "ok" });
   await new Promise<void>((resolve) => (answer = resolve));
   return Response.json(reply);
 }) as typeof fetch;
@@ -30,6 +33,7 @@ clearCanvas("acct");
 answer();
 assert.equal((await again)?.state, "ok");
 assert.equal(readCanvas("acct"), null, "Disconnect stays done");
+assert.deepEqual(methods, ["POST", "POST", "DELETE"], "and the deadlines that sync saved on the server are deleted again");
 
 // A link kept before the list was (Nov 2) still reads; the sheet then names only the school.
 store.set("zeno.canvas.old", JSON.stringify({ v: 1, link, briefs: [], syncedAt: "2026-11-01T18:00:00.000Z" }));

@@ -101,3 +101,23 @@ Owns `src/lib/goals.ts` (+check), `profile.ts` (+check), `patterns.ts` (+check),
 (+check), `canvas.ts` (+ a new check), `scripts/memory-bench.mjs`, and the routes `src/app/api/canvas`, `goal`, `prep`,
 `profile/scan`, `memory`, `steps`. Decisions 6 (tidy memory, learning from use), 9 (Canvas server side, prep with
 instructions) and 10.
+
+## Nov 2 evening: the tidy round
+Vi connected their real school Canvas on production and said: "it looks kind of messed up a little bit. It looks kind
+of messy… It doesn't have the context. I think it needs some sort of AI to organize it a little bit… It looks so messy,
+as you can tell." Every screen showed Canvas's raw text (a term, a section and the long course name before each title,
+a proctoring note after it), Memory listed each Canvas deadline on 2-3 lines, Focus didn't say what the step was for,
+and Sources pushed the timer off screen. Built on `tidy/canvas-data`, `tidy/sheets` and `tidy/focus`, merged on
+`tidy/integrate`:
+- **Clean at the source** (`src/lib/canvas.ts`): a course shows as its code ("FA26: HIST-110 Sec 02 - US History Since
+  1865" → "HIST 110"; a name without one keeps at most 28 characters, cut at a word), a title loses its proctoring note
+  ("Quiz 4 (Ch. 4) - Requires Respondus LockDown Browser + Webcam" → "Quiz 4 (Ch. 4)"), and a deadline is saved whole
+  ("HIST 110: Essay 2, due Friday, November 6."). The next sync replaces the old rows.
+- **One line per row**: the Canvas screen lists every assignment due in the next 2 weeks by day (Today, Tomorrow, the
+  weekday, then the date), as course · title · time, each opening in Canvas. Memory sums Canvas up in one line ("Plus 11
+  assignments from Canvas · See them", which opens that screen). Today's deadlines take one line each.
+- **Focus keeps the context**: "<goal> · due <when>" sits under the step, and Sources is one small ruled card (a title
+  and a why per source, a line each) that scrolls clear of the dock.
+- **Connect re-plans the home card** at once when Canvas found work still due, on the home card only. An open plan
+  stays first (one plan at a time); letting a sooner Canvas deadline take over the card is Vi's call. Disconnect deletes
+  the Canvas deadlines Zeno saved (`DELETE /api/canvas`), also when a page-load sync ends after it.

@@ -440,7 +440,14 @@ export default function DayView(props: DayViewProps) {
       <SheetPanel open={props.sheet === "memory"} title="Memory" onClose={() => on.sheet(null)}>
         {props.sheet === "memory" && (
           <>
-            <MemorySheet memories={props.memories} device={props.device ?? []} onForget={on.forget} onAdd={on.add} onRetry={on.retryMemory} />
+            <MemorySheet
+              memories={props.memories}
+              device={props.device ?? []}
+              onForget={on.forget}
+              onAdd={on.add}
+              onRetry={on.retryMemory}
+              onCanvas={props.canvas?.linked ? () => on.sheet("canvas") : undefined}
+            />
             {/* A failed Forget or save says so here, where the person is looking. */}
             <p role="status">{props.note}</p>
           </>
@@ -571,7 +578,8 @@ function SheetPanel({ open, title, onClose, children }: { open: boolean; title: 
       ref={ref}
       aria-label={title}
       className="sheet"
-      onClose={onClose}
+      // A close because `open` went false (Memory's See them opening Canvas) must not shut the sheet that replaced it.
+      onClose={() => open && onClose()}
       onClick={(event) => event.target === event.currentTarget && onClose()}
     >
       <div className="flex min-h-full flex-col gap-4 p-6">

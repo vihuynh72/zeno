@@ -246,8 +246,9 @@ export type ProfileResponse =
 // The person's Canvas link (school address and personal access token) stays only in their browser
 // (src/lib/canvas-store.ts). POST /api/canvas body { base, token }: the server uses the token for that one request and
 // never stores or logs it. It reads the next 14 days of unsubmitted work, replaces the account's "canvas" deadline
-// memories with it (so Today, the first card and the opening see them), and returns the list. Zeno never submits,
-// writes answers or changes anything in Canvas.
+// memories with it (so Today, the first card and the opening see them), and returns the list. DELETE /api/canvas
+// (Disconnect) deletes those memories: { state: "ok" | "signed-out" | "error" }. Zeno never submits, writes answers or
+// changes anything in Canvas.
 export type CanvasAssignment = {
   id: string;
   course: string;

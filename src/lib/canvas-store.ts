@@ -44,7 +44,7 @@ export const clearCanvas = (account: string) => write(account, null);
 // soonest unsubmitted assignments and the list of all of them; a refused token (bad-token, bad-url, not-allowed)
 // forgets the saved link, so the account menu offers Connect Canvas again. Network trouble keeps everything as it was.
 // `connect` is a link typed in now; without it the saved link is read again, and its answer is kept only while that
-// link is still saved, so a Disconnect or Sign out during the request stays done.
+// link is still saved, so a Disconnect or Sign out during the request stays done, on the server too.
 export async function syncCanvas(account: string, connect?: CanvasLink): Promise<CanvasResponse | null> {
   const link = connect ?? readCanvas(account);
   if (!link) return null;
@@ -63,6 +63,9 @@ export async function syncCanvas(account: string, connect?: CanvasLink): Promise
       .map(({ title, course, due, instructions }) => ({ title, course, due, instructions: instructions ?? "" }));
     const list = todo.map(({ id, course, title, due, kind, url }) => ({ id, course, title, due, kind, url }));
     write(account, { v: 1, link, briefs, list, syncedAt: new Date().toISOString() });
+  } else if (res.state === "ok" && !readCanvas(account)) {
+    // Disconnected while this sync ran: the deadlines it saved after Disconnect's DELETE are deleted again.
+    await fetch("/api/canvas", { method: "DELETE" }).catch(() => null);
   } else if (res.state === "bad-token" || res.state === "bad-url" || res.state === "not-allowed") {
     if (readCanvas(account)?.token === link.token) clearCanvas(account);
   }
