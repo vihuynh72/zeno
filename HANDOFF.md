@@ -45,6 +45,20 @@ not in git). Claude then interviewed Vi with 8 questions. **Spec: `docs/PLAN-NOV
   - "Stop for now", "Switch goal", the mark and "← All goals" put a running step back to todo.
   - A step started under 3 hours ago reopens in Focus on load (a shortcut, tunable).
   - Opening a plan pauses the old current plan (never loses it).
+- **Shipped and live-tested on production** (`main` = `8df7d05`, Nov 3 about 3 PM PT).
+  - Review fixes: 7, from three reviewers.
+  - Live-test fixes: Done kept the goal bar in view, and code or bank mail never opens in Zeno.
+  - Vi chose digits for times ("until 2:45").
+  - No runtime errors.
+- **Demo account reset at Vi's go** (Nov 3, about 3:05 PM PT):
+  - No Zeno blocks were on its calendar.
+  - `demo-rows.mjs --wipe` removed 3 steps, 1 goal, 24 memories and 1 state row; other accounts were unchanged.
+  - The browser keys were cleared, except the Canvas link and Sound (still off).
+  - A first sign-in dry run passed: the scan ("learned 14 things, including 4 deadlines"), then Start my day, then the
+    new home listing three Canvas deadlines.
+  - Today is day 1: Vi uses it for real.
+  - Nov 4: shot 6 first, then reset again (same three steps), then shots 3 to 5. Turn Sound on in the account menu
+    before recording.
 - **For the recording:** see `docs/DEMO-NOV4.md` (updated).
   1. Shot 6 first on Nov 4, then the reset, then shots 3 to 5.
   2. Mail the person sent never counts as asking. The Prof. Patel email (DQ-2) must come from the demo-only mailbox
