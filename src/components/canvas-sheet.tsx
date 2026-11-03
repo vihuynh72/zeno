@@ -1,9 +1,10 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, Fragment, useState } from "react";
 import type { CanvasAssignment, CanvasResponse } from "@/lib/day";
-import { canvasBriefs, clearCanvas, readCanvas, syncCanvas } from "@/lib/canvas-store";
-import { browserZone, canvasHost } from "@/components/desk-rows";
+import { canvasList, clearCanvas, readCanvas, syncCanvas } from "@/lib/canvas-store";
+import { formatTime } from "@/lib/tz";
+import { browserZone, canvasHost, dueDays, httpsOnly } from "@/components/desk-rows";
 
 const REFUSED: Partial<Record<CanvasResponse["state"], string>> = {
   "bad-url": "Use your school's Canvas address, like sjsu.instructure.com.",
@@ -27,8 +28,8 @@ export default function CanvasSheet({ account, onSynced }: { account: string; on
     const link = readCanvas(account);
     return link ? canvasHost(link.base) : null;
   });
-  const [synced, setSynced] = useState<CanvasAssignment[] | null>(null); // this sheet's own sync
-  const [briefs] = useState(() => canvasBriefs(account)); // the last sync's soonest work, kept on this device
+  const [list, setList] = useState(() => canvasList(account)); // the last sync's unsubmitted work
+  const [now] = useState(Date.now); // when the sheet opened, for Today and Tomorrow
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState("");
   const [moved, setMoved] = useState(false); // connected or disconnected here, so focus follows the new view
@@ -44,16 +45,17 @@ export default function CanvasSheet({ account, onSynced }: { account: string; on
     setBusy(false);
     if (res?.state !== "ok") return setRefused(REFUSED[res?.state ?? "error"] ?? "Couldn't reach Canvas. Try again.");
     setHost(canvasHost(link.base));
-    setSynced(res.assignments);
+    setList(res.assignments.filter((item) => !item.submitted));
     setMoved(true);
     onSynced(res.assignments);
   }
 
-  function disconnect() {
+  // Undone here at once; then, best effort, the Canvas deadlines Zeno saved are deleted too before the day is read again.
+  async function disconnect() {
     clearCanvas(account);
     setHost(null);
-    setSynced(null);
     setMoved(true);
+    await fetch("/api/canvas", { method: "DELETE" }).catch(() => null);
     onSynced([]);
   }
 
@@ -74,9 +76,12 @@ export default function CanvasSheet({ account, onSynced }: { account: string; on
               className="add"
               placeholder="sjsu.instructure.com"
               inputMode="url"
+              autoComplete="off"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
+              data-1p-ignore
+              data-lpignore="true"
             />
           </label>
           <label className="flex flex-col">
@@ -103,29 +108,47 @@ export default function CanvasSheet({ account, onSynced }: { account: string; on
       </form>
     );
 
-  // Just connected: what this sync found. Opened later: the soonest work the last sync kept on this device.
-  const due = synced?.filter((item) => !item.submitted);
-  const rows = (due ?? briefs).slice(0, 5);
+  // A link kept before the list was (Nov 2) names only the school until the next sync.
+  const zone = browserZone();
+  const days = list && dueDays(list, zone, now);
+  const count = days?.reduce((sum, day) => sum + day.items.length, 0) ?? 0;
   return (
     <>
       <p ref={moved ? focusOnMount : undefined} tabIndex={-1}>
-        {!due
-          ? `Connected to ${host}.`
-          : due.length === 0
-            ? "Connected. Nothing due in the next 2 weeks."
-            : `Connected. ${due.length} ${due.length === 1 ? "assignment" : "assignments"} due in the next 2 weeks.`}
+        {days ? `Connected · ${count || "Nothing"} due in the next 2 weeks.` : `Connected to ${host}.`}
       </p>
-      {rows.length > 0 && (
+      {days && count > 0 && (
         <div className="mini">
-          <ul className="lines">
-            {rows.map((row, i) => (
-              <li key={`${i}:${row.course}:${row.title}`}>
-                <span className="text-ink-2">{row.course} · </span>
-                {row.title}
-                <span className="text-ink-2"> · {dueLabel(row.due)}</span>
-              </li>
+          <div className="lines">
+            {days.map(({ day, items }) => (
+              <Fragment key={day}>
+                <h3 className="font-bold">{day}</h3>
+                <ul>
+                  {items.map((item) => {
+                    const name = [item.course, item.title, dueLabel(item.due)].filter(Boolean).join(" · ");
+                    return (
+                      <li key={item.id}>
+                        <a
+                          href={httpsOnly(item.url)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={name}
+                          aria-label={name}
+                          className="group flex items-baseline gap-4"
+                        >
+                          <span className="min-w-0 flex-1 truncate">
+                            {item.course && <span className="mr-2 text-ink-2">{item.course}</span>}
+                            <span className="underline-offset-4 group-hover:underline">{item.title}</span>
+                          </span>
+                          {item.due && <span className="shrink-0 font-mono leading-none text-ink-2">{formatTime(item.due, zone)}</span>}
+                        </a>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Fragment>
             ))}
-          </ul>
+          </div>
         </div>
       )}
       <button type="button" onClick={disconnect} className="quiet-x self-start">
