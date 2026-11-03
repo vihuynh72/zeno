@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CanvasBrief, PrepResponse, PrepSource, Step } from "@/lib/day";
 
-// Stable, so it runs once, when the first source found by a search appears.
-const focusOnMount = (link: HTMLAnchorElement | null) => link?.focus();
+// Stable, so it runs once, when the first source found by a search appears; the pack's own scroll brings it into view.
+const focusOnMount = (link: HTMLAnchorElement | null) => link?.focus({ preventScroll: true });
 
 // POST /api/prep: up to 3 sources for the step, or null when there are none just now. A Canvas assignment's brief
 // rides along, so the search can use its instructions.
@@ -27,6 +27,7 @@ async function findSources(stepId: string, canvas: CanvasBrief | undefined): Pro
 export default function PrepPack({ step, canvas }: { step: Step; canvas?: CanvasBrief }) {
   const [sources, setSources] = useState<PrepSource[]>(step.prep ?? []);
   const [status, setStatus] = useState<"idle" | "loading" | "failed" | "found">(step.prep?.length ? "idle" : "loading");
+  const pack = useRef<HTMLElement>(null);
 
   // Each look (on opening, or Try again) is status "loading" until its answer lands.
   useEffect(() => {
@@ -42,28 +43,33 @@ export default function PrepPack({ step, canvas }: { step: Step; canvas?: Canvas
     };
   }, [status, step.id, canvas]);
 
+  // Opened or answered: the pack scrolls clear of the sticky dock (html's scroll-padding-bottom), as the answers do.
+  useEffect(() => {
+    pack.current?.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }, [status]);
+
   return (
-    <section aria-label="Sources for this step" className="mt-6 flex w-full max-w-[640px] flex-col items-center">
+    <section ref={pack} aria-label="Sources for this step" className="mt-6 flex w-full max-w-[640px] flex-col items-center">
       {sources.length > 0 && (
-        <ul className="flex w-full flex-col gap-3">
-          {sources.map((source, i) => (
-            <li key={i} className="mini">
-              <div className="lines">
+        <div className="mini w-full">
+          <ul className="lines">
+            {sources.map((source, i) => (
+              <li key={i}>
                 <a
                   ref={i === 0 && status === "found" ? focusOnMount : undefined}
                   href={source.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="font-bold underline underline-offset-4"
+                  className="block truncate font-bold underline underline-offset-4"
                 >
                   {source.title}
                   <span className="sr-only"> (opens in a new tab)</span>
                 </a>
-                <p className="text-ink-2">{source.why}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
+                <p className="truncate text-ink-2">{source.why}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       <p role="status" className="text-center text-ink-2">
         {status === "loading" ? "Looking for good sources…" : status === "failed" ? "Couldn't find sources just now." : ""}
