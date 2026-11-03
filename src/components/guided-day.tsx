@@ -842,6 +842,8 @@ export default function GuidedDay() {
     setCelebrate(false);
     setStuck(false);
     setScreen("wrap");
+    // shortcut: counts the plans this page holds; one finished before a reload has left day.goals (open plans only), so
+    // its steps drop out. Have /api/day send today's done steps if the count must be exact.
     const done = todayLine([latest.current.goal, ...latest.current.goals], zone(), new Date());
     wrapLine.current = done ? `${WRAP_LINE} ${done}` : WRAP_LINE;
     setLine(wrapLine.current);
