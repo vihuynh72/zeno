@@ -329,7 +329,7 @@ export type Notes = {
 // Patterns come only from what the person did, never from what they say or paste.
 const SAID_GROUPS = MEMORY_GROUPS.filter((group) => group !== "patterns");
 const GROUP_GUIDE =
-  "about: who they are; routines: classes, shifts and regular plans; projects: projects and deadlines; interests: interests and life goals; people: people who matter to them; work-style: how they work best.";
+  "about: who they are; routines: the shape of their week in one line, never a fact per class or shift; projects: projects and deadlines; interests: interests and life goals; people: people who matter to them; work-style: how they work best.";
 // Vi, Nov 2: even a fact kept only on the device never names a condition or medicine.
 const GENERIC_HEALTH =
   "Say health generically and never name a condition, diagnosis or medicine, like 'Doctor check-in Nov 3' or 'Mornings feel foggy lately.'";
@@ -384,8 +384,9 @@ export async function extractNotes(notes: string, timeZone: string, now = new Da
         role: "system",
         content: [
           "You read a person's pasted notes for Zeno, a helper that plans their days, and return three lists.",
-          "facts: lasting facts that help plan later days, like classes, work shifts, routines, how they like to work, people who matter, interests and goals.",
-          `Write each as one short sentence about them, at most 20 words, like 'Takes CS 161 on Tuesdays and Thursdays.', with its group. ${GROUP_GUIDE}`,
+          "facts: lasting facts that help plan later days, like how they like to work, people who matter, interests and goals.",
+          "Zeno reads their calendar live every day, so never write a fact for one class, shift or other repeating event; at most one routines fact sums up the shape of their week, like 'Classes Tue/Thu mornings; library shifts Mon/Wed afternoons.'",
+          `Write each as one short sentence about them, at most 20 words, like 'Works best right after class.', with its group. ${GROUP_GUIDE}`,
           "todos: things they need to do, each a short title starting with a verb, an honest estimate in whole minutes, and due as YYYY-MM-DD when the notes give a day, else an empty string.",
           "deadlines: due dates and exams that have a date, each a short title naming the thing without the word due, like 'CS 161 problem set 3', and its date as YYYY-MM-DD.",
           `Today is ${formatDate(now, timeZone)} (${today}); a day like 'friday' or 'Nov 18' means the next one on or after today.`,
@@ -425,13 +426,17 @@ export function notesFrom(text: string, today: string): Notes {
     kept.push({ text, group });
     return false;
   };
+  let routines = false;
   const facts = items(data?.facts).flatMap((item) => {
     const fact = typeof item.text === "string" ? item.text.trim() : "";
     const key = fact.toLowerCase();
     if (!fact || fact.length > 200 || seen.has(key)) return [];
     seen.add(key);
     const group = SAID_GROUPS.find((known) => known === item.group) ?? "about";
-    return shared(item, fact, fact, group) ? [{ text: fact, group }] : [];
+    // One routines fact at most, as the scan keeps (src/lib/profile.ts factsFrom): the calendar repeats the rest.
+    if (!shared(item, fact, fact, group) || (group === "routines" && routines)) return [];
+    routines ||= group === "routines";
+    return [{ text: fact, group }];
   });
   const todos = items(data?.todos).flatMap((item) => {
     const title = titleOf(item.title);
@@ -481,6 +486,10 @@ export function slotsText(slots: Slot[], timeZone: string): string {
         .join("; ")}.`
     : "Free slots for propose_block: none listed, so don't offer a time to book.";
 }
+
+// Google's consent screen let them untick calendar access, so a block they ask for needs that first.
+const NO_WRITE =
+  "Free slots for propose_block: none, because they haven't let Zeno add to their calendar. If they ask for a block, say they can allow it with Let Zeno add to your calendar, in their account menu.";
 
 const stepFields = {
   title: { type: "string", description: "What to do, starting with a verb, in a few words." },
@@ -632,8 +641,10 @@ export const TOOLS = [
   },
 ];
 
-// The person asked for calendar time ("put it on my calendar"); otherwise only work of 60 minutes or more gets a block.
-export const ASKS_FOR_BLOCK = /\b(calendar|book|schedul\w*|block (?:out|off)|put (?:it|this|that) on|set aside|find (?:me )?(?:a |some )?time)\b/i;
+// The person asked for calendar time ("put it on my calendar", "block 30 minutes"); otherwise only work of 60 minutes or
+// more gets a block. The nouns alone ask nothing: "What's on my calendar?", "the book's chapter 4", "Course Schedule:".
+export const ASKS_FOR_BLOCK =
+  /\b((?:put|add|get) [^.?!]{0,30}\b(?:on|in|to|into|onto) (?:my|the) calendar|put (?:it|this|that) on|(?:book|schedule|reserve) (?:it|this|that|a|an|some|me|time|\d+)|block (?:out|off|of time|\d+|some|an?|time|me)|set aside|make (?:some )?time|find (?:me )?(?:a |some )?time|plan (?:it|this|that) for (?:today|tonight|tomorrow|\w+day|\d+))\b/i;
 
 // "Ana Lopez <Ana@school.edu>" and "ana@school.edu" are both ana@school.edu.
 const addressOf = (from: string) => (/<([^<>]+)>/.exec(from)?.[1] ?? from).trim().toLowerCase();
@@ -775,8 +786,8 @@ const EFFORT = "minimal";
 // suggest calendar blocks, then answers in words. Returns the final words only, never a tool preamble.
 // Blocks are offered only when the client shows proposals (offer) and booking would take them (calendar write
 // access); otherwise the model sees no free slots for propose_block, so it never offers a booking nobody can tap.
-// A block shorter than 60 minutes needs the person to have asked for one, in this message or the one before (they
-// may be answering "what time?").
+// Unasked, a block must be 60 minutes or more and, for a step, its plan must have an hour of work left; asking counts
+// in this message or their two before (they may be answering "which day?" and "what time?").
 // privateFacts are the device's (src/lib/vault.ts); a private fact this turn learns comes back in `private` with a
 // "kept-private" action and is never saved here.
 export async function talk(
@@ -799,7 +810,7 @@ export async function talk(
   const email = context.email;
   const refs: Refs = new Map();
   const slots = offer && context.calendarWrite === "ok" ? roundSlots(context.free) : [];
-  const asked = [message, history.findLast((turn) => turn.role === "user")?.content ?? ""].some((text) => ASKS_FOR_BLOCK.test(text));
+  const asked = [message, ...history.filter((turn) => turn.role === "user").slice(-2).map((turn) => turn.content)].some((text) => ASKS_FOR_BLOCK.test(text));
   let goal = context.goal;
   const actions: TalkAction[] = [];
   const proposal: CalendarBlock[] = [];
@@ -814,7 +825,7 @@ export async function talk(
     ...history,
     {
       role: "user",
-      content: `Context about the person's day:\n${dayToText(context)}\n${slotsText(slots, context.timeZone)}\n\n${planText(context, refs)}\n\nThe person says:\n${message}`,
+      content: `Context about the person's day:\n${dayToText(context)}\n${offer && context.calendarWrite === "needs-permission" ? NO_WRITE : slotsText(slots, context.timeZone)}\n\n${planText(context, refs)}\n\nThe person says:\n${message}`,
     },
   ];
 
@@ -844,8 +855,10 @@ export async function talk(
         return { ok: true };
       }
       if (checked.name === "propose") {
-        const { start, end } = checked.block as { start: string; end: string };
-        if (!asked && Date.parse(end) - Date.parse(start) < 60 * 60_000) {
+        const { start, end, stepId } = checked.block as { start: string; end: string; stepId: string | null };
+        // A step's block is for its plan, so the plan's open minutes count, as Stop for now counts them (laterMinutes).
+        const open = (goal?.steps ?? []).filter((step) => step.status === "todo" || step.status === "doing").reduce((sum, step) => sum + (step.minutes ?? 10), 0);
+        if (!asked && (Date.parse(end) - Date.parse(start) < 60 * 60_000 || (stepId && open < 60))) {
           return { error: "not offered: small to-dos never go on their calendar, only work of 60 minutes or more or a block they ask for. Don't offer to book it." };
         }
         // Booking takes 1 to 12 blocks, and two blocks at once can't both be kept.

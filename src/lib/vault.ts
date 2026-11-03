@@ -35,11 +35,9 @@ function words(text: string): string[] {
     .map((word) => (word.length > 3 && word.endsWith("s") ? word.slice(0, -1) : word));
 }
 
-// A reworded known fact ("Bio lab on Wednesdays at 2 PM" for "Has bio lab every Wednesday at 2pm"). A different
-// day, date or time is a different fact, so those words must match exactly, and one fact's other words must all be in
-// the other's: "with Jess" and "with Omar" are two facts. A rare near-duplicate costs less than a lost fact.
-// Here, not in profile.ts, because the browser's vault uses it too.
-export function sameFact(a: string, b: string): boolean {
+// a says nothing b doesn't: the same day, date and time words, and every other word of a is in b. A different day,
+// date or time is a different fact, so those words must match exactly.
+export function within(a: string, b: string): boolean {
   if (factKey(a) === factKey(b)) return true;
   const split = (text: string) => {
     const all = [...new Set(words(text))];
@@ -47,29 +45,32 @@ export function sameFact(a: string, b: string): boolean {
   };
   const x = split(a);
   const y = split(b);
-  if (x.dates !== y.dates || !x.rest.length || !y.rest.length) return false;
-  const [small, big] = x.rest.length <= y.rest.length ? [x.rest, y.rest] : [y.rest, x.rest];
-  return small.every((word) => big.includes(word));
+  return x.dates === y.dates && x.rest.length > 0 && x.rest.every((word) => y.rest.includes(word));
 }
 
+// A reworded known fact ("Bio lab on Wednesdays at 2 PM" for "Has bio lab every Wednesday at 2pm"): one fact's words
+// are all in the other's, so "with Jess" and "with Omar" are two facts. A rare near-duplicate costs less than a lost
+// fact. Here, not in profile.ts, because the browser's vault uses it too.
+export const sameFact = (a: string, b: string) => within(a, b) || within(b, a);
+
 // A health condition's name (Vi, Nov 2: "Doctor check-in Nov 3", not "ADHD check-in"). Kept nowhere, not even on the
-// device: src/lib/profile.ts factVerdict puts it on the never-list, and this vault drops one saved before that rule.
+// device: src/lib/profile.ts factVerdict puts it on the never-list, and this vault deletes one saved before that rule.
+// The Great Depression, search and seizure and civil disorder are coursework, not health.
 export const CONDITION =
-  /\b(adhd|autis\w*|asperger'?s|anxiety|panic attacks?|depress\w*|bipolar|ocd|ptsd|anorexi\w*|bulimi\w*|insomnia|migraines?|asthma|diabet\w*|epilep\w*|seizures?|fibromyalgia|crohn'?s|celiac|covid|cancer|disorders?|concussion|sleep apnea|lupus|dyslex\w*|dyspraxi\w*|dyscalcul\w*|arthritis|ibs|pcos|endometriosis|sickle cell|multiple sclerosis|allerg\w*|alcoholics anonymous|narcotics anonymous|(aa|na) meetings?|(goes|go|going|went) to (aa|na))\b/i;
+  /\b(adhd|autis\w*|asperger'?s|anxiety|panic attacks?|(?<!great )depress\w*|bipolar|ocd|ptsd|anorexi\w*|bulimi\w*|insomnia|migraines?|asthma|diabet\w*|epilep\w*|(?<!search(es)? and )seizures?|fibromyalgia|crohn'?s|celiac|covid|cancer|(?<!civil )disorders?|concussion|sleep apnea|lupus|dyslex\w*|dyspraxi\w*|dyscalcul\w*|arthritis|ibs|pcos|endometriosis|sickle cell|multiple sclerosis|allerg\w*|alcoholics anonymous|narcotics anonymous|(aa|na) meetings?|(goes|go|going|went) to (aa|na))\b/i;
 
 function load(account: string): Vault {
   try {
     const raw = JSON.parse(localStorage.getItem(key(account)) ?? "null") as Partial<Vault> | null;
     const facts = (Array.isArray(raw?.facts) ? raw.facts : []).filter(
       (fact): fact is VaultFact =>
-        typeof fact?.id === "string" &&
-        typeof fact.text === "string" &&
-        typeof fact.createdAt === "string" &&
-        isGroup(fact.group) &&
-        !CONDITION.test(fact.text),
+        typeof fact?.id === "string" && typeof fact.text === "string" && typeof fact.createdAt === "string" && isGroup(fact.group),
     );
     const removed = (Array.isArray(raw?.removed) ? raw.removed : []).filter((text): text is string => typeof text === "string");
-    return { facts, removed };
+    // A condition's name kept before the rule, as a fact or a removal (which the scan sends), is deleted from storage.
+    const vault = { facts: facts.filter((fact) => !CONDITION.test(fact.text)), removed: removed.filter((text) => !CONDITION.test(text)) };
+    if (vault.facts.length < facts.length || vault.removed.length < removed.length) save(account, vault);
+    return vault;
   } catch {
     return { facts: [], removed: [] };
   }
@@ -125,11 +126,12 @@ export const vaultTexts = (account: string) => readVault(account).map((fact) => 
 // What the person removed here, for the profile scan's body (`removed`), so a scan never finds one again.
 export const vaultRemoved = (account: string) => load(account).removed.slice(-VAULT_MAX);
 
-// Server side: a request body's `private` field, untrusted. Brackets are removed so a fact can't fake a data label.
+// Server side: a request body's `private` or `removed` field, untrusted. Brackets are removed so a fact can't fake a
+// data label, and a condition's name from a device that kept one before the rule never reaches a prompt.
 export function cleanPrivate(raw: unknown): string[] {
   const seen = new Set<string>();
   return (Array.isArray(raw) ? raw : [])
     .map((item) => (typeof item === "string" ? item.replace(/[\p{Cc}<>\s]+/gu, " ").trim().slice(0, MAX_CHARS) : ""))
-    .filter((text) => text && !seen.has(factKey(text)) && seen.add(factKey(text)))
+    .filter((text) => text && !CONDITION.test(text) && !seen.has(factKey(text)) && seen.add(factKey(text)))
     .slice(0, VAULT_MAX);
 }

@@ -16,7 +16,7 @@ export default function MemorySheet({
   memories: Memory[] | "loading" | "error";
   device: VaultFact[];
   onForget(fact: Fact): void;
-  onAdd(text: string): void;
+  onAdd(text: string): Promise<boolean>;
   onRetry(): void;
 }) {
   const box = useRef<HTMLTextAreaElement>(null);
@@ -27,8 +27,11 @@ export default function MemorySheet({
   const add = () => {
     const text = box.current?.value.trim();
     if (!box.current || !text) return box.current?.focus();
-    // A line is one memory; longer or multi-line text is read as pasted notes (guided-day.tsx addMemory).
-    onAdd(text);
+    // A line is one memory; longer or multi-line text is read as pasted notes (guided-day.tsx addMemory). The box
+    // clears at once, and a save that failed puts the text back unless something new was typed meanwhile.
+    void onAdd(text).then((saved) => {
+      if (!saved && box.current && !box.current.value) box.current.value = text;
+    });
     box.current.value = "";
   };
 

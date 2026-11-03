@@ -625,6 +625,10 @@ button:active .tap {
   outline: none;
   border-color: var(--red);
 }
+/* The Canvas token: dots like a password field, without being one, so no password manager offers to keep it. */
+.secret {
+  -webkit-text-security: disc;
+}
 
 /* The week under a Done: done in ink, a rest day as an ink ring with a dash, a missed day as a quiet empty ring, days before the first
    step as a plain small dot (never styled as missed), today ringed in margin red, days to come dashed. */

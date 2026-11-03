@@ -132,10 +132,13 @@ export default function FocusMusic({ active }: { active: boolean }) {
     else if (id !== "off") p.audio ??= new Audio();
   }
 
+  // It sits in the links row of every screen (day-view.tsx), so it shows only on Focus, after the other links.
+  if (!active) return null;
   const label = STATIONS.find((station) => station.id === choice)?.label;
   return (
     <>
-      <button type="button" className="quiet-x" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <span aria-hidden="true">·</span>
+      <button type="button" className="link" aria-expanded={open} onClick={() => setOpen(!open)}>
         {label ? `Music: ${label}` : "Music"}
       </button>
       {open && (

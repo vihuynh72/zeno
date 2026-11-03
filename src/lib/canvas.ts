@@ -1,7 +1,7 @@
 import { nextDate } from "@/lib/calendar";
 import type { CanvasAssignment } from "@/lib/day";
 import { deadlineMemory } from "@/lib/goals";
-import { factVerdict } from "@/lib/profile";
+import { factVerdict, SECRETS } from "@/lib/profile";
 import { localDate } from "@/lib/tz";
 
 // Canvas LMS (https://canvas.instructure.com/doc/api/), read with the person's own personal access token for one
@@ -74,7 +74,8 @@ function onCanvas(value: string, base: string): string | null {
   }
 }
 
-// Canvas pages are HTML: plain words, at most 800 characters.
+// Canvas pages are HTML: plain words, at most 800 characters. The device keeps these and every prompt gets them, so a
+// link (it can carry a passcode, like sjsu.zoom.us/j/812?pwd=...) becomes [link] and a sentence with a code goes.
 export function htmlText(html: string): string {
   const text = html
     .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, " ")
@@ -86,7 +87,13 @@ export function htmlText(html: string): string {
       return ENTITIES.get(name.toLowerCase()) ?? entity;
     })
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    // Cut first, so the link pattern only ever reads a few pages of text.
+    .slice(0, 4000)
+    .replace(/https?:\/\/\S+|www\.\S+|\b[\w-]+(\.[\w-]+)*\.[a-z]{2,}\/\S*/gi, "[link]")
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => !SECRETS.test(sentence))
+    .join(" ");
   return [...text].slice(0, 800).join("");
 }
 

@@ -61,6 +61,7 @@ export type DayViewProps = {
   device?: VaultFact[]; // this device's private facts, for Memory
   account?: string | null; // the person's initial
   canvas?: { account: string; linked: boolean } | null; // Canvas on this device, once the page knows whose account it is
+  calendarAsk?: boolean; // Zeno may not add to the calendar yet: the account menu offers to allow it
   menuOpen?: boolean; // the /preview gallery shows the account menu open
   voice: { phase: VoicePhase; levelRef: { current: number }; muted: boolean; supported: boolean; error: VoiceError };
   on: {
@@ -73,7 +74,7 @@ export type DayViewProps = {
     send(text: string): void;
     sheet(sheet: Sheet): void;
     forget(fact: Fact): void;
-    add(text: string): void;
+    add(text: string): Promise<boolean>; // false: the save failed, so Memory's box gives the text back
     retryMemory(): void;
     book(key: string): void;
     unbook(key: string): void;
@@ -117,8 +118,9 @@ export default function DayView(props: DayViewProps) {
   const pile = (screen === "focus" || screen === "checkin") && doneCount > 0;
   const blocked = voice.error === "blocked";
   // A booking offer that answers Zeno's line (in talk, or after stopping) is the big button; the answers are then links.
+  // Once booked it is a status line, so the first answer is the big button again.
   const lead = screen === "talk" || screen === "wrap" ? props.offers?.[0] : undefined;
-  const big = lead || props.pasting ? null : props.chips[0] ?? null;
+  const big = (lead && lead.state !== "booked") || props.pasting ? null : props.chips[0] ?? null;
   const firstLink = big === null ? 0 : 1;
   const links = props.chips.slice(firstLink);
   const otherOffers = (props.offers ?? []).filter((offer) => offer !== lead);
@@ -220,6 +222,7 @@ export default function DayView(props: DayViewProps) {
               canvas={props.canvas ? props.canvas.linked : null}
               onMute={on.mute}
               onCanvas={() => on.sheet("canvas")}
+              onCalendar={props.calendarAsk ? on.signIn : undefined}
               onSignOut={on.signOut}
               open={props.menuOpen}
             />

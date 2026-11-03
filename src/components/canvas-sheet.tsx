@@ -81,7 +81,18 @@ export default function CanvasSheet({ account, onSynced }: { account: string; on
           </label>
           <label className="flex flex-col">
             <span className="font-bold">Access token</span>
-            <input name="token" type="password" required className="add" autoComplete="off" spellCheck={false} />
+            {/* Text, not a password field, so Chrome and Safari never offer to save the token to a synced password manager. */}
+            <input
+              name="token"
+              required
+              className="add secret"
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              data-1p-ignore
+              data-lpignore="true"
+            />
           </label>
           <p className="text-ink-2">In Canvas: Account → Settings → + New Access Token. Name it Zeno and paste it here.</p>
         </div>

@@ -313,10 +313,20 @@ assert.match(toolText("propose_block"), /only when they ask for one or for work 
 assert.match(toolText("draft_email"), /only when they ask for one: short, in their voice, nothing private, and never schoolwork answers[\s\S]*Zeno never sends mail[\s\S]*Never guess one/);
 assert.match(toolText("remember"), /never name a condition, diagnosis or medicine, like 'Doctor check-in Nov 3' or 'Mornings feel foggy lately\.'/);
 // Asking for calendar time, said the way people say it; anything else is not asking.
-for (const text of ["Put it on my calendar", "can you book it?", "Schedule an hour for the essay", "block out tomorrow morning", "put that on for Tuesday", "Find me time tomorrow", "set aside 20 minutes"]) {
+for (const text of [
+  "Put it on my calendar", "can you book it?", "Schedule an hour for the essay", "block out tomorrow morning", "put that on for Tuesday",
+  "Find me time tomorrow", "set aside 20 minutes", "Can you block 30 minutes for the reading tomorrow at 9?", "Block time for this at 4",
+  "Make time for it tomorrow", "Add the reading to my calendar", "Plan it for tomorrow at 3", "Book a time to study",
+]) {
   assert.ok(ASKS_FOR_BLOCK.test(text), text);
 }
-for (const text of ["Help me start my essay", "I'm done", "Email Prof Patel", "What's next?"]) assert.ok(!ASKS_FOR_BLOCK.test(text), text);
+// The nouns alone ask nothing: a Stuck? tap, a question about the day, a pasted syllabus (review, Nov 2).
+for (const text of [
+  "Help me start my essay", "I'm done", "Email Prof Patel", "What's next?", "I'm stuck on: Read the book's chapter 4 intro.",
+  "What's on my calendar today?", "Course Schedule: Week 1 Introductions", "Help me start my book report", "What's on my schedule today?",
+]) {
+  assert.ok(!ASKS_FOR_BLOCK.test(text), text);
+}
 
 // localIso writes the zone's clock with its offset, across the Nov 1 fall-back.
 assert.equal(localIso("2026-11-01T08:30:00Z", zone), "2026-11-01T01:30-07:00");
@@ -483,7 +493,7 @@ for (const bad of [null, "", "I'll add that to your plan.", '{"say":"  "}', '{"o
 }
 
 // Imported notes: grouped facts, to-dos and future deadlines that pass the checks; not JSON is an error.
-const facts = Array.from({ length: 9 }, (_, i) => ({ text: `Fact ${i}.`, group: "routines" }));
+const facts = Array.from({ length: 9 }, (_, i) => ({ text: `Fact ${i}.`, group: "interests" }));
 const notes = notesFrom(
   JSON.stringify({
     facts: [{ text: " Takes CS 146. ", group: "routines" }, { text: "takes cs 146.", group: "about" }, { text: "Bio major.", group: "patterns" }, { text: "", group: "about" }, 7, { text: "x".repeat(201), group: "about" }, ...facts],
@@ -501,9 +511,14 @@ const notes = notesFrom(
 assert.deepEqual(notes.facts.slice(0, 3), [
   { text: "Takes CS 146.", group: "routines" },
   { text: "Bio major.", group: "about" },
-  { text: "Fact 0.", group: "routines" },
+  { text: "Fact 0.", group: "interests" },
 ]);
 assert.equal(notes.facts.length, 8);
+// One routines fact at most, as the scan keeps: the calendar repeats each class and shift (Vi, Nov 2).
+assert.deepEqual(
+  notesFrom(JSON.stringify({ facts: [{ text: "Classes Tue/Thu mornings.", group: "routines" }, { text: "Takes CS 161 on Tuesdays.", group: "routines" }] }), "2026-11-01").facts,
+  [{ text: "Classes Tue/Thu mornings.", group: "routines" }],
+);
 assert.deepEqual(notes.todos, [
   { title: "Return library books", minutes: 20, due: "2026-11-06" },
   { title: "Buy poster board", minutes: 30, due: null },
@@ -831,6 +846,8 @@ replies.push({ content: JSON.stringify({ facts: [], todos: [], deadlines: [] }) 
 await extractNotes("Immigration hearing Nov 20. Pay back Jake $1,200 by the 15th.", zone, new Date("2026-11-01T17:00:00Z"));
 assert.match(sent[0].messages[0].content ?? "", /Every item has private, true or false\. Mark it private when it is about their health \(care or treatment[\s\S]*Never keep, not even privately: passwords, sign-in codes or verification links, the name of a condition, diagnosis or medicine/);
 assert.match(sent[0].messages[0].content ?? "", /Say health generically and never name a condition, diagnosis or medicine, like 'Doctor check-in Nov 3' or 'Mornings feel foggy lately\.'/);
+assert.match(sent[0].messages[0].content ?? "", /never write a fact for one class, shift or other repeating event; at most one routines fact sums up the shape of their week/);
+assert.doesNotMatch(sent[0].messages[0].content ?? "", /Takes CS 161|classes, shifts and regular plans/, "the scan's rule, not the old example");
 const notesSchema = (sent[0] as unknown as { response_format: { json_schema: { schema: { properties: Record<string, { items: { required: string[] } }> } } } }).response_format.json_schema.schema;
 for (const list of ["facts", "todos", "deadlines"]) assert.ok(notesSchema.properties[list].items.required.includes("private"), list);
 
@@ -940,13 +957,17 @@ assert.deepEqual(calls, []);
 assert.deepEqual(turn.proposal, [{ title: "Outline three points", kind: "step", start: "2030-11-05T18:00:00.000Z", end: "2030-11-05T18:10:00.000Z", stepId: "c" }]);
 assert.ok(results()[1].error, "the block outside every slot is refused");
 assert.match(sent[0].messages.at(-1)!.content ?? "", /Free slots for propose_block, start to end: 2030-11-05T10:00-08:00 to 2030-11-05T12:00-08:00\./);
-// No slots, so no offer, for a client that doesn't show proposals (today's UI) or a booking that would be refused.
-for (const [label, write, offer] of [["a client that shows none", "ok", false], ["no write access", "needs-permission", true]] as const) {
+// No slots, so no offer, for a client that doesn't show proposals (today's UI) or a booking that would be refused; without
+// write access the model is told why, so a block they ask for leads to the account menu, not a dead end.
+for (const [label, write, offer, why] of [
+  ["a client that shows none", "ok", false, /Free slots for propose_block: none listed/],
+  ["no write access", "needs-permission", true, /none, because they haven't let Zeno add to their calendar[^\n]*Let Zeno add to your calendar, in their account menu/],
+] as const) {
   reset();
   replies.push(tools(call("propose_block", { title: "Email Prof Patel", minutes: 10, start: localIso("2030-11-05T18:00:00Z", zone) }, "c1")), say("Okay."));
   turn = await talk({ ...talkContext, calendarWrite: write }, null, [], "Can you find time tomorrow?", offer);
   assert.deepEqual(turn.proposal, [], label);
-  assert.match(sent[0].messages.at(-1)!.content ?? "", /Free slots for propose_block: none listed/, label);
+  assert.match(sent[0].messages.at(-1)!.content ?? "", why, label);
 }
 
 // One turn's blocks never overlap, and stop at the 12 one booking takes.
@@ -958,8 +979,9 @@ turn = await talk(talkContext, null, [], "Block out my morning", true);
 assert.equal(turn.proposal.length, 12);
 assert.deepEqual(results().map((result: { error?: string }) => Boolean(result.error)), [false, true, ...Array(11).fill(false), true]);
 
-// Small to-dos never go on the calendar (Vi, Nov 2): a block under 60 minutes needs them to have asked for one, in this
-// message or the one before (answering "what time?"); an hour or more of work can be offered unasked.
+// Small to-dos never go on the calendar (Vi, Nov 2): unasked, a block must be an hour or more and, for a step, its plan
+// must have an hour left; asking counts in this message or their two before (answering "which day?" and "what time?").
+const intro = (minutes: number) => ({ ...talkContext, goal: { ...goal, steps: goal.steps.map((item) => (item.id === "d" ? { ...item, minutes } : item)) } });
 reset();
 replies.push(
   tools(
@@ -968,17 +990,30 @@ replies.push(
   ),
   say("Want an hour on the intro tomorrow at ten thirty?"),
 );
-turn = await talk(talkContext, null, [], "What should I do tomorrow?", true);
+turn = await talk(intro(45), null, [], "What should I do tomorrow?", true);
 assert.match(results()[0].error, /^not offered: small to-dos never go on their calendar/);
 assert.deepEqual(turn.proposal, [{ title: "Draft the intro", kind: "step", start: "2030-11-05T18:30:00.000Z", end: "2030-11-05T19:30:00.000Z", stepId: "d" }], "an hour, under the step's saved title");
+// The block's length is not the work's: an hour on a plan with 50 minutes left is still small.
+reset();
+replies.push(tools(call("propose_block", { ref: "s4", title: "Write the intro", minutes: 60, start: localIso("2030-11-05T18:30:00Z", zone) })), say("Okay."));
+turn = await talk(talkContext, null, [], "What should I do tomorrow?", true);
+assert.deepEqual([turn.proposal, /^not offered/.test(results()[0].error)], [[], true], "50 open minutes");
 reset();
 replies.push(tools(call("propose_block", { title: "Email Prof Patel", minutes: 15, start: localIso("2030-11-05T18:00:00Z", zone) })), say("Want ten tomorrow?"));
 turn = await talk(talkContext, null, [{ role: "user", content: "Can you put it on my calendar?" }, { role: "assistant", content: "Sure, when?" }], "Tomorrow morning", true);
 assert.equal(turn.proposal.length, 1, "asked a turn ago");
+const asking = [
+  { role: "user", content: "Put it on my calendar" }, { role: "assistant", content: "Today or tomorrow?" },
+  { role: "user", content: "Tomorrow" }, { role: "assistant", content: "Morning?" },
+] as const;
+reset();
+replies.push(tools(call("propose_block", { title: "Email Prof Patel", minutes: 15, start: localIso("2030-11-05T18:00:00Z", zone) })), say("Ten?"));
+turn = await talk(talkContext, null, [...asking], "Morning", true);
+assert.equal(turn.proposal.length, 1, "asked before two questions");
 reset();
 replies.push(tools(call("propose_block", { title: "Email Prof Patel", minutes: 15, start: localIso("2030-11-05T18:00:00Z", zone) })), say("Okay."));
-turn = await talk(talkContext, null, [{ role: "user", content: "Put it on my calendar" }, { role: "assistant", content: "Booked?" }, { role: "user", content: "Thanks" }], "Tomorrow morning", true);
-assert.deepEqual(turn.proposal, [], "two messages ago is not asking now");
+turn = await talk(talkContext, null, [...asking, { role: "user", content: "Morning" }, { role: "assistant", content: "Booked?" }], "Thanks", true);
+assert.deepEqual(turn.proposal, [], "three messages ago is not asking now");
 
 // draft_email: a draft they send from their own Gmail, addressed only to someone in their recent mail; never sent here.
 const inbox = [{ id: "c", from: "Jordan Kim <jkim@school.edu>", subject: "Slides?", snippet: "", unread: true }];

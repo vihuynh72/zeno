@@ -14,6 +14,8 @@ const mail = [
   message("m1", "Prof Kim <kim@sjsu.edu>", ["INBOX", "UNREAD"]),
   message("m2", "Canvas <notifications@instructure.com>"),
   message("m3", "GitHub <noreply@github.com>", ["INBOX", "UNREAD"]),
+  message("m3a", "Apple <no_reply@email.apple.com>"),
+  message("m3b", "Bank <do_not_reply@bank.example>"),
   message("m4", "Shop <deals@shop.example>", ["INBOX", "CATEGORY_UPDATES"]),
   message("m5", null),
   ...["m6", "m7", "m8", "m9", "m10", "m11"].map((id) => message(id, `Ana <${id}@sjsu.edu>`)),

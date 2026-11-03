@@ -218,7 +218,12 @@ const STATES: Record<string, Fixture> = {
   // Then one line says what it learned, written without the model.
   "first-found": {
     screen: "setup",
-    line: foundLine((["routines", "routines", "projects", "projects", "projects", "about", "people", "work-style", "interests"] as const).map((group) => ({ group }))),
+    line: foundLine(
+      (["routines", "routines", "projects", "projects", "projects", "about", "people", "work-style", "interests"] as const).map((group) => ({
+        group,
+        text: group === "projects" ? "Has the BIO 121 lab report due November 6." : "",
+      })),
+    ),
     chips: FOUND_CHIPS,
   },
   "first-empty": { screen: "setup", line: foundLine([]), chips: FOUND_CHIPS },
@@ -386,7 +391,7 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
           send: noop,
           sheet: noop,
           forget: noop,
-          add: noop,
+          add: async () => true,
           retryMemory: noop,
           book: noop,
           unbook: noop,

@@ -120,8 +120,10 @@ export function doneLine(goal: Goal | null): string {
   return next ? `Nice. Next: ${next.title}${next.minutes ? `, ${next.minutes} min` : ""}` : "Nice work. That was the last step.";
 }
 
-// A step that is an email to write, so Focus offers to draft it in Gmail.
-export const isEmailStep = (title: string) => /^(e-?mail|write to|reply to|message)\b/i.test(title.trim());
+// A step that is an email to write, so Focus offers to draft it in Gmail ("Draft an email to…", "Ask … by email"), never
+// one to read ("Read the email from Dana").
+export const isEmailStep = (title: string) =>
+  /^(e-?mail|write to|reply to|message)\b|\b(draft|write|send|compose|answer)\b.*\be-?mail\b|\bby e-?mail\b/i.test(title.trim());
 
 export const isDraft = (goal: Goal | null) => goal?.id === "draft";
 
@@ -162,8 +164,9 @@ export function laterMinutes(goal: Goal | null): number {
   return total >= 60 && !open[0].scheduledAt ? Math.min(total, 120) : 0;
 }
 
-// That block in tomorrow's earliest free time that fits (a 5-minute start, at least half an hour out), named for the
-// plan and linked to its first open step; null when tomorrow has no room.
+// That block in tomorrow's earliest free time that fits (a 5-minute start, at least half an hour out), linked to the
+// plan's first open step and named as it is saved, so the calendar says what tomorrow's card says (Vi, Nov 2); null
+// when tomorrow has no room.
 export function laterBlock(goal: Goal, minutes: number, slots: FreeSlot[], timeZone: string, now = new Date()): CalendarBlock | null {
   const step = openSteps(goal)[0];
   if (!step) return null;
@@ -174,7 +177,7 @@ export function laterBlock(goal: Goal, minutes: number, slots: FreeSlot[], timeZ
     const start = Math.ceil(Math.max(Date.parse(slot.start), from) / FIVE) * FIVE;
     const end = start + minutes * 60_000;
     if (start < dayAfter && end <= Date.parse(slot.end)) {
-      return { title: goal.title, kind: "step", start: new Date(start).toISOString(), end: new Date(end).toISOString(), stepId: step.id };
+      return { title: step.title, kind: "step", start: new Date(start).toISOString(), end: new Date(end).toISOString(), stepId: step.id };
     }
   }
   return null;
@@ -224,11 +227,12 @@ export const CHECKINS = {
 export type Fact = { id: string; text: string; group: MemoryGroup; device: boolean };
 
 // What first sign-in's scan learned, said in one line without the model. The scan files exams and deadlines under
-// projects, so that group is the deadline count.
-export function foundLine(facts: { group: MemoryGroup }[]): string {
+// projects with undated projects, so a deadline is a projects fact that names a day.
+const DATED = /\bdue\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? \d|\b(mon|tues|wednes|thurs|fri|satur|sun)day\b/i;
+export function foundLine(facts: { group: MemoryGroup; text: string }[]): string {
   if (facts.length === 0) return "I couldn't find much yet. I'll learn as you go.";
   const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-  const deadlines = facts.filter((fact) => fact.group === "projects").length;
+  const deadlines = facts.filter((fact) => fact.group === "projects" && DATED.test(fact.text)).length;
   return `I read your calendar and email and learned ${count(facts.length, "thing")}${deadlines ? `, including ${count(deadlines, "deadline")}` : ""}.`;
 }
 

@@ -7,7 +7,8 @@ Read this first, then the Linear doc **"Zeno hackathon build plan (Nov 4)"** (pr
 
 Spec: `docs/PLAN-NOV2.md` (Vi's 16 answers after using production on Nov 2; it wins over `docs/PLAN-NOV.md`). Four
 tracks built it on `nov2/brain`, `nov2/memory-canvas`, `nov2/desk-ui` and `nov2/flow-ui`; they are merged, made to fit
-and checked on **`nov2/integrate`**, which is not on `main` yet. Music for deep work (decision 13) is on `nov2/music`.
+and checked on **`nov2/integrate`**, which is not on `main` yet. **`nov2/fix`** adds, on top of it, music for deep work
+(decision 13, merged from `nov2/music` and fitted to the Focus links) and the fixes from three reviews of the round.
 
 ### What changed on nov2/integrate
 - **One card, one big button.** Every other action is a small link under it. Header: the Z mark, the streak and the
@@ -38,6 +39,19 @@ and checked on **`nov2/integrate`**, which is not on `main` yet. Music for deep 
 - Not verified: anything in a browser (layout, phone width, dark mode, the fitted Week, the Canvas and Memory sheets),
   Canvas with a real token, Gmail compose and event links, first sign-in live, and the memory bench.
 
+### Review fixes on nov2/fix
+- **Memory saves**: what the person says is dropped only when known word for word (a reworded scan finding still
+  merges); a longer wording takes a row only in the same group and of the same kind (fact, to-do or deadline), so a
+  to-do never rewrites a People fact or a Canvas deadline; a finished plan clears only the to-dos its title says all of.
+- **Calendar asks**: "put it on my calendar", "block 30 minutes", "make time for it" count, "what's on my calendar?" and
+  "the book's chapter" don't, looking back two of their messages; an unasked block on a step needs an hour left in its
+  plan. Without calendar write access, the account menu shows "Let Zeno add to your calendar" and talk points there.
+- **One name per task** for Stop for now's block too (the step's title). Pasted notes keep at most one routines fact.
+- **Privacy**: a condition's name already in the browser vault, or in its removed list, is deleted on load and
+  dropped by every route; the saved day keeps no Gmail link (it holds the address); Canvas instructions lose links and
+  sentences with codes; a page-load Canvas sync can't undo Disconnect or Sign out; the token field is no longer a
+  password field; the privacy page says what this browser keeps.
+
 ### Known issues
 - **Talk and Stop-for-now offers can sit right after another block** (no gap after it).
 - **Near-duplicate facts** whose date words differ ("Lab report 3, due Friday" and "Owes BIO lab report 3 due
@@ -46,22 +60,24 @@ and checked on **`nov2/integrate`**, which is not on `main` yet. Music for deep 
   until removed or the demo reset.
 - **A fallback card can disagree on minutes**: the rule pick shows 5 minutes for a long step where the model pick shows
   the saved minutes (the title always matches).
-- **Academic text naming a condition** (a nursing "Diabetes care plan") is kept nowhere, not even on the device.
+- **Coursework naming a condition** ("PSYCH 1: Quiz 3: Anxiety Disorders", a nursing "Diabetes care plan") is kept
+  nowhere, not even as a Canvas deadline. The Great Depression, search and seizure and civil disorder are no longer
+  caught. Letting coursework through needs Vi's call: plan titles come from it and are refused with a condition's name.
+- **Focus check-ins follow Sound only**: the old check-ins mute (`zeno:checkins`) has had no switch since Nov 2 and is
+  no longer read. A separate switch under Sound is Vi's call.
 - **Canvas:** only `<school>.instructure.com` addresses; course names are Canvas's full names; a slow Canvas can pass
-  the route's 30 s; Chrome may offer to save the token as a password; Disconnect keeps the saved Canvas deadlines
-  until they pass or are forgotten in Memory.
-- **Week:** on a short window the 28px minimum row can leave about 15px of scroll.
+  the route's 30 s; Disconnect keeps the saved Canvas deadlines until they pass or are forgotten in Memory.
+- **Week:** on a short window the 28px minimum row can leave about 15px of scroll. On touch, a title cut short in its
+  box shows whole only in Google Calendar (the peek opens on mouse hover and keyboard focus).
 - From session 3, still open: the greeting uses the Google first name ("Hi De"); the mail filter is broad; reload
   shows the saved line for 2.5-4 s; the Google access token is readable from `/api/auth/session`; scanned facts and
   patterns stop saving at about 120 facts in the person's own words.
 
 ### Next steps
-1. Fit `nov2/music`'s FocusMusic to its place in `day-view.tsx` (it sits in the answers' links row on every screen:
-   render nothing while `active` is false, and its own `·` before a `.link` "Music"), then merge it.
-2. A visual pass in `/preview` and the dev server, then merge `nov2/integrate` to `main`: production must be stable
-   by the morning of Nov 4.
-3. Vi: connect Canvas with the SJSU token, and try a Gmail draft and an event link.
-4. Reset the demo account (decision 12) and record the video before Nov 4, 6 PM PT.
+1. A visual pass in `/preview` and the dev server (Focus with Music, the Memory box, the account menu), then merge
+   `nov2/fix` to `main`: production must be stable by the morning of Nov 4.
+2. Vi: connect Canvas with the SJSU token, and try a Gmail draft and an event link.
+3. Reset the demo account (decision 12) and record the video before Nov 4, 6 PM PT.
 
 ## 0a. Session 3 (2026-11-01): the follow-through build and the live test
 

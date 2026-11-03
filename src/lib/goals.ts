@@ -3,7 +3,7 @@ import { ensureSchema, getSql } from "@/lib/db";
 // profile.ts imports this file too; neither uses the other until a call, so the cycle is safe.
 import { factVerdict } from "@/lib/profile";
 import { formatDate } from "@/lib/tz";
-import { sameFact } from "@/lib/vault";
+import { sameFact, within } from "@/lib/vault";
 
 // A step for a new or edited roadmap; `id` keeps an existing todo step.
 export type NewStep = { id?: string; title: string; minutes: number | null };
@@ -179,10 +179,11 @@ export async function changeStepStatus(
     goalQuery(email, goalId),
   ]);
   const goal = goalFrom(results[results.length - 1]);
-  // Its last step done finishes the pasted to-do it came from.
+  // Its last step done finishes the pasted to-do it came from: one the plan's title says all of, never a longer one
+  // ("Email Prof Patel" finishes neither "…about an extension" nor "…my project group").
   if (goal && status === "done" && goal.steps.every((one) => one.status === "done" || one.status === "skipped")) {
     const todos = await sql`SELECT id, text FROM memories WHERE user_email = ${email} AND text LIKE 'To do: %'`;
-    await dropMemories(email, todos.filter((row) => sameFact(String(row.text), todoMemory(goal.title))).map((row) => String(row.id)));
+    await dropMemories(email, todos.filter((row) => within(String(row.text), todoMemory(goal.title))).map((row) => String(row.id)));
   }
   return goal && { goal, before: step.status as StepStatus };
 }
@@ -266,11 +267,15 @@ export async function listMemories(email: string): Promise<Memory[]> {
   return rows.filter((memory) => !banned.includes(memory.id));
 }
 
+// A to-do, a deadline (deadlineMemory's ", due Friday, November 6." ending) or any other fact.
+const kindOf = (text: string) => (text.startsWith(todoMemory("")) ? "todo" : /, due \w+, \w+ \d+\.$/.test(text) ? "deadline" : "fact");
+
 // Returns the saved memory, or null when nothing new was saved (so callers never claim a save): the fact is
-// already known in any group, or Zeno found it itself (not "you") and the person once removed it. A reworded known
-// fact (src/lib/vault.ts sameFact) is never a second row: a longer wording takes that row, text and source, except
-// that what Zeno found never overwrites the person's own words. expiresOn (YYYY-MM-DD, checked by the caller) hides
-// it from that day on, as listMemories says; an undated "To do:" clears itself 14 days after it is saved.
+// already known word for word in any group, or Zeno found it itself (not "you") and the person once removed it or it
+// is known reworded (src/lib/vault.ts sameFact). A longer wording of the same kind in the same group takes that row,
+// text and source, except that what Zeno found never overwrites the person's own words. expiresOn (YYYY-MM-DD,
+// checked by the caller) hides it from that day on, as listMemories says; an undated "To do:" clears itself 14 days
+// after it is saved.
 export async function addMemory(
   email: string,
   text: string,
@@ -290,28 +295,32 @@ export async function addMemory(
       WHERE user_email = ${email} AND expires_on <= (now() AT TIME ZONE 'UTC' - interval '12 hours')::date
       RETURNING id
     )
-    SELECT id, text, source FROM memories WHERE user_email = ${email} AND id NOT IN (SELECT id FROM expired)
+    SELECT id, text, source, memory_group FROM memories WHERE user_email = ${email} AND id NOT IN (SELECT id FROM expired)
     UNION ALL
-    SELECT NULL, jsonb_array_elements_text(forgotten), NULL FROM user_state WHERE user_email = ${email} AND ${source} <> 'you'
+    SELECT NULL, jsonb_array_elements_text(forgotten), NULL, NULL FROM user_state WHERE user_email = ${email} AND ${source} <> 'you'
   `;
-  const same = known.filter((row) => sameFact(String(row.text), clean));
-  if (same.length > 0) {
-    const [row] = same;
-    if (
-      same.some((one) => one.id === null || factKey(String(one.text)) === key) ||
-      factKey(String(row.text)).length >= key.length ||
-      (row.source === "you" && source !== "you")
-    ) {
-      return null;
-    }
+  // A fact is never the same as a to-do or a deadline, whatever words they share.
+  const same = known.filter((row) => kindOf(String(row.text)) === kindOf(clean) && sameFact(String(row.text), clean));
+  if (same.some((row) => row.id === null || factKey(String(row.text)) === key)) return null;
+  const expires = expiresOn ?? (kindOf(clean) === "todo" ? new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10) : null);
+  const longer = same.find(
+    (row) =>
+      row.memory_group === group &&
+      factKey(String(row.text)).length < key.length &&
+      within(String(row.text), clean) &&
+      !(row.source === "you" && source !== "you"),
+  );
+  if (longer) {
     const [updated] = await sql`
-      UPDATE memories SET text = ${clean}, source = ${source}, expires_on = coalesce(${expiresOn}, expires_on)
-      WHERE id = ${row.id} AND user_email = ${email}
+      UPDATE memories SET text = ${clean}, source = ${source}, expires_on = coalesce(${expiresOn}, expires_on, ${expires})
+      WHERE id = ${longer.id} AND user_email = ${email}
       RETURNING id, text, created_at, memory_group, source
     `;
     return updated ? memoryFrom(updated) : null;
   }
-  const expires = expiresOn ?? (clean.startsWith(todoMemory("")) ? new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10) : null);
+  // What Zeno finds again in other words adds nothing; what the person says is always kept ("with music" is not
+  // "without music").
+  if (source !== "you" && same.length > 0) return null;
   const [inserted, groupTrim, totalTrim] = await sql.transaction([
     sql`
       INSERT INTO memories (user_email, text, memory_group, source, expires_on)

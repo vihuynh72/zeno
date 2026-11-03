@@ -92,6 +92,8 @@ const never = {
   nov2Vault: "Attends ADHD check-in with Dr. Lee on November 3.",
   depression: "Is managing depression this semester.",
   autism: "Is autistic and prefers written steps.",
+  eatingDisorder: "Is in treatment for an eating disorder.",
+  seizures: "Had a seizure last month.",
 };
 for (const [name, fact] of Object.entries(never)) assert.equal(factVerdict(fact)?.verdict, "never", `never-list keeps out ${name}: ${fact}`);
 for (const fact of [never.adhd, never.anxiety, never.nov2Vault, never.depression, never.autism]) {
@@ -165,6 +167,10 @@ const keep = {
   gymPrice: "Has a Planet Fitness Black Card membership for $24.99/month.",
   clubPresident: "Is running for president of the biology club.",
   foodBank: "Volunteers at the food bank on Saturdays.",
+  // Coursework words, not health (review, Nov 2).
+  greatDepression: "HIST 110: Great Depression essay, due Friday, November 6.",
+  searchAndSeizure: "Search and seizure brief for POLS 120",
+  civilDisorder: "Read the chapter on civil disorder in the 1960s.",
 };
 for (const [name, fact] of Object.entries(keep)) assert.equal(factVerdict(fact), null, `Zeno's servers keep ${name}: ${fact}`);
 

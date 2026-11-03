@@ -28,8 +28,12 @@ export default function Privacy() {
       <ul className="mt-3 list-disc pl-6">
         <li>Your goals and steps, and short facts Zeno remembers about you (like your classes, how you like to work, or a Canvas due date).</li>
         <li>You can see every remembered fact in Memory and delete any of them, any time.</li>
-        <li>Zeno does not save your emails, calendar events or Canvas instructions. It reads them when it needs them.</li>
-        <li>Zeno is built never to keep passwords, sign-in codes, verification links or the names of health conditions or medicines, not even on your device.</li>
+        <li>
+          Zeno&apos;s servers do not save your emails, calendar events or Canvas instructions. Zeno reads them when it needs
+          them. This browser keeps today&apos;s calendar, so Zeno opens fast, and the instructions of your next few Canvas
+          assignments until you disconnect Canvas. Sign out clears both.
+        </li>
+        <li>In what it remembers about you, Zeno is built never to keep passwords, sign-in codes, verification links or the names of health conditions or medicines, not even on your device.</li>
       </ul>
 
       <h2 className="mt-10 text-[22px] font-bold">Private things stay on your device</h2>

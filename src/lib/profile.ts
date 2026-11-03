@@ -63,7 +63,7 @@ const PRIVATE_TOPICS: [string, RegExp][] = [
 ];
 // Passwords, sign-in codes and the like: a fact that holds one is kept nowhere, and mail that says one never reaches
 // the model (sensitiveEmail). A code can mix letters and digits (Steam Guard's "F4K9Q").
-const SECRETS =
+export const SECRETS =
   /\b(passwords?|passcodes?|pin|otp|one-time (code|pass\w*|pin|link)|verification (code|link|email)|(verify|confirm) your (email|account|identity|device|phone|login|sign-in)|2fa|two-factor|2-step|(security|login|sign-in|guard|access|confirmation) codes?|reset link|magic link|api key|ssn|social security|account number|routing number)\b|\b(code|pin)\W{0,3}(is\W{0,3})?(?=[a-z]*\d)[a-z\d]{4,}\b|\b(locker|lock|gate|door|garage|alarm) (combo|combination|code)s?\b/i;
 const NEVER: [string, RegExp][] = [
   ["passwords, codes and links", SECRETS],

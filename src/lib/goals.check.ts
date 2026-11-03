@@ -104,7 +104,7 @@ try {
   );
   const fuller = await addMemory(memoryEmail, "Bio lab Wednesdays at 2pm in Duncan Hall.", { group: "routines" });
   assert.deepEqual([fuller?.id, fuller?.text, fuller?.source], [lab?.id, "Bio lab Wednesdays at 2pm in Duncan Hall.", "you"], "their own longer wording takes the row");
-  assert.equal(await addMemory(memoryEmail, "Bio lab on Wednesdays at 2 PM."), null, "a shorter wording adds nothing");
+  assert.equal(await addMemory(memoryEmail, "Bio lab on Wednesdays at 2 PM.", { source: "calendar" }), null, "a shorter finding adds nothing");
   const desk = await addMemory(memoryEmail, "Works at the campus library.", { source: "email" });
   const deskLonger = await addMemory(memoryEmail, "Works at the campus library front desk.", { source: "calendar" });
   assert.deepEqual([deskLonger?.id, deskLonger?.source], [desk?.id, "calendar"], "a longer finding takes a finding's row, with its source");
@@ -113,6 +113,30 @@ try {
     ["Works at the campus library front desk.", "Bio lab Wednesdays at 2pm in Duncan Hall."],
     "one row each",
   );
+  // What the person says is never dropped for a longer fact that holds its words: "with" is a filler word, and a club
+  // they are in is not a meeting about it.
+  const without = await addMemory(memoryEmail, "Likes studying without music.", { group: "work-style" });
+  const withMusic = await addMemory(memoryEmail, "Likes studying with music.", { group: "work-style" });
+  assert.ok(withMusic && withMusic.id !== without?.id, "said again the other way, it is a new row");
+  await addMemory(memoryEmail, "Has a meeting with Ana about the robotics club.", { group: "projects" });
+  assert.equal((await addMemory(memoryEmail, "Is in the robotics club."))?.text, "Is in the robotics club.", "a shorter fact of theirs saves");
+  // A longer wording takes a row only in its group and of its kind: a to-do never takes a person's row, and a fact
+  // never rewrites a deadline.
+  const kim = await addMemory(memoryEmail, "Has Prof Kim for CHEM 1A.", { group: "people", source: "email" });
+  const midterm = await addMemory(memoryEmail, "To do: Email Prof Kim about the CHEM 1A midterm", { group: "projects" });
+  const essay = await addMemory(memoryEmail, "HIST 110: Essay 2, due Friday, November 6.", { group: "projects", source: "canvas" });
+  const wwi = await addMemory(memoryEmail, "Has HIST 110 Essay 2 on WWI causes due Friday, November 6.", { group: "projects" });
+  assert.ok(midterm && wwi && ![kim?.id, essay?.id].includes(midterm.id) && ![kim?.id, essay?.id].includes(wwi.id), "new rows");
+  const kept = await listMemories(memoryEmail);
+  assert.ok(kept.some((memory) => memory.id === kim?.id && memory.text === "Has Prof Kim for CHEM 1A." && memory.group === "people"));
+  assert.ok(kept.some((memory) => memory.id === essay?.id && memory.text === "HIST 110: Essay 2, due Friday, November 6." && memory.source === "canvas"));
+  // A to-do saved before Nov 2 never expired; a longer wording of it takes its row and the 14-day default.
+  const [old] = await sql`
+    INSERT INTO memories (user_email, text, memory_group, source) VALUES (${memoryEmail}, 'To do: Buy poster board', 'projects', 'you') RETURNING id
+  `;
+  const poster = await addMemory(memoryEmail, "To do: Buy poster board for the expo", { group: "projects" });
+  const [{ expires }] = await sql`SELECT expires_on::text AS expires FROM memories WHERE id = ${old.id}`;
+  assert.deepEqual([poster?.id, expires], [old.id, new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10)], "a merged to-do clears too");
 
   // patterns keeps its 10 freshest noticed facts; what the person said never takes their slots.
   const cap = GROUP_CAPS.patterns;
@@ -170,7 +194,7 @@ try {
   assert.ok(!all.some((memory) => memory.text === "Scanned fact 1") && all.some((memory) => memory.text === "Scanned fact 2"));
   assert.deepEqual(
     [...new Set(all.map((memory) => memory.group))],
-    ["about", "routines", "projects", "patterns"],
+    ["about", "routines", "projects", "people", "work-style", "patterns"],
     "listed in Memory's group order",
   );
   assert.equal(all[0].text, "Starts best with a timer and a tiny first step.", "newest first within a group");
@@ -247,6 +271,16 @@ try {
   await setStepStatus(todoEmail, plan.steps[1].id, "done");
   assert.deepEqual((await listMemories(todoEmail)).map((memory) => memory.text), ["To do: Email Prof Patel"], "its last step done clears it");
   assert.deepEqual(await forgottenMemories(todoEmail), [], "dropped, not forgotten, so a later paste keeps it again");
+  // The first longer wording takes the short to-do's row; the second is another to-do.
+  await addMemory(todoEmail, "To do: Email Prof Patel about an extension", { group: "projects" });
+  await addMemory(todoEmail, "To do: Email Prof Patel my project group", { group: "projects" });
+  const patel = await setGoal(todoEmail, "Email Prof Patel", [{ title: "Write two lines", minutes: 5 }]);
+  await setStepStatus(todoEmail, patel.steps[0].id, "done");
+  assert.deepEqual(
+    (await listMemories(todoEmail)).map((memory) => memory.text).sort(),
+    ["To do: Email Prof Patel about an extension", "To do: Email Prof Patel my project group"],
+    "a shorter plan title finishes neither longer to-do",
+  );
 } finally {
   await sql`DELETE FROM goals WHERE user_email = ${todoEmail}`;
   await sql`DELETE FROM memories WHERE user_email = ${todoEmail}`;

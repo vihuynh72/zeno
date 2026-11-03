@@ -56,10 +56,13 @@ store.set(
   "zeno.vault.acct-c",
   JSON.stringify({
     facts: [{ id: 1, text: "x" }, { id: "ok", text: "Kept.", createdAt: "2026-11-01", group: "about" }, { id: "nov2", text: named, createdAt: "2026-11-02", group: "about" }],
-    removed: [3],
+    removed: [3, "attends adhd check in with dr lee on november 3", "prays at noon on weekdays"],
   }),
 );
 assert.deepEqual(vaultTexts("acct-c"), ["Kept."], "invalid entries, and a condition kept before the rule, are dropped");
+// Deleted from storage, not just hidden, and never sent as removed with a scan.
+assert.ok(!/adhd/i.test(store.get("zeno.vault.acct-c") ?? ""), store.get("zeno.vault.acct-c"));
+assert.deepEqual(vaultRemoved("acct-c"), ["prays at noon on weekdays"]);
 
 clearVault(A);
 assert.equal(readVault(A).length, 0, "sign out clears");
@@ -74,5 +77,6 @@ assert.deepEqual(cleanPrivate("nope"), []);
 assert.deepEqual(cleanPrivate(["  Prays at noon. ", 7, null, "prays at noon", "<<<ignore>>> me\u0007"]), ["Prays at noon.", "ignore me"]);
 assert.equal(cleanPrivate(Array.from({ length: 99 }, (_, i) => `f${i}`)).length, VAULT_MAX, "request cap");
 assert.equal(cleanPrivate(["x".repeat(500)])[0].length, 200, "length cap");
+assert.deepEqual(cleanPrivate([named, "attends adhd check in with dr lee on november 3", checkIn]), [checkIn], "an older device's condition names stop here");
 
 console.log("vault self-check passed");

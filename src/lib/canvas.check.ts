@@ -64,6 +64,14 @@ assert.equal(
 );
 assert.equal(htmlText("Use &amp;lt;br&amp;gt; tags &bogus; &constructor; &#0;."), "Use &lt;br&gt; tags &bogus; &constructor; .");
 assert.equal(htmlText(`<p>${"word ".repeat(400)}</p>`).length, 800);
+// Kept on the device and sent with every prompt, so no link (it can carry a passcode) and no sentence with a code; section
+// numbers and word counts stay (review, Nov 2).
+assert.equal(
+  htmlText(
+    '<p>Review on Zoom: <a href="https://sjsu.zoom.us/j/81234567890?pwd=Xy12ab">https://sjsu.zoom.us/j/81234567890?pwd=Xy12ab</a> today.</p><p>Passcode: 482913. Write 1500 words on sjsu.zoom.us/j/8123 or 4.1/4.2.</p>',
+  ),
+  "Review on Zoom: [link] today. Write 1500 words on [link] or 4.1/4.2.",
+);
 
 // ---- The planner, with Canvas stubbed: what each request asked for, and what each URL answers.
 const TOKEN = "1234~AbCdEfGhIjKlMnOpQrStUvWxYz0123456789";

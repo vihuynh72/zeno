@@ -85,6 +85,9 @@ type Answer = { label: string; run(): void };
 
 const SAVED_KEY = "zeno:day";
 const scannedKey = (account: string) => `zeno:scanned:${account}`;
+// The day as this browser keeps it: no email snippets (nothing on screen shows them), and no Gmail link, which holds the
+// address that the opaque account key keeps out of storage. Both come back with each /api/day.
+const toKeep = (day: Day): Day => ({ ...day, emails: [], mailUrl: undefined });
 const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 function readSaved(): Saved | null {
@@ -361,8 +364,7 @@ export default function GuidedDay() {
     // Another account's saved day is dropped here: overwritten, its opening and setup state not carried over.
     const prior = saved?.day.account === data.account ? saved : null;
     const kept = prior && prior.part === booted?.part ? prior.opening : null;
-    // Email snippets stay out of storage; nothing on screen shows them.
-    cache.current = { v: 3, part: booted?.part ?? "", day: { ...data, emails: [] }, opening: kept, setupDone: prior?.setupDone ?? false };
+    cache.current = { v: 3, part: booted?.part ?? "", day: toKeep(data), opening: kept, setupDone: prior?.setupDone ?? false };
     writeSaved(cache.current);
     setDay(data);
     setCanvasOn(Boolean(readCanvas(data.account)));
@@ -419,6 +421,14 @@ export default function GuidedDay() {
     else setHear(true);
   });
 
+  // The day read again after a Canvas sync replaced its deadlines: for this account only, and nothing else moves.
+  function takeDay(data: DayResponse | { state: "error" }) {
+    if (data.state !== "ok" || data.account !== account()) return;
+    store({ day: toKeep(data) });
+    setDay(data);
+  }
+  const dayAgain = useEffectEvent(takeDay);
+
   useEffect(() => {
     let live = true;
     const { saved } = readBoot();
@@ -429,8 +439,14 @@ export default function GuidedDay() {
     void getJson<DayResponse>("/api/day").then(async (data) => {
       if (!live || !onDay(data)) return;
       const mine = data.state === "ok" ? data.account : null;
-      // Canvas linked here is read again first, so the opening knows its assignments, but never waited on past 4 s.
-      const canvas = mine && readCanvas(mine) ? syncCanvas(mine).then(() => setCanvasOn(Boolean(readCanvas(mine)))) : null;
+      // Canvas linked here is read again first, so the opening knows its assignments, but never waited on past 4 s. A sync
+      // that worked replaced the Canvas deadlines, so Today reads the day again (the opening is still asked for once).
+      const canvas = mine && readCanvas(mine) ? syncCanvas(mine) : null;
+      void canvas?.then(async (read) => {
+        setCanvasOn(Boolean(mine && readCanvas(mine)));
+        const again = read?.state === "ok" ? await getJson<DayResponse>("/api/day") : null;
+        if (live && again) dayAgain(again);
+      });
       // The early opening stands only for this account, and only when it has no private facts or Canvas briefs to add.
       const reuse = early && mine && saved?.day.account === mine && !canvas && vaultTexts(mine).length === 0 ? early : null;
       const synced = canvas ? Promise.race([canvas, wait(4000)]) : Promise.resolve();
@@ -522,7 +538,11 @@ export default function GuidedDay() {
     // After a Done, said or tapped, Zeno says what is next.
     const said = next === "checkin" ? doneLine(res.goal) : res.reply;
     if (next === "checkin") setCelebrate(Boolean(res.progress));
-    if (next !== "focus" || openSteps(res.goal)[0]?.id !== openSteps(now.goal)[0]?.id) setTimer(null);
+    // A step's timer and its sources end with its focus, so a new step never opens on the last one's search.
+    if (next !== "focus" || openSteps(res.goal)[0]?.id !== openSteps(now.goal)[0]?.id) {
+      setTimer(null);
+      setSources(null);
+    }
     // A plan made or changed here is the card now: its first step, ready to start.
     if (next === "ready") changePick(stepCard(res.goal));
     if (done) {
@@ -659,6 +679,7 @@ export default function GuidedDay() {
     changePick(null);
     if (res.progress) changeProgress(res.progress);
     setTimer(null);
+    setSources(null);
     setDraft(null);
     setOptions([]);
     setCelebrate(Boolean(res.progress));
@@ -697,6 +718,7 @@ export default function GuidedDay() {
     setDraft(null);
     setCelebrate(false);
     setTimer(null);
+    setSources(null);
     setScreen("wrap");
     setLine(WRAP_LINE);
     speakLine(WRAP_LINE);
@@ -792,7 +814,8 @@ export default function GuidedDay() {
       setBookings((all) => ({ ...all, [key]: { ...entry, state: "failed" } }));
       if (res.state === "needs-permission" && cache.current) {
         store({ day: { ...cache.current.day, calendarWrite: "needs-permission" } });
-        setDay({ ...cache.current.day, calendarWrite: "needs-permission" });
+        // The day on screen, not the stored copy, which has no emails or Gmail link.
+        setDay((shown) => shown && { ...shown, calendarWrite: "needs-permission" });
       }
       return;
     }
@@ -938,18 +961,24 @@ export default function GuidedDay() {
   }
 
   // One line is one memory, notes are read like pasted notes. The routes sort them: a private fact comes back in
-  // `private`, unsaved, for this device; a never-list one is "not-kept".
-  async function addMemory(text: string) {
+  // `private`, unsaved, for this device; a never-list one is "not-kept". Returns false when the save failed and trying
+  // again could work, so the box gives the text back.
+  async function addMemory(text: string): Promise<boolean> {
     const notes = isNotes(text);
     setNote(notes ? "Reading your notes…" : null);
     const res = notes ? await post<ImportResponse>("/api/import", { text }) : await post<SaveMemoryResponse>("/api/memory", { text });
-    if (res.state === "signed-out") return showSignedOut();
-    if (res.state === "not-kept") return setNote("Zeno never keeps that kind of thing, so it isn't saved.");
-    if (res.state !== "ok" || !Array.isArray(res.memories)) return setNote(SAVE_FAIL);
-    setNote(null);
-    setMemories(res.memories);
-    const mine = account();
-    if (mine && keep(res.private).length > 0) setDevice(readVault(mine));
+    if (res.state === "signed-out") showSignedOut();
+    else if (res.state === "not-kept") setNote("Zeno never keeps that kind of thing, so it isn't saved.");
+    else if (res.state !== "ok" || !Array.isArray(res.memories)) {
+      setNote(SAVE_FAIL);
+      return false;
+    } else {
+      setNote(null);
+      setMemories(res.memories);
+      const mine = account();
+      if (mine && keep(res.private).length > 0) setDevice(readVault(mine));
+    }
+    return true;
   }
 
   // ---------- Canvas ----------
@@ -969,10 +998,7 @@ export default function GuidedDay() {
     nextOpening.current = null;
     const data = await getJson<DayResponse>("/api/day");
     if (data.state === "signed-out") return showSignedOut();
-    if (data.state === "ok" && data.account === account()) {
-      store({ day: { ...data, emails: [] } });
-      setDay(data);
-    }
+    takeDay(data);
     if (latest.current.screen === "ready") await refreshOpening();
   }
 
@@ -1074,6 +1100,7 @@ export default function GuidedDay() {
       device={device}
       account={screen && screen !== "signed-out" ? (name?.trim()[0]?.toUpperCase() ?? "") : null}
       canvas={daySet ? { account: daySet.account, linked: canvasOn } : null}
+      calendarAsk={day?.calendarWrite === "needs-permission"}
       voice={voice}
       on={{
         chip,
@@ -1093,7 +1120,7 @@ export default function GuidedDay() {
         send: (text) => void voice.submit(text),
         sheet: openSheet,
         forget,
-        add: (text) => void addMemory(text),
+        add: addMemory,
         retryMemory: () => void loadMemories(),
         book: (key) => void book(key),
         unbook: (key) => void unbook(key),

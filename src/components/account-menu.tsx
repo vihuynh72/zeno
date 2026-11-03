@@ -3,13 +3,15 @@
 import { useEffect, useRef } from "react";
 
 // The person's initial in the top bar opens Sound, Canvas, Privacy and Sign out. canvas is null until the page knows
-// whose account it is (the link is kept per account), true once Canvas is linked on this device.
+// whose account it is (the link is kept per account), true once Canvas is linked on this device. onCalendar is set only
+// when they unticked calendar access on Google's consent screen, so a block they ask for has a way through.
 export default function AccountMenu({
   initial,
   muted,
   canvas,
   onMute,
   onCanvas,
+  onCalendar,
   onSignOut,
   open,
 }: {
@@ -18,6 +20,7 @@ export default function AccountMenu({
   canvas: boolean | null;
   onMute(): void;
   onCanvas(): void;
+  onCalendar?: () => void;
   onSignOut(): void;
   open?: boolean;
 }) {
@@ -51,6 +54,11 @@ export default function AccountMenu({
             className="pill pill-small pill-quiet w-full"
           >
             {canvas ? "Canvas · connected" : "Connect Canvas"}
+          </button>
+        )}
+        {onCalendar && (
+          <button type="button" onClick={onCalendar} className="pill pill-small pill-quiet w-full">
+            Let Zeno add to your calendar
           </button>
         )}
         {/* A full load, not a client navigation: Back must not repaint the page from this load's saved day. */}

@@ -60,7 +60,10 @@ assert.equal(doneLine(goal(step("1", "done"), step("2", "todo", { minutes: 15 })
 assert.equal(doneLine(goal(step("1", "done"), step("2", "todo", { minutes: null }))), "Nice. Next: Step 2");
 assert.equal(doneLine(goal(step("1", "done"))), "Nice work. That was the last step.");
 // An email to write gets "Draft it in Gmail".
-for (const title of ["Email Prof Patel about an extension", "E-mail the TA", "write to the registrar", "Reply to Dana", "Message the study group"]) {
+for (const title of [
+  "Email Prof Patel about an extension", "E-mail the TA", "write to the registrar", "Reply to Dana", "Message the study group",
+  "Draft an email to Prof Patel", "Ask Prof Patel for an extension by email", "Send Ana a quick email",
+]) {
   assert.equal(isEmailStep(title), true, title);
 }
 for (const title of ["Read the email from Dana", "Emailing list cleanup", "Draft the methods section", "Messages"]) assert.equal(isEmailStep(title), false, title);
@@ -138,7 +141,8 @@ assert.equal(laterMinutes(goal(step("1", "todo", { minutes: 50 }))), 0, "small n
 assert.equal(laterMinutes(goal(step("1", "todo", { minutes: 90 }), step("2", "todo", { minutes: 90 }))), 120);
 assert.equal(laterMinutes(goal(step("1", "todo", { minutes: 90, scheduledAt: "2026-11-03T16:00:00Z" }))), 0);
 assert.equal(laterMinutes(null), 0);
-// The block: tomorrow's earliest room that fits, on a 5-minute start, named for the plan and linked to its first open step.
+// The block: tomorrow's earliest room that fits, on a 5-minute start, linked to the first open step and named as it is
+// saved, so the calendar and tomorrow's card say the same thing (Vi, Nov 2).
 const LA = "America/Los_Angeles";
 const slots = [
   { start: "2026-11-02T17:10:00Z", end: "2026-11-02T19:50:00Z" },
@@ -147,7 +151,7 @@ const slots = [
   { start: "2026-11-04T16:00:00Z", end: "2026-11-04T19:00:00Z" },
 ];
 assert.deepEqual(laterBlock(big, 60, slots, LA, now), {
-  title: "Essay",
+  title: "Step 2",
   kind: "step",
   start: "2026-11-03T16:05:00.000Z",
   end: "2026-11-03T17:05:00.000Z",
@@ -194,14 +198,20 @@ const grouped = groupFacts([
 assert.deepEqual(grouped.map((g) => g.name), ["About you", "Routines", "How you work best"]);
 assert.equal(grouped[0].facts[0].device, true);
 
-// First sign-in says what the scan found, counting the projects group as deadlines; nothing found says so plainly.
-const found = (...groups: MemoryGroup[]) => groups.map((group) => ({ group }));
+// First sign-in says what the scan found, counting the projects facts that name a day as deadlines; nothing found says so.
+const found = (...groups: MemoryGroup[]) =>
+  groups.map((group) => ({ group, text: group === "projects" ? "Has the BIO 121 lab report due November 6." : "Is a junior biology major." }));
 assert.equal(
   foundLine(found("routines", "projects", "projects", "about", "routines", "people", "projects", "work-style", "interests")),
   "I read your calendar and email and learned 9 things, including 3 deadlines.",
 );
 assert.equal(foundLine(found("projects")), "I read your calendar and email and learned 1 thing, including 1 deadline.");
 assert.equal(foundLine(found("routines", "about")), "I read your calendar and email and learned 2 things.");
+assert.equal(
+  foundLine([{ group: "projects", text: "Is building a portfolio site with Jess." }, { group: "projects", text: "Has Midterm 2 on Nov 18." }]),
+  "I read your calendar and email and learned 2 things, including 1 deadline.",
+  "an undated project is no deadline",
+);
 assert.equal(foundLine([]), "I couldn't find much yet. I'll learn as you go.");
 
 // Memory's Add box: one line is one memory; a line break or more than 200 characters is pasted notes.

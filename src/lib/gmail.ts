@@ -55,7 +55,7 @@ async function gmailFetch(accessToken: string, path: string) {
 
 // Gmail's Promotions, Social, Updates and Forums tabs, and no-reply senders: mail nobody answers.
 const BULK = /^CATEGORY_(PROMOTIONS|SOCIAL|UPDATES|FORUMS)$/;
-const NO_REPLY = /no-?reply|do-?not-?reply|notifications?@|mailer-daemon|newsletter/i;
+const NO_REPLY = /no[-_]?reply|do[-_]?not[-_]?reply|notifications?@|mailer-daemon|newsletter/i;
 const IMPORTANT = "in:inbox -category:promotions -category:social -category:updates -category:forums";
 
 // Only important mail (Vi, Nov 2), people and school: the newest 15 outside the bulk tabs, without bulk or no-reply

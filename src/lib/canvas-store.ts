@@ -33,8 +33,11 @@ export const clearCanvas = (account: string) => write(account, null);
 
 // Reads Canvas through POST /api/canvas. A link is saved only once Canvas accepted it, with the briefs of the 3
 // soonest unsubmitted assignments; a refused token (bad-token, bad-url, not-allowed) forgets the saved link, so the
-// account menu offers Connect Canvas again. Network trouble keeps everything as it was.
-export async function syncCanvas(account: string, link: CanvasLink | null = readCanvas(account)): Promise<CanvasResponse | null> {
+// account menu offers Connect Canvas again. Network trouble keeps everything as it was. `connect` is a link typed in
+// now; without it the saved link is read again, and its answer is kept only while that link is still saved, so a
+// Disconnect or Sign out during the request stays done.
+export async function syncCanvas(account: string, connect?: CanvasLink): Promise<CanvasResponse | null> {
+  const link = connect ?? readCanvas(account);
   if (!link) return null;
   const res = await fetch("/api/canvas", {
     method: "POST",
@@ -43,7 +46,7 @@ export async function syncCanvas(account: string, link: CanvasLink | null = read
   })
     .then((response) => response.json() as Promise<CanvasResponse>)
     .catch((): CanvasResponse => ({ state: "error" }));
-  if (res.state === "ok") {
+  if (res.state === "ok" && (connect || readCanvas(account)?.token === link.token)) {
     const briefs = res.assignments
       .filter((item) => !item.submitted && item.instructions)
       .slice(0, 3)
