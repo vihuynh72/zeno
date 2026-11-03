@@ -1,6 +1,7 @@
 export type ListenHandlers = {
   onSpeechStart?: () => void;
   onPartial?: (text: string) => void;
+  onSpeechEnd?: () => void;
   onFinal: (text: string) => void;
   // Errors are final (mic and socket already released). "no-speech" never fires: silence just keeps listening.
   onError?: (reason: "blocked" | "unsupported" | "network" | "no-speech") => void;
@@ -91,6 +92,7 @@ export async function listenMeta(
         handlers.onSpeechStart?.();
       }
       else if (event.type === "transcript" && !event.final && text) handlers.onPartial?.(text);
+      else if (event.type === "speechEnd") handlers.onSpeechEnd?.();
       else if (event.type === "speechComplete" && text) handlers.onFinal(text);
     };
     ws.onclose = ({ code }) => {
