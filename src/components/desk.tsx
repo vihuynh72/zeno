@@ -202,7 +202,7 @@ function DeskBody({ tab: opensOn = "today", today, goal, goals, progress, onSign
           <h2 className="sr-only">Today</h2>
           {/* Goals, Mail, Deadlines, Today (Vi, Nov 3): one column on phones; on a laptop the mail takes the right side. */}
           <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2 lg:grid-rows-[auto_auto_1fr]">
-            <Goals plans={plans} date={date} hint={deadlines.length > 0} onGoal={onGoal} />
+            <Goals plans={plans} date={date} hint={deadlines.length > 0} failed={Boolean(today && today.sources.goals !== "ok")} onGoal={onGoal} />
             {today && <Mail today={today} onReply={onReply} />}
             {deadlines.length > 0 && <Deadlines deadlines={deadlines} plans={plans} onGoal={onGoal} onDeadline={onDeadline} />}
             {today && <Calendar today={today} now={now} booked={booked} />}
@@ -219,14 +219,14 @@ function DeskBody({ tab: opensOn = "today", today, goal, goals, progress, onSign
   );
 }
 
-// Every open plan, each row one tap into that plan's desk.
-function Goals({ plans, date, hint, onGoal }: { plans: Goal[]; date: string; hint: boolean; onGoal?(goalId: string): void }) {
+// Every open plan, each row one tap into that plan's desk. failed: the plans couldn't be read, so it never says "none".
+function Goals({ plans, date, hint, failed, onGoal }: { plans: Goal[]; date: string; hint: boolean; failed: boolean; onGoal?(goalId: string): void }) {
   return (
     <section className="mini lg:col-start-1">
       <h3 className="text-[20px] leading-8 font-bold">Goals</h3>
       <ul className="lines mt-2">
         {plans.length === 0 ? (
-          <li className="text-ink-2">No plans yet.{hint && " Pick a deadline below."}</li>
+          <li className="text-ink-2">{failed ? "Zeno couldn't read your plans just now." : `No plans yet.${hint ? " Pick a deadline below." : ""}`}</li>
         ) : (
           plans.map((plan) => (
             <li key={plan.id}>

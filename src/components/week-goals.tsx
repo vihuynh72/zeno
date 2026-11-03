@@ -86,14 +86,19 @@ export default function WeekGoals({ now, goals, deadlines, progress, onGoal, onD
 
   if (!today || !monday) return null;
   const read = week?.monday === monday && week.data.state === "ok" ? week.data : null;
+  const days = weekItems(monday, goals, deadlines);
   return (
-    <section className="mini">
-      <h2 className="text-[20px] leading-8 font-bold">
-        <span className="sr-only">Week of </span>
-        {weekLabel(monday)}
-      </h2>
+    // The home card's width, so a laptop's bars stay short enough to read.
+    <section className="mini max-w-[760px]">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+        <h2 className="text-[20px] leading-8 font-bold">
+          <span className="sr-only">Week of </span>
+          {weekLabel(monday)}
+        </h2>
+        {days.every((day) => day.items.length === 0) && <p className="text-ink-2">Nothing due this week.</p>}
+      </div>
       <ol className="lines mt-2">
-        {weekItems(monday, goals, deadlines).map(({ date, items }, i) => {
+        {days.map(({ date, items }, i) => {
           const past = date < today;
           const free = read && freeMinutes(read.days.find((day) => day.date === date)?.events ?? [], date, read.timeZone, now);
           // A past day says only that she worked, never what she missed.
