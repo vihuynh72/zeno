@@ -1,20 +1,17 @@
 "use client";
 
-import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { DayEmail, DayEvent, Deadline, Goal, Progress, SourceState, Step } from "@/lib/day";
+import { type CSSProperties, type KeyboardEvent, type MouseEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import type { DayEmail, DayEvent, Deadline, Goal, MailResponse, Progress, SourceState } from "@/lib/day";
 import type { Today } from "@/components/day-view";
-import { browserZone, freeGaps, httpsOnly, markEvents, senderName, timeRange } from "@/components/desk-rows";
+import { browserZone, freeGaps, httpsOnly, markEvents, senderName, snippetLine, timeRange } from "@/components/desk-rows";
+import { deskPlans, doneCaption, dueShort, sameGoal } from "@/components/goal-rows";
+import WeekGoals, { GoalLines } from "@/components/week-goals";
 import WeekGrid from "@/components/week-grid";
 import { formatTime, localDate } from "@/lib/tz";
 
-const STATUS: Record<Step["status"], string> = { done: "Done", doing: "Doing", todo: "To do", skipped: "Skipped" };
-
-// A step's bar on the roadmap strip: done in ink, the one in progress in margin red.
-const BAR: Record<Step["status"], string> = {
-  done: "border-ink text-ink-2 line-through",
-  doing: "border-margin font-bold",
-  todo: "border-track",
-  skipped: "border-track text-ink-2 line-through",
+// An open email's own rules scroll with its words, on card stock so the card's fixed rules don't show through.
+const RULED: CSSProperties = {
+  background: "linear-gradient(var(--rule) 1px, transparent 1px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100% var(--lh) local, var(--card)",
 };
 
 const SOURCE_NOTE: Record<Exclude<SourceState, "ok">, (name: string) => string> = {
@@ -59,7 +56,7 @@ function onBackdrop(event: MouseEvent<HTMLDialogElement>) {
   return event.target === event.currentTarget && outside;
 }
 
-// Today's calendar and inbox in one wide view, unfolded from the card: the seed of the workstation.
+// The Desk, unfolded from the card: Today's working cards (goals, mail, deadlines, the day) and the Week's goals.
 export default function Desk({ open, onClose, ...rest }: DeskProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const downOnBackdrop = useRef(false);
@@ -120,11 +117,16 @@ function unfold(dialog: HTMLDialogElement, from: DOMRect | undefined) {
   dialog.firstElementChild?.animate([{ opacity: 0.4 }, { opacity: 1 }], { duration: 120, easing: "ease-out" });
 }
 
-function DeskBody({ tab: opensOn = "today", today, goal, onSignIn, booked = [] }: Omit<DeskProps, "open" | "onClose">) {
+function DeskBody({ tab: opensOn = "today", today, goal, goals, progress, onSignIn, onGoal, onDeadline, onReply, booked = [] }: Omit<DeskProps, "open" | "onClose">) {
   // Wall clock to the minute; 0 on the server, so nothing is marked before the browser knows the time.
   const now = useSyncExternalStore(everyHalfMinute, () => Math.floor(Date.now() / 60_000) * 60_000, () => 0);
   const [tab, setTab] = useState(opensOn);
+  const [view, setView] = useState<"goals" | "calendar">("goals"); // the Week's two views
   const noAccess = today && (today.sources.calendar === "no-access" || today.sources.email === "no-access");
+  const plans = deskPlans(goal, goals);
+  const deadlines = today?.sources.calendar === "ok" ? (today.deadlines ?? []) : [];
+  const date = now ? localDate(browserZone(), new Date(now)) : "";
+  const grid = tab === "week" && view === "calendar";
 
   // Arrow keys move between the two views, as a tab list does.
   function onTabKey(event: KeyboardEvent<HTMLDivElement>) {
@@ -137,7 +139,7 @@ function DeskBody({ tab: opensOn = "today", today, goal, onSignIn, booked = [] }
 
   return (
     // Fills the dialog, so a click inside never reads as a backdrop click.
-    <div className={`wrap-break-word ${tab === "week" ? "flex h-full flex-col" : "min-h-full"}`} data-view={tab}>
+    <div className={`wrap-break-word ${grid ? "flex h-full flex-col" : "min-h-full"}`} data-view={tab}>
       <div className="sticky top-0 z-10 flex items-center justify-between gap-4 bg-desk px-4 pt-6 pb-4 sm:px-8">
         <div role="tablist" aria-label="Desk" className="flex gap-6" onKeyDown={onTabKey}>
           {(Object.keys(TABS) as DeskTab[]).map((name) => (
@@ -173,24 +175,39 @@ function DeskBody({ tab: opensOn = "today", today, goal, onSignIn, booked = [] }
       </div>
 
       {tab === "week" ? (
-        <div id="desk-week" role="tabpanel" aria-labelledby="desk-tab-week" className="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4 sm:px-8 sm:pb-8">
-          <WeekGrid now={now} onSignIn={onSignIn} />
+        <div
+          id="desk-week"
+          role="tabpanel"
+          aria-labelledby="desk-tab-week"
+          className={`flex flex-col gap-4 px-4 sm:px-8 ${grid ? "min-h-0 flex-1 pb-4 sm:pb-8" : "pb-8"}`}
+        >
+          {/* Goals across the week first (Vi, Nov 3); the calendar grid one tap away. */}
+          <div className="-ml-1 flex items-center gap-2 text-ink-2">
+            <button type="button" onClick={() => setView("goals")} aria-pressed={!grid} data-lead={!grid || undefined} className="link">
+              Goals
+            </button>
+            <span aria-hidden="true">·</span>
+            <button type="button" onClick={() => setView("calendar")} aria-pressed={grid} data-lead={grid || undefined} className="link">
+              Calendar
+            </button>
+          </div>
+          {grid ? (
+            <WeekGrid now={now} onSignIn={onSignIn} />
+          ) : (
+            <WeekGoals now={now} goals={plans} deadlines={deadlines} progress={progress} onGoal={onGoal} onDeadline={onDeadline} />
+          )}
         </div>
       ) : (
         <div id="desk-today" role="tabpanel" aria-labelledby="desk-tab-today" className="flex flex-col gap-6 px-4 pb-8 sm:px-8">
           <h2 className="sr-only">Today</h2>
-          {goal && goal.steps.length > 0 && <Roadmap goal={goal} />}
-          {today ? (
-            <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-              <div className="flex flex-col gap-6">
-                <Calendar today={today} now={now} booked={booked} />
-                {today.sources.calendar === "ok" && today.deadlines && today.deadlines.length > 0 && <Deadlines deadlines={today.deadlines} />}
-              </div>
-              <Inbox today={today} />
-            </div>
-          ) : (
-            <p className="text-ink-2">I couldn&apos;t load today just now. Reload the page to try again.</p>
-          )}
+          {/* Goals, Mail, Deadlines, Today (Vi, Nov 3): one column on phones; on a laptop the mail takes the right side. */}
+          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2 lg:grid-rows-[auto_auto_1fr]">
+            <Goals plans={plans} date={date} hint={deadlines.length > 0} onGoal={onGoal} />
+            {today && <Mail today={today} onReply={onReply} />}
+            {deadlines.length > 0 && <Deadlines deadlines={deadlines} plans={plans} onGoal={onGoal} onDeadline={onDeadline} />}
+            {today && <Calendar today={today} now={now} booked={booked} />}
+          </div>
+          {!today && <p className="text-ink-2">I couldn&apos;t load today just now. Reload the page to try again.</p>}
           {noAccess && (
             <button type="button" onClick={onSignIn} className="pill pill-small self-start">
               Sign in again
@@ -202,33 +219,24 @@ function DeskBody({ tab: opensOn = "today", today, goal, onSignIn, booked = [] }
   );
 }
 
-function Roadmap({ goal }: { goal: Goal }) {
-  const done = goal.steps.filter((s) => s.status === "done").length;
-  const current = goal.steps.find((s) => s.status === "doing") ?? goal.steps.find((s) => s.status === "todo");
+// Every open plan, each row one tap into that plan's desk.
+function Goals({ plans, date, hint, onGoal }: { plans: Goal[]; date: string; hint: boolean; onGoal?(goalId: string): void }) {
   return (
-    <section className="mini">
-      <div className="flex items-baseline justify-between gap-4">
-        <h3 className="min-w-0 text-[20px] leading-8 font-bold">{goal.title}</h3>
-        <p className="shrink-0 text-ink-2">
-          <span className="font-mono">{done}</span> of <span className="font-mono">{goal.steps.length}</span> done
-        </p>
-      </div>
-      <ol className="mt-2 grid gap-2 sm:gap-4" style={{ gridTemplateColumns: `repeat(${goal.steps.length}, minmax(0, 1fr))` }}>
-        {goal.steps.map((s) => (
-          <li key={s.id} className={`border-t-4 pt-2 ${BAR[s.status]}`}>
-            <span className="sr-only">{STATUS[s.status]}: </span>
-            {/* Phones show only the bars here, and the current step on its own line below. */}
-            <span className="block truncate max-sm:sr-only" title={s.title}>
-              {s.title}
-            </span>
-          </li>
-        ))}
-      </ol>
-      {current && (
-        <p className="sm:hidden" aria-hidden="true">
-          {current.status === "doing" ? "Now" : "Next"}: {current.title}
-        </p>
-      )}
+    <section className="mini lg:col-start-1">
+      <h3 className="text-[20px] leading-8 font-bold">Goals</h3>
+      <ul className="lines mt-2">
+        {plans.length === 0 ? (
+          <li className="text-ink-2">No plans yet.{hint && " Pick a deadline below."}</li>
+        ) : (
+          plans.map((plan) => (
+            <li key={plan.id}>
+              <button type="button" onClick={() => onGoal?.(plan.id)} className="group block w-full text-left active:opacity-60">
+                <GoalLines title={plan.title} bold aside={plan.due && date ? dueShort(plan.due, date) : undefined} goal={plan} caption={doneCaption(plan)} />
+              </button>
+            </li>
+          ))
+        )}
+      </ul>
     </section>
   );
 }
@@ -248,7 +256,7 @@ function Calendar({ today, now, booked }: { today: Today; now: number; booked: D
     .flatMap((slot) => freeGaps(busy, Math.max(Date.parse(slot.start), now), Date.parse(slot.end), 15 * 60_000))
     .slice(0, 3);
   return (
-    <section className="mini">
+    <section className="mini lg:col-start-1">
       <h3 className="text-[20px] leading-8 font-bold">
         {now ? new Date(now).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }) : "Calendar"}
       </h3>
@@ -296,42 +304,139 @@ function Calendar({ today, now, booked }: { today: Today; now: number; booked: D
   );
 }
 
-function Deadlines({ deadlines }: { deadlines: Deadline[] }) {
+// A deadline with a plan shows that plan's bar and opens it; one without plans it (onDeadline).
+function Deadlines({ deadlines, plans, onGoal, onDeadline }: { deadlines: Deadline[]; plans: Goal[]; onGoal?(goalId: string): void; onDeadline?(deadline: Deadline): void }) {
   return (
-    <section className="mini">
+    <section className="mini lg:col-start-1">
       <h3 className="text-[20px] leading-8 font-bold">Deadlines</h3>
       <ul className="lines mt-2">
-        {deadlines.slice(0, 5).map((deadline, i) => (
-          <li key={`${deadline.date}:${deadline.title}:${i}`} className="flex items-baseline gap-4">
-            <span className={`min-w-0 flex-1 line-clamp-2 ${deadline.daysLeft === 0 ? "font-bold" : ""}`} title={deadline.title}>
-              {deadline.title}
-            </span>
-            <span className="shrink-0 text-ink-2">
-              {deadline.daysLeft === 0 ? (
-                "Due today"
-              ) : deadline.daysLeft === 1 ? (
-                "Tomorrow"
-              ) : (
-                <>
-                  in <span className="font-mono">{deadline.daysLeft}</span> days
-                </>
-              )}
-            </span>
-          </li>
-        ))}
+        {deadlines.slice(0, 5).map((deadline, i) => {
+          const plan = plans.find((p) => sameGoal(p.title, deadline.title));
+          const when = deadline.daysLeft === 0 ? "Due today" : deadline.daysLeft === 1 ? "Tomorrow" : `in ${deadline.daysLeft} days`;
+          return (
+            <li key={`${deadline.date}:${deadline.title}:${i}`}>
+              <button
+                type="button"
+                onClick={() => (plan ? onGoal?.(plan.id) : onDeadline?.(deadline))}
+                className="group block w-full text-left active:opacity-60"
+              >
+                <GoalLines title={deadline.title} bold={deadline.daysLeft === 0} aside={when} goal={plan} caption={plan ? doneCaption(plan) : "Not started"} />
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
 }
 
-// Only important mail reaches the desk: one line each, sender and subject, unread in bold.
-function Inbox({ today }: { today: Today }) {
+// Only important mail reaches the desk, mail that asks her something first (Vi, Nov 3). A tap opens one email in place,
+// read in full from Gmail; its text lives only in this card's state, never stored or logged.
+function Mail({ today, onReply }: { today: Today; onReply?(email: DayEmail): void }) {
   const { email } = today.sources;
-  const gmail = httpsOnly(today.mailUrl);
+  const gmail = httpsOnly(today.mailUrl)?.split("#")[0];
+  const list = [...today.emails.filter((mail) => mail.asks), ...today.emails.filter((mail) => !mail.asks)].slice(0, 6);
+  const asking = list.filter((mail) => mail.asks);
+  const other = list.filter((mail) => !mail.asks);
+  const [open, setOpen] = useState<string | null>(null);
+  const [read, setRead] = useState<{ id: string; mail: MailResponse } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const stop = new AbortController();
+    // no-store: the browser's HTTP cache never keeps the text either.
+    fetch(`/api/mail/${encodeURIComponent(open)}`, { signal: stop.signal, cache: "no-store" })
+      .then((response) => response.json() as Promise<MailResponse>)
+      .catch((): MailResponse => ({ state: "error" }))
+      .then((mail) => {
+        if (!stop.signal.aborted) setRead({ id: open, mail });
+      });
+    return () => stop.abort();
+  }, [open]);
+
+  // One email open at a time; closing one drops its text.
+  function toggle(id: string) {
+    setRead(null);
+    setOpen((was) => (was === id ? null : id));
+  }
+
+  const row = (mail: DayEmail, i: number) => {
+    const { id } = mail;
+    const snippet = mail.asks ? snippetLine(mail.snippet) : "";
+    const head = (
+      <>
+        <span className={`block truncate max-sm:line-clamp-2 max-sm:whitespace-normal ${mail.unread ? "font-bold" : ""}`}>
+          {mail.unread && <span className="sr-only">Unread: </span>}
+          {senderName(mail.from)}
+          <span className="px-2 font-normal text-ink-2" aria-hidden="true">
+            ·
+          </span>
+          <span className="sr-only">: </span>
+          <span className="underline-offset-4 group-hover:underline">{mail.subject}</span>
+        </span>
+        {snippet && (
+          <span className="block truncate text-ink-2">
+            <span className="sr-only">: </span>
+            {snippet}
+          </span>
+        )}
+      </>
+    );
+    // A row from a day saved before Nov 3 has no id, so it doesn't open.
+    if (!id) return <li key={`${i}:${mail.from}:${mail.subject}`}>{head}</li>;
+    const shown = open === id && read?.id === id ? read.mail : null;
+    return (
+      <li key={id}>
+        <button
+          type="button"
+          onClick={() => toggle(id)}
+          aria-expanded={open === id}
+          aria-controls={open === id ? `mail-${id}` : undefined}
+          className="group block w-full text-left active:opacity-60"
+        >
+          {head}
+        </button>
+        {open === id && (
+          <div id={`mail-${id}`}>
+            {!shown ? (
+              <p className="text-ink-2">Opening the email…</p>
+            ) : shown.state !== "ok" ? (
+              <p className="text-ink-2">Couldn&apos;t open it.</p>
+            ) : shown.text.trim() ? (
+              // About 280px of the email at a time, its paragraphs kept, scrolling inside the card.
+              <div
+                role="region"
+                aria-label={`Email from ${senderName(mail.from)}`}
+                tabIndex={0}
+                className="max-h-72 overflow-y-auto overscroll-contain whitespace-pre-line"
+                style={RULED}
+              >
+                {shown.text.trim()}
+              </div>
+            ) : (
+              <p className="text-ink-2">This email has no text.</p>
+            )}
+            <p className="flex flex-wrap gap-x-4">
+              <button type="button" onClick={() => onReply?.(mail)} className={`underline underline-offset-4 ${mail.asks ? "font-bold" : "text-ink-2"}`}>
+                Reply
+              </button>
+              {gmail && (
+                <a href={`${gmail}#inbox/${encodeURIComponent(id)}`} target="_blank" rel="noopener noreferrer" className="text-ink-2 underline underline-offset-4">
+                  Open in Gmail
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
+              )}
+            </p>
+          </div>
+        )}
+      </li>
+    );
+  };
+
   return (
-    <section className="mini">
+    <section className="mini lg:col-start-2 lg:row-span-3 lg:row-start-1">
       <div className="flex items-baseline justify-between gap-4">
-        <h3 className="text-[20px] leading-8 font-bold">Inbox</h3>
+        <h3 className="text-[20px] leading-8 font-bold">Mail</h3>
         {email === "ok" && today.unreadEmail > 0 && (
           <p className="text-ink-2">
             <span className="font-mono">{today.unreadEmail}</span> unread
@@ -339,27 +444,26 @@ function Inbox({ today }: { today: Today }) {
         )}
       </div>
       <div className="lines mt-2">
-        <ul>
-          {email !== "ok" ? (
-            <li className="text-ink-2">{SOURCE_NOTE[email]("inbox")}</li>
-          ) : today.emails.length === 0 ? (
-            <li className="text-ink-2">Nothing important in your inbox.</li>
-          ) : (
-            today.emails.slice(0, 6).map((mail, i) => (
-              <li
-                key={`${i}:${mail.from}:${mail.subject}`}
-                className={`truncate max-sm:line-clamp-2 max-sm:whitespace-normal ${mail.unread ? "font-bold" : ""}`}
-              >
-                {mail.unread && <span className="sr-only">Unread: </span>}
-                {senderName(mail.from)}
-                <span className="px-2 font-normal text-ink-2" aria-hidden="true">
-                  ·
-                </span>
-                {mail.subject}
-              </li>
-            ))
-          )}
-        </ul>
+        {email !== "ok" ? (
+          <p className="text-ink-2">{SOURCE_NOTE[email]("inbox")}</p>
+        ) : list.length === 0 ? (
+          <p className="text-ink-2">Nothing important in your inbox.</p>
+        ) : (
+          <>
+            {asking.length > 0 && (
+              <>
+                <h4 className="font-bold text-ink-2">Asks you</h4>
+                <ul>{asking.map(row)}</ul>
+              </>
+            )}
+            {other.length > 0 && (
+              <>
+                {asking.length > 0 && <h4 className="font-bold text-ink-2">Other mail</h4>}
+                <ul>{other.map(row)}</ul>
+              </>
+            )}
+          </>
+        )}
         {gmail && (
           <p>
             <a href={gmail} target="_blank" rel="noopener noreferrer" className="text-ink-2 underline underline-offset-4">
