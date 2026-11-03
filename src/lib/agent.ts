@@ -363,9 +363,11 @@ export function openingPrompt(context: UserContext, finished: string[], refs: Re
   const { atRisk, streak } = context.progress;
   const late = localHour(context.timeZone, now) < 5;
   const free = late ? null : freeLine(context, now);
+  // Only what she did: measured live, "Nothing got finished yesterday" came back whenever there was nothing to name.
+  const done = finished.length > 0 ? "what they finished yesterday (one step by name, or how many), then " : streak > 1 ? `their ${streak}-day streak, then ` : "";
   return [
     "Write the line Zeno says under the app's greeting when they open it. The app already greets them by name and lists their goals for them to pick, so never start with a greeting or their name, never pick or suggest one thing to start, and ask no question.",
-    `say: one or two short spoken sentences, at most 25 words in all, all statements. Say what they finished yesterday (one step by name, or how many), or their streak when they finished nothing yesterday, then their free time until their next event, like "You're free until PHIL 134 at 1:30."`,
+    `say: one or two short spoken sentences, at most 25 words in all, all statements. Say ${done}their free time until their next event, like "You're free until PHIL 134 at 1:30." Never mention what they didn't finish, a streak they don't have, or anything they missed.`,
     ...(late ? ["It is late at night: say to set up tomorrow's first step and sleep, not to start new work."] : []),
     ...(atRisk ? [`Their streak is at risk tonight: lead with it, like "One small step keeps your ${streak}-day streak going."`] : []),
     ...(pattern
@@ -377,7 +379,7 @@ export function openingPrompt(context: UserContext, finished: string[], refs: Re
     "Never read out a list, and never invent anything.",
     "",
     dayToText(context, now),
-    `Steps they finished yesterday: ${finished.length > 0 ? `${finished.join("; ")}.` : "none."}`,
+    ...(finished.length > 0 ? [`Steps they finished yesterday: ${finished.join("; ")}.`] : []),
     ...(free ? [`Their free time now: ${free}`] : []),
     planText(context, refs),
   ].join("\n");

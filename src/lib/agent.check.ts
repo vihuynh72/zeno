@@ -761,10 +761,16 @@ assert.doesNotMatch(dayToText({ ...context, freeState: "error", free: [{ start: 
 const tenThirty = new Date("2026-10-29T17:30:00Z"); // 10:30 AM in Los Angeles
 const homeLine = openingPrompt({ ...busyDay, goal }, ["Draft the intro"], new Map(), tenThirty);
 assert.match(homeLine, /^Write the line Zeno says under the app's greeting[^\n]*never start with a greeting or their name, never pick or suggest one thing to start, and ask no question\.\n/);
-assert.match(homeLine, /\nsay: one or two short spoken sentences, at most 25 words in all, all statements\. Say what they finished yesterday[^\n]*then their free time until their next event/);
+assert.match(homeLine, /\nsay: one or two short spoken sentences, at most 25 words in all, all statements\. Say what they finished yesterday \(one step by name, or how many\), then their free time until their next event/);
 assert.match(homeLine, /\nSteps they finished yesterday: Draft the intro\.\nTheir free time now: You're free until PHIL 134 at 1:30 PM\.\nCurrent goal: History essay\n/);
 assert.doesNotMatch(homeLine, /pick: |Start now\?|Greet them|late at night|streak is at risk/);
-assert.match(openingPrompt(context, [], new Map(), tenThirty), /\nSteps they finished yesterday: none\.\nTheir free time now: Your calendar's clear for the rest of today\.\n/);
+// No guilt (Wohl, Pychyl & Bennett): only what they did is named, never what they didn't (live, Nov 3: "Nothing got
+// finished yesterday and there's no streak running.").
+const quietDay = openingPrompt(context, [], new Map(), tenThirty);
+assert.match(quietDay, /\nsay: [^\n]*all statements\. Say their free time until their next event, like [^\n]*Never mention what they didn't finish, a streak they don't have, or anything they missed\.\n/);
+assert.match(quietDay, /\nTheir free time now: Your calendar's clear for the rest of today\.\n/);
+assert.doesNotMatch(quietDay, /Steps they finished yesterday|Say what they finished/);
+assert.match(openingPrompt({ ...context, progress: { ...progress, streak: 4 } }, [], new Map(), tenThirty), /\nsay: [^\n]*Say their 4-day streak, then their free time/);
 assert.doesNotMatch(openingPrompt({ ...context, calendarState: "error" }, [], new Map(), tenThirty), /Their free time now/, "never guessed from an unread calendar");
 const night = openingPrompt(busyDay, [], new Map(), new Date("2026-10-30T08:10:00Z")); // 1:10 AM in Los Angeles
 assert.match(night, /\nIt is late at night: say to set up tomorrow's first step and sleep, not to start new work\.\n/);

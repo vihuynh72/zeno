@@ -467,9 +467,15 @@ try {
   assert.deepEqual(await titles(), ["CS 146 quiz prep", "BIO 20 lab report", "HIST 15 essay"], "the current plan, then by due date; a done one is not open");
   assert.deepEqual((await openGoals(switchEmail))[2].steps.map((step) => step.title), ["Read the prompt", "Outline claim 1"], "each with its steps");
 
+  // A step running in the current plan goes back in line when another plan opens.
+  await setStepStatus(switchEmail, quiz.steps[0].id, "doing");
   assert.equal((await activateGoal(switchEmail, essay.id))?.id, essay.id);
   assert.equal((await currentGoal(switchEmail))?.id, essay.id, "the opened plan is current");
   assert.deepEqual(await titles(), ["HIST 15 essay", "BIO 20 lab report", "CS 146 quiz prep"], "the old one is paused, not lost");
+  const left = (await openGoals(switchEmail)).find((goal) => goal.id === quiz.id)?.steps[0];
+  assert.deepEqual([left?.status, left?.startedAt], ["todo", null], "its running step is back in line");
+  // A refused one changes nothing: the current plan stays current and its running step keeps going.
+  await setStepStatus(switchEmail, essay.steps[0].id, "doing");
   for (const [label, who, id] of [
     ["a done plan", switchEmail, note.id],
     ["another person's", `someone-else-${crypto.randomUUID()}@zeno.local`, lab.id],
@@ -478,7 +484,7 @@ try {
     assert.equal(await activateGoal(who, id), null, label);
   }
   assert.equal((await currentGoal(switchEmail))?.id, essay.id, "none of them paused the current one");
-  assert.deepEqual((await activateGoal(switchEmail, essay.id))?.steps.map((step) => step.status), ["todo", "todo"], "opening the current one keeps it");
+  assert.deepEqual((await activateGoal(switchEmail, essay.id))?.steps.map((step) => step.status), ["doing", "todo"], "nor stopped its step, and opening it again keeps it");
 
   // Yesterday's finished steps, on the person's clock: not today's.
   await setStepStatus(switchEmail, essay.steps[0].id, "done");

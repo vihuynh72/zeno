@@ -106,6 +106,12 @@ export async function activateGoal(email: string, goalId: string): Promise<Goal 
   await ensureSchema();
   const sql = getSql();
   const results = await sql.transaction([
+    // One step at a time across plans too: a step left running in another plan goes back in line, as Stop for now leaves it.
+    sql`
+      UPDATE steps SET status = 'todo', started_at = NULL
+      WHERE user_email = ${email} AND status = 'doing' AND goal_id <> ${goalId}
+        AND EXISTS (SELECT 1 FROM goals WHERE id = ${goalId} AND user_email = ${email} AND status <> 'done')
+    `,
     sql`
       UPDATE goals SET status = 'paused', updated_at = now()
       WHERE user_email = ${email} AND status = 'active' AND id <> ${goalId}
@@ -114,7 +120,7 @@ export async function activateGoal(email: string, goalId: string): Promise<Goal 
     sql`UPDATE goals SET status = 'active', updated_at = now() WHERE id = ${goalId} AND user_email = ${email} AND status <> 'done' RETURNING id`,
     goalQuery(email, goalId),
   ]);
-  return results[1].length > 0 ? goalFrom(results[2]) : null;
+  return results[2].length > 0 ? goalFrom(results[3]) : null;
 }
 
 // Any goal at all, paused and done ones included.
