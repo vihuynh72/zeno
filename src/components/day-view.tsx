@@ -1,17 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode, type Ref } from "react";
+import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode, type Ref } from "react";
 import type { DayEmail, DayEvent, Deadline, FirstPick, FreeSlot, Goal, Memory, Progress, SourceState, Step } from "@/lib/day";
 import { localDate } from "@/lib/tz";
 import type { VaultFact } from "@/lib/vault";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
-import { cardSize, clock, dueLabel, openSteps, STAGE_OF, STAGES, whenLabel, type Fact, type Screen } from "@/components/day-flow";
+import { cardSize, clock, dueLabel, openSteps, type Fact, type Screen } from "@/components/day-flow";
 import AccountMenu from "@/components/account-menu";
 import BookingChip, { type Booking } from "@/components/booking-chip";
 import Desk from "@/components/desk";
 import { bookedEvents } from "@/components/desk-rows";
 import MemorySheet from "@/components/memory-sheet";
-import NotedLines, { type Quiet } from "@/components/noted-line";
 import type { Booked } from "@/components/week-grid";
 import PrepPack from "@/components/prep-pack";
 import StreakRow from "@/components/streak-row";
@@ -30,9 +29,6 @@ export type Today = {
   deadlines?: Deadline[];
 };
 
-// A tap-first answer under the card; "ink" is the one to take, "quiet" the way out.
-export type Chip = { label: string; tone?: "ink" | "quiet" };
-
 export type DayViewProps = {
   screen: Screen | null; // null until the browser knows whose day it is
   line: string; // Zeno's latest line
@@ -46,30 +42,27 @@ export type DayViewProps = {
   leaving: Step | null; // the finished card on its way to the pile
   note: string | null; // one plain line under the pills
   signInFailed: boolean;
-  busy: boolean; // a save is in flight, so the pills wait
-  chips: Chip[]; // the answers to tap (on focus, plan and check-in they sit above the pills)
-  dots: { at: number; of: number } | null; // setup progress, shown instead of the four steps
+  busy: boolean; // a save is in flight, so the answers wait
+  // The screen's answers (Vi, Nov 2): the first is its one big button, the rest small links under it. All are links
+  // under pasted notes, or beside a booking offer that answers Zeno's line (then the offer is the big button).
+  chips: string[];
+  dots: { at: number; of: number } | null; // setup progress
   list: Fact[] | null; // what setup learned, each removable
   reading?: string[]; // what setup is still reading ("Reading your notes…")
   pasting: boolean; // the setup card takes pasted notes
   hear: boolean; // the browser held Zeno's voice back until a tap
   progress: Progress | null; // the streak for the top bar and the row after a Done
-  pick?: FirstPick | null; // the first card's one thing, on the ready card
+  pick?: FirstPick | null; // the card's one thing, on the ready screen
   celebrate?: boolean; // a Done just happened: show the streak row
-  quiet?: Quiet[]; // Noted, Kept on this device and heads-up lines
-  bookings?: Record<string, Booking>; // booking chips by step id
+  bookings?: Record<string, Booking>; // booking chips by key
   offers?: Booking[]; // booking chips that answer Zeno's line
-  calendarAsk?: boolean; // Zeno may not write to the calendar yet
   timer?: number | null; // the focus timer's minutes when the tap said so ("Start · 5 min")
-  lead?: { stepId: string; minutes: number } | null; // "See the plan" for a picked step: that step leads, at the pick's minutes
+  sources?: boolean; // Focus shows the step's sources (its Sources link was tapped)
   device?: VaultFact[]; // this device's private facts, for Memory
   account?: string | null; // the person's initial
   menuOpen?: boolean; // the /preview gallery shows the account menu open
-  checkins?: boolean | null; // focus check-ins on or muted; null hides the toggle
   voice: { phase: VoicePhase; levelRef: { current: number }; muted: boolean; supported: boolean; error: VoiceError };
   on: {
-    primary(): void;
-    secondary(): void;
     chip(index: number): void;
     hear(): void;
     paste(text: string): void;
@@ -84,7 +77,6 @@ export type DayViewProps = {
     retryMemory(): void;
     book(key: string): void;
     unbook(key: string): void;
-    checkins(): void;
     mute(): void;
     signIn(): void;
     signOut(): void;
@@ -92,7 +84,6 @@ export type DayViewProps = {
   };
 };
 
-const startLabel = (minutes: number | null | undefined) => (minutes ? `Start · ${minutes} min` : "Start");
 const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 const everySecond = (onChange: () => void) => {
@@ -118,33 +109,20 @@ function useToday() {
 export default function DayView(props: DayViewProps) {
   const { screen, goal, voice, on, progress } = props;
   const bookings = props.bookings ?? {};
-  const open = openSteps(goal);
-  const led = screen === "plan" && props.lead ? open.find((step) => step.id === props.lead?.stepId) : undefined;
-  const steps = led ? [led, ...open.filter((step) => step !== led)] : open;
-  const top = (screen === "plan" || screen === "focus" || screen === "checkin") && steps[0] ? steps[0] : null;
-  const topMinutes = led && props.lead ? props.lead.minutes : top?.minutes;
-  const finished = screen === "checkin" && goal !== null && steps.length === 0;
+  // Focus is the step's own card, with its timer; the ready card holds the pick; every other card holds Zeno's line.
+  const top = screen === "focus" ? openSteps(goal)[0] ?? null : null;
   const pick = screen === "ready" && props.pick ? props.pick : null;
-  const lineOnCard = !top && !finished && !pick;
-  const cardText = finished ? `You finished ${goal.title}.` : pick ? pick.steps[0].title : lineOnCard ? props.line : top?.title ?? "";
+  const lineOnCard = !top && !pick;
   const doneCount = (goal?.steps.filter((s) => s.status === "done").length ?? 0) - (props.leaving ? 1 : 0);
-  const pile = (screen === "plan" || screen === "focus" || screen === "checkin") && doneCount > 0;
+  const pile = (screen === "focus" || screen === "checkin") && doneCount > 0;
   const blocked = voice.error === "blocked";
-  const tapFirst = screen === "ready" || screen === "talk" || screen === "setup" || screen === "wrap";
-  const labels =
-    screen === "signed-out"
-      ? ["Sign in with Google"]
-      : screen === "plan" && top
-        ? [startLabel(topMinutes), "Change the plan"]
-        : screen === "focus" && top
-          ? ["Done", "I'm stuck"]
-          : screen === "checkin"
-            ? finished
-              ? ["Pick another thing", "Stop for now"]
-              : top
-                ? [startLabel(top.minutes), "Stop for now"]
-                : []
-            : [];
+  // A booking offer that answers Zeno's line (in talk, or after stopping) is the big button; the answers are then links.
+  const lead = screen === "talk" || screen === "wrap" ? props.offers?.[0] : undefined;
+  const big = lead || props.pasting ? null : props.chips[0] ?? null;
+  const firstLink = big === null ? 0 : 1;
+  const links = props.chips.slice(firstLink);
+  const otherOffers = (props.offers ?? []).filter((offer) => offer !== lead);
+  const hear = props.hear && !voice.muted;
   // The first line shows at once; every later one fades in whole, with no word-by-word wait.
   const [firstLine] = useState(props.line);
   const listening = voice.phase === "listening";
@@ -160,13 +138,15 @@ export default function DayView(props: DayViewProps) {
   const pillsRef = useRef<HTMLDivElement>(null);
   const typeRef = useRef<HTMLButtonElement>(null);
   const pressed = useRef(false);
-  const answersKey = `${screen}:${props.dots?.at}:${props.hear}:${[...props.chips.map((c) => c.label), ...labels].join("|")}`;
+  const answersKey = `${screen}:${props.dots?.at}:${hear}:${props.chips.join("|")}:${(props.offers ?? []).map((offer) => offer.state).join(",")}`;
   useEffect(() => {
-    // When the chip or pill someone pressed goes away, keep keyboard focus on the answers that replace it.
-    const first = pillsRef.current?.querySelector("button");
-    if (!pressed.current || !first) return;
+    // After a press, keyboard focus follows the screen to its big button, unless it went somewhere else on its own.
+    const area = pillsRef.current;
+    const button = area?.querySelector<HTMLElement>(".pill-big");
+    if (!pressed.current || !button) return;
     pressed.current = false;
-    if (document.activeElement === document.body) first.focus();
+    const active = document.activeElement;
+    if (!active || active === document.body || area?.contains(active)) button.focus({ preventScroll: true });
   }, [answersKey]);
   useEffect(() => {
     // A tall card or line can leave the answers under the sticky dock or its fade; bring them clear of it (html's
@@ -205,43 +185,14 @@ export default function DayView(props: DayViewProps) {
     </p>
   ) : null;
 
-  // A step's booking chip (Booked · Undo right after it books), shown until the step is on the calendar.
-  const chipFor = (step: Step) => {
-    const booking = bookings[step.id];
-    return booking && (booking.state === "booked" || !step.scheduledAt) ? (
-      <BookingChip booking={booking} onBook={() => on.book(booking.key)} onUndo={() => on.unbook(booking.key)} />
-    ) : null;
+  const answer = (i: number) => {
+    if (props.busy) return;
+    pressed.current = true;
+    on.chip(i);
   };
-  // The chip, else the step's time once booked: offer, booked and scheduled are one chip family.
-  const slot = (step: Step) =>
-    chipFor(step) ??
-    (step.scheduledAt ? (
-      <span className="booked">
-        Booked<span aria-hidden="true"> · </span>
-        <span className="font-normal">{whenLabel(step.scheduledAt, zone())}</span>
-      </span>
-    ) : null);
-
-  const answerChips = props.chips.map((chip, i) => (
-    <button
-      key={chip.label}
-      type="button"
-      data-answer
-      aria-disabled={props.busy}
-      onClick={() => {
-        if (props.busy) return;
-        pressed.current = true;
-        on.chip(i);
-      }}
-      className={`pill ${chip.tone === "ink" ? "pill-ink" : chip.tone === "quiet" ? "pill-quiet" : ""} ${pick && i === 0 ? "col-span-2" : ""}`}
-    >
-      {chip.label}
-    </button>
-  ));
-  const offerChips = (props.offers ?? []).map((booking) => (
-    // Only the wrap-up's booking is the screen's one main answer; on setup, Start my day is.
-    <BookingChip key={booking.key} booking={booking} ink={screen === "wrap"} onBook={() => on.book(booking.key)} onUndo={() => on.unbook(booking.key)} />
-  ));
+  const offerChip = (booking: Booking, isBig = false) => (
+    <BookingChip key={booking.key} booking={booking} big={isBig} onBook={() => on.book(booking.key)} onUndo={() => on.unbook(booking.key)} />
+  );
 
   return (
     <div className="flex min-h-dvh flex-col overflow-x-clip bg-desk text-ink">
@@ -286,51 +237,45 @@ export default function DayView(props: DayViewProps) {
       </header>
 
       <main className="flex flex-1 flex-col items-center px-4 pb-2 sm:pb-4 short:pb-2">
-        {props.dots ? <Dots {...props.dots} /> : <Stages at={screen ? STAGE_OF[screen] : -1} hidden={screen === "signed-out"} />}
+        {props.dots && <Dots {...props.dots} />}
 
         <p className="sr-only" aria-live="polite">
           {props.line}
         </p>
 
         <div className="relative mt-6 mb-6 w-full max-w-[760px] short:mt-4 short:mb-4">
-          {(screen !== "plan" || steps.length < 2) &&
-            [3, 2, 1].map((n) => <i key={n} className="edge" style={{ inset: `${8 * n}px ${16 * n}px ${-8 * n}px` }} />)}
+          {[3, 2, 1].map((n) => (
+            <i key={n} className="edge" style={{ inset: `${8 * n}px ${16 * n}px ${-8 * n}px` }} />
+          ))}
 
           <article
             // The shell and the ready card are one card, so the first paint never jumps; each setup card is a new one.
             key={
               top
                 ? // By title, not id: a plan saved behind its draft swaps ids, and the card must not rise twice.
-                  `${screen}:${top.title}`
-                : finished
-                  ? "finished"
-                  : pick
-                    ? `pick:${pick.stepId ?? pick.goal}`
-                    : screen === "setup"
-                      ? `setup:${props.dots?.at}`
-                      : screen === "wrap"
-                        ? "wrap"
-                        : screen ?? "ready"
+                  `focus:${top.title}`
+                : pick
+                  ? `pick:${pick.stepId ?? pick.goal}`
+                  : screen === "setup"
+                    ? `setup:${props.dots?.at}`
+                    : screen ?? "ready"
             }
             className="card rise z-10"
-            // The pick card holds four lines, so all of them set its size and Start stays above the dock.
-            // A plan's long first step steps down a size: its deadline sits beside it and the roadmap and Start sit under it.
             data-size={
               props.list
-                ? cardSize([cardText, ...props.list.map((fact) => fact.text)].join(" "))
+                ? cardSize([props.line, ...props.list.map((fact) => fact.text)].join(" "))
                 : pick
-                  ? cardSize([pick.steps[0].title, pick.goal, pick.why].join(" "))
-                  : screen === "plan" && cardText.length > 32
-                    ? "m"
-                    : cardSize(cardText)
+                  ? cardSize(`${pick.steps[0].title} ${pick.goal}`)
+                  : cardSize(top ? top.title : props.line)
             }
-            // A step card only needs room for its title (and the timer, or a blank row for the stamp), so the roadmap fits under it.
+            // A step card only needs room for its title and the timer (or a blank row for the stamp); after a Done the
+            // line sits over the streak row and Keep going.
             style={
               top
-                ? ({ "--rows": screen === "focus" ? (top.minutes ? 3 : 4) : 2 } as CSSProperties)
+                ? ({ "--rows": top.minutes ? 3 : 4 } as CSSProperties)
                 : pick
                   ? ({ "--rows": 3 } as CSSProperties)
-                  : finished
+                  : screen === "checkin"
                     ? ({ "--rows": 2 } as CSSProperties)
                     : undefined
             }
@@ -348,28 +293,11 @@ export default function DayView(props: DayViewProps) {
                       {pick.due && today ? <span className="whitespace-nowrap"> · {dueLabel(pick.due, today)}</span> : null}
                     </span>
                   </p>
-                  {/* Phones leave the why to Zeno's line under the card, so Start and both answers clear the dock. */}
-                  {!(pick.due && pick.why.replace(/\.$/, "") === dueLabel(pick.due, today)) && (
-                    <p className="max-sm:hidden">
-                      <span className="hand">{pick.why}</span>
-                    </p>
-                  )}
                 </>
               ) : top ? (
                 <>
-                  <p>
-                    {/* The plan's deadline rides where the minutes would (Start says the minutes), so Start stays above the dock. */}
-                    {screen === "plan" && goal?.due && today ? (
-                      <span className="mins due">{dueLabel(goal.due, today, true)}</span>
-                    ) : screen !== "focus" && topMinutes ? (
-                      <span className="mins">{topMinutes} min</span>
-                    ) : null}
-                    {/* The first step's booking rides on its card at the right of the title's second line, like the steps
-                        under it, so Start has the row to itself. Phones hide it as they hide the later steps' chips. */}
-                    {screen === "plan" && slot(top) ? <span className="slot max-sm:hidden">{slot(top)}</span> : null}
-                    {top.title}
-                  </p>
-                  {screen === "focus" && top.minutes ? (
+                  <p>{top.title}</p>
+                  {top.minutes ? (
                     <p className="mt-(--lh)">
                       <Countdown minutes={props.timer ?? top.minutes} startedAt={top.startedAt} />
                     </p>
@@ -377,9 +305,9 @@ export default function DayView(props: DayViewProps) {
                 </>
               ) : (
                 <>
-                  {cardText && (
+                  {props.line && (
                     <p>
-                      <Said key={cardText} text={cardText} fade={!finished && cardText !== firstLine} />
+                      <Said key={props.line} text={props.line} fade={props.line !== firstLine} />
                     </p>
                   )}
                   {props.list && (
@@ -429,33 +357,12 @@ export default function DayView(props: DayViewProps) {
                       }}
                     />
                   )}
-                  {lineOnCard && screen !== "signed-out" && youLine}
+                  {screen !== "signed-out" && youLine}
                 </>
               )}
             </div>
             {props.stamping && <span className="stamp">DONE</span>}
           </article>
-
-          {screen === "plan" &&
-            steps.length > 1 &&
-            steps.slice(1, 4).map((s, i) => (
-              <div
-                key={`${s.id}:${s.title}:${s.minutes}`}
-                className={`strip rise ${i === 2 ? "third" : ""}`}
-                style={{ "--n": i + 1, zIndex: 3 - i, animationDelay: `${(i + 1) * 60}ms` } as CSSProperties}
-              >
-                {i === 2 && steps.length > 4 ? (
-                  <span className="text-ink-2">{steps.length - 3} more steps</span>
-                ) : (
-                  <>
-                    <span className="min-w-0 flex-1">{s.title}</span>
-                    {s.minutes ? <span className="shrink-0 font-mono text-ink-2">{s.minutes} min</span> : null}
-                    {/* shortcut: phones hide later steps' chips so Start stays near the card; Stop for now still offers the next one. */}
-                    {slot(s) && <div className="shrink-0 max-sm:hidden">{slot(s)}</div>}
-                  </>
-                )}
-              </div>
-            ))}
 
           {props.leaving && (
             <article className="card leaving" aria-hidden="true">
@@ -483,9 +390,10 @@ export default function DayView(props: DayViewProps) {
 
         {props.celebrate && progress && progress.week.length > 0 && screen === "checkin" && <StreakRow progress={progress} />}
 
+        {/* Under the ready card only the person's words show: Zeno's line there is spoken (Vi, Nov 2). */}
         {!lineOnCard && (
-          <div className="caption mt-2 w-full max-w-[640px] text-center text-[20px] leading-8">
-            {props.line && (
+          <div className="caption mt-2 w-full max-w-[640px] text-center text-[20px] leading-8 empty:hidden">
+            {top && props.line && (
               <p>
                 <Said key={props.line} text={props.line} fade={props.line !== firstLine} />
               </p>
@@ -498,86 +406,46 @@ export default function DayView(props: DayViewProps) {
           {screen === "signed-out" && props.signInFailed ? "Google sign-in didn't finish. Try again." : props.note}
         </p>
 
-        <NotedLines lines={props.quiet ?? []} />
-
-        {props.hear && !voice.muted && (
-          <button
-            type="button"
-            onClick={() => {
-              pressed.current = true;
-              on.hear();
-            }}
-            className="pill pill-small pill-quiet mt-4"
-          >
-            <Icon name="sound" />
-            Hear Zeno
-          </button>
-        )}
-
-        {/* A question Zeno asks on a step card still gets answers to tap, above the step's own pills. */}
-        {!tapFirst && (answerChips.length > 0 || offerChips.length > 0) && (
-          <div className="mt-4 flex w-full max-w-[760px] flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-center sm:gap-4">
-            {offerChips}
-            {answerChips}
-          </div>
-        )}
-
-        <div
-          ref={pillsRef}
-          // Phones stack the answers one per row, so every label stays on one line.
-          className={`mt-4 w-full max-w-[760px] empty:mt-0 sm:mt-6 short:mt-4 ${
-            tapFirst
-              ? // Phones stack the answers; the first card's two short ones share a row under a full-width Start.
-                `${pick ? "grid grid-cols-2" : "flex flex-col"} gap-2 sm:flex sm:flex-row sm:flex-wrap sm:justify-center sm:gap-4`
-              : "flex flex-wrap justify-center gap-4 sm:gap-6"
-          }`}
-        >
-          {tapFirst ? (
-            <>
-              {offerChips}
-              {answerChips}
-            </>
-          ) : (
-            labels.map((label, i) => (
-              <button
-                key={label}
-                type="button"
-                data-answer
-                // aria-disabled, not disabled, so a waiting pill keeps keyboard focus.
-                aria-disabled={props.busy}
-                onClick={() => {
-                  if (props.busy) return;
-                  pressed.current = true;
-                  if (i === 0) on.primary();
-                  else on.secondary();
-                }}
-                className={`pill max-sm:flex-auto max-sm:px-4 max-sm:text-[18px] sm:min-w-[240px] ${
-                  i === 0 ? `pill-ink ${screen === "plan" ? "sm:min-w-[360px]" : ""}` : screen === "plan" ? "pill-quiet" : ""
-                }`}
-              >
-                {label}
-              </button>
-            ))
+        <div ref={pillsRef} className="mt-4 flex w-full max-w-[760px] flex-col items-center gap-2 empty:mt-0 sm:mt-6 short:mt-4">
+          {lead && offerChip(lead, true)}
+          {big !== null && (
+            // aria-disabled, not disabled, so a waiting button keeps keyboard focus.
+            <button type="button" data-answer aria-disabled={props.busy} onClick={() => answer(0)} className="pill pill-ink pill-big">
+              {big}
+            </button>
+          )}
+          {otherOffers.length > 0 && <div className="flex flex-wrap justify-center gap-2">{otherOffers.map((offer) => offerChip(offer))}</div>}
+          {(links.length > 0 || hear) && (
+            <div className="links">
+              {links.map((label, i) => (
+                <Fragment key={i}>
+                  {i > 0 && <span aria-hidden="true">·</span>}
+                  <button type="button" data-answer aria-disabled={props.busy} onClick={() => answer(firstLink + i)} className="link">
+                    {label}
+                  </button>
+                </Fragment>
+              ))}
+              {hear && (
+                <>
+                  {links.length > 0 && <span aria-hidden="true">·</span>}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      pressed.current = true;
+                      on.hear();
+                    }}
+                    className="link"
+                  >
+                    Hear Zeno
+                  </button>
+                </>
+              )}
+            </div>
           )}
         </div>
 
-        {props.calendarAsk && (screen === "plan" || screen === "wrap") && (
-          <button type="button" onClick={on.signIn} className="pill pill-small pill-quiet mt-4">
-            <Icon name="today" />
-            Let Zeno add to your calendar
-          </button>
-        )}
-
-        {screen === "focus" && props.checkins != null && (
-          // One fixed label; aria-pressed says whether it is on.
-          <button type="button" aria-pressed={!props.checkins} onClick={on.checkins} className="pill pill-small pill-quiet mt-4">
-            <Icon name={props.checkins ? "sound" : "sound-off"} />
-            Mute check-ins
-          </button>
-        )}
-
         {/* Title in the key: a renamed step drops its sources on the server, so the pack starts fresh too. */}
-        {screen === "plan" && top && <PrepPack key={`${top.id}:${top.title}`} step={top} />}
+        {top && props.sources && <PrepPack key={`${top.id}:${top.title}`} step={top} />}
 
         {screen === "signed-out" && (
           <p className="mt-6 max-w-[560px] text-center text-ink-2">
@@ -618,27 +486,6 @@ export default function DayView(props: DayViewProps) {
         )}
       </SheetPanel>
     </div>
-  );
-}
-
-// Signed out, the row keeps its room (invisible) so the card doesn't jump when the loading shell resolves.
-function Stages({ at, hidden }: { at: number; hidden: boolean }) {
-  return (
-    <ol
-      aria-label={at >= 0 ? `Step ${at + 1} of ${STAGES.length}: ${STAGES[at]}` : "Your day, in four steps"}
-      className={`mt-4 grid w-full max-w-[760px] grid-cols-4 gap-2 sm:mt-6 sm:gap-6 short:mt-3 ${hidden ? "invisible" : ""}`}
-    >
-      {STAGES.map((name, i) => (
-        <li
-          key={name}
-          aria-current={i === at ? "step" : undefined}
-          className={`border-t-4 pt-2 ${i <= at ? "border-ink" : "border-track"} ${i === at ? "font-bold whitespace-nowrap" : "text-ink-2"}`}
-        >
-          {/* Phones show only the current step's name; it may run under the next bars. */}
-          <span className={i === at ? undefined : "max-sm:sr-only"}>{name}</span>
-        </li>
-      ))}
-    </ol>
   );
 }
 

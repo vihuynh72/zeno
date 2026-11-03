@@ -9,8 +9,8 @@ registerHooks({
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
 const flow = await import("./day-flow.ts");
-const { asks, cardSize, clock, dayPart, doneLine, draftGoal, dueLabel, greeting, groupFacts, laterBlock, nextScreen, openSteps } = flow;
-const { pickFits, planBlocks, quickReplies, SETUP, slotLabel, soonEvent, streakLine, withStatus } = flow;
+const { asks, cardSize, clock, dayPart, doneLine, draftGoal, dueLabel, greeting, groupFacts, isEmailStep, laterBlock, laterMinutes, nextScreen } = flow;
+const { openSteps, pickFits, quickReplies, SETUP, slotLabel, soonEvent, stepCard, streakLine, withStatus } = flow;
 
 const step = (id: string, status: Step["status"], extra: Partial<Step> = {}): Step => ({
   id,
@@ -35,18 +35,36 @@ const mixed = goal(step("1", "done"), step("2", "todo"), step("3", "doing"), ste
 assert.deepEqual(openSteps(mixed).map((s) => s.id), ["3", "2", "5"]);
 assert.deepEqual(openSteps(null), []);
 
-// A new roadmap shows the plan; a started step goes to focus; small talk stays put.
+// A new or changed plan shows as the card; a started step goes to focus; talk during focus keeps the timer's card.
 const fresh = goal(step("1", "todo"), step("2", "todo"));
-assert.equal(nextScreen("talk", acts("goal-set"), fresh), "plan");
-assert.equal(nextScreen("focus", acts("roadmap-changed"), fresh), "plan");
-assert.equal(nextScreen("plan", acts("step-started"), goal(step("1", "doing"))), "focus");
+assert.equal(nextScreen("talk", acts("goal-set"), fresh), "ready");
+assert.equal(nextScreen("focus", acts("roadmap-changed"), fresh), "ready");
+assert.equal(nextScreen("ready", acts("step-started"), goal(step("1", "doing"))), "focus");
 assert.equal(nextScreen("focus", acts("step-finished"), goal(step("1", "done"))), "checkin");
 assert.equal(nextScreen("ready", [], null), "talk");
 assert.equal(nextScreen("wrap", [], null), "talk");
+assert.equal(nextScreen("checkin", [], fresh), "talk", "talking after Done leaves the Done screen");
 assert.equal(nextScreen("focus", acts("remembered"), fresh), "focus");
 assert.equal(nextScreen("talk", acts("goal-set"), goal(step("1", "done"))), "talk");
-assert.equal(nextScreen("plan", [], null), "talk");
 assert.equal(nextScreen("focus", acts("forgot"), goal(step("1", "done"))), "talk");
+// The card for a plan made in talk is its first open step.
+assert.deepEqual(stepCard({ ...goal(step("1", "done"), step("2", "todo", { minutes: null })), due: "2026-11-06" }), {
+  goal: "Essay",
+  due: "2026-11-06",
+  stepId: "2",
+  steps: [{ title: "Step 2", minutes: 5 }],
+  why: "",
+});
+assert.equal(stepCard(goal(step("1", "done"))), null);
+// After Done: the next step and its minutes, or the end of the plan.
+assert.equal(doneLine(goal(step("1", "done"), step("2", "todo", { minutes: 15 }))), "Nice. Next: Step 2, 15 min");
+assert.equal(doneLine(goal(step("1", "done"), step("2", "todo", { minutes: null }))), "Nice. Next: Step 2");
+assert.equal(doneLine(goal(step("1", "done"))), "Nice work. That was the last step.");
+// An email to write gets "Draft it in Gmail".
+for (const title of ["Email Prof Patel about an extension", "E-mail the TA", "write to the registrar", "Reply to Dana", "Message the study group"]) {
+  assert.equal(isEmailStep(title), true, title);
+}
+for (const title of ["Read the email from Dana", "Emailing list cleanup", "Draft the methods section", "Messages"]) assert.equal(isEmailStep(title), false, title);
 
 // A saved line is reused within the same date and part of the day, never across them.
 assert.equal(dayPart(new Date(2026, 9, 31, 9)), dayPart(new Date(2026, 9, 31, 11, 59)));
@@ -98,46 +116,47 @@ assert.equal(pickFits(pickNew, null), true);
 assert.equal(pickFits(pickNew, goal(step("1", "todo"))), false, "a plan is open now");
 assert.equal(pickFits(null, null), false);
 
-// A new plan shows at once, step 1 running when the tap was Start.
+// A new plan shows at once, step 1 running.
 const now = new Date("2026-11-02T17:00:00Z");
-const draft = draftGoal(pickNew, true, now);
+const draft = draftGoal(pickNew, now);
 assert.deepEqual(draft.steps.map((s) => [s.status, s.startedAt]), [["doing", now.toISOString()], ["todo", null]]);
-assert.equal(draftGoal(pickNew, false, now).steps[0].status, "todo");
 // Starting one step puts any other running one back to todo, as the server does.
 const started = withStatus(goal(step("1", "doing", { startedAt: "x" }), step("2", "todo")), "2", "doing", now);
 assert.deepEqual(started.steps.map((s) => s.status), ["todo", "doing"]);
 assert.equal(started.steps[1].startedAt, now.toISOString());
 assert.equal(withStatus(goal(step("1", "doing")), "1", "done", now).steps[0].doneAt, now.toISOString());
 
-assert.equal(dueLabel("2026-11-02", "2026-11-02"), "Due today");
-assert.equal(dueLabel("2026-11-03", "2026-11-02"), "Due tomorrow");
-assert.equal(dueLabel("2026-11-06", "2026-11-02"), "Due Friday");
-assert.equal(dueLabel("2026-11-06", "2026-11-02", true), "Due Fri");
+assert.equal(dueLabel("2026-11-02", "2026-11-02"), "due today");
+assert.equal(dueLabel("2026-11-03", "2026-11-02"), "due tomorrow");
+assert.equal(dueLabel("2026-11-06", "2026-11-02"), "due Friday");
 assert.equal(dueLabel("2026-11-06", ""), "", "no date before the browser's clock");
-assert.equal(dueLabel("2026-11-20", "2026-11-02"), "Due Nov 20");
-assert.equal(dueLabel("2026-10-30", "2026-11-02"), "Was due Oct 30");
+assert.equal(dueLabel("2026-11-20", "2026-11-02"), "due Nov 20");
+assert.equal(dueLabel("2026-10-30", "2026-11-02"), "was due Oct 30");
 
-// Booking offers: never overlapping, at least half an hour out, 5-minute starts, booked steps skipped.
+// Stopping offers a block only for an hour or more left, at most two hours, never when the plan is already booked.
+const big = goal(step("1", "done"), step("2", "doing", { minutes: 30 }), step("3", "todo", { minutes: 20 }), step("4", "todo", { minutes: null }));
+assert.equal(laterMinutes(big), 60, "a step without minutes counts as 10");
+assert.equal(laterMinutes(goal(step("1", "todo", { minutes: 50 }))), 0, "small next steps are never offered");
+assert.equal(laterMinutes(goal(step("1", "todo", { minutes: 90 }), step("2", "todo", { minutes: 90 }))), 120);
+assert.equal(laterMinutes(goal(step("1", "todo", { minutes: 90, scheduledAt: "2026-11-03T16:00:00Z" }))), 0);
+assert.equal(laterMinutes(null), 0);
+// The block: tomorrow's earliest room that fits, on a 5-minute start, named for the plan and linked to its first open step.
 const LA = "America/Los_Angeles";
 const slots = [
-  { start: "2026-11-02T17:10:00Z", end: "2026-11-02T17:50:00Z" },
-  { start: "2026-11-02T19:00:00Z", end: "2026-11-02T19:20:00Z" },
-  { start: "2026-11-03T16:00:00Z", end: "2026-11-03T18:00:00Z" },
+  { start: "2026-11-02T17:10:00Z", end: "2026-11-02T19:50:00Z" },
+  { start: "2026-11-03T15:02:00Z", end: "2026-11-03T16:00:00Z" },
+  { start: "2026-11-03T16:02:00Z", end: "2026-11-03T18:00:00Z" },
+  { start: "2026-11-04T16:00:00Z", end: "2026-11-04T19:00:00Z" },
 ];
-const blocks = planBlocks([step("a", "todo"), step("b", "todo", { scheduledAt: "2026-11-02T20:00:00Z" }), step("c", "todo", { minutes: 15 }), step("d", "todo", { minutes: 15 })], slots, now);
-assert.deepEqual(
-  blocks.map((b) => [b.stepId, b.start, b.end]),
-  [
-    ["a", "2026-11-02T17:30:00.000Z", "2026-11-02T17:40:00.000Z"],
-    ["c", "2026-11-02T19:00:00.000Z", "2026-11-02T19:15:00.000Z"],
-    ["d", "2026-11-03T16:00:00.000Z", "2026-11-03T16:15:00.000Z"],
-  ],
-);
-assert.deepEqual(planBlocks([step("x", "todo", { minutes: 240 })], slots, now), [], "fits nowhere");
-assert.equal(planBlocks([step("x", "done")], slots, now).length, 0);
-// "Stop for now" offers tomorrow when tomorrow has room, else the earliest.
-assert.equal(laterBlock(step("n", "todo"), slots, LA, now)?.start, "2026-11-03T16:00:00.000Z");
-assert.equal(laterBlock(step("n", "todo"), slots.slice(0, 2), LA, now)?.start, "2026-11-02T17:30:00.000Z");
+assert.deepEqual(laterBlock(big, 60, slots, LA, now), {
+  title: "Essay",
+  kind: "step",
+  start: "2026-11-03T16:05:00.000Z",
+  end: "2026-11-03T17:05:00.000Z",
+  stepId: "2",
+});
+assert.equal(laterBlock(big, 120, slots, LA, now), null, "no room tomorrow: nothing today or the day after");
+assert.equal(laterBlock(big, 60, slots.slice(0, 1), LA, now), null);
 // 9 AM PST Nov 2 is 17:00Z.
 assert.equal(slotLabel("2026-11-02T17:30:00.000Z", "2026-11-02T17:40:00.000Z", LA, now), "9:30–9:40 AM");
 assert.equal(slotLabel("2026-11-03T19:55:00.000Z", "2026-11-03T20:05:00.000Z", LA, now), "tomorrow 11:55 AM–12:05 PM");
@@ -154,7 +173,7 @@ assert.equal(soonEvent(events, now.getTime())?.title, "Bio lab");
 assert.equal(soonEvent(events.slice(0, 2), now.getTime()), null);
 assert.equal(soonEvent([{ ...events[2], start: at(11) }], now.getTime()), null);
 
-// Streak words: milestones, a restart after a break without shame, the day's first and later Dones.
+// The streak row's words.
 const progress = (over: Partial<Progress>): Progress => ({
   streak: 4,
   best: 9,
@@ -165,15 +184,8 @@ const progress = (over: Partial<Progress>): Progress => ({
   milestone: null,
   ...over,
 });
-const doneToday = progress({ week: ["done", "done", "done", "future", "future", "future", "future"] });
 assert.equal(streakLine(progress({ stepsThisWeek: 1, streak: 1 })), "Day 1 · 1 step this week");
-assert.equal(streakLine(doneToday), "Day 4 · 3 steps this week");
-assert.equal(doneLine(progress({}), progress({ milestone: 7, streak: 7 }), true), "7 days in a row. That's a real habit now.");
-assert.equal(doneLine(progress({ streak: 0 }), progress({ streak: 1, best: 9 }), true), "Day 1 again. Your best is 9.");
-assert.equal(doneLine(progress({}), doneToday, true), "Nice. That's day 4. Next one's ready.");
-assert.equal(doneLine(doneToday, doneToday, false), "Nice, another one down.");
-assert.equal(doneLine(null, undefined, true), "Nice. Next one's ready.");
-assert.equal(doneLine(null, progress({ streak: 1, best: 1 }), false), "Day 1. That's how it starts.");
+assert.equal(streakLine(progress({})), "Day 4 · 3 steps this week");
 
 // Memory groups in their order with plain names; device facts sit in their group; empty groups are left out.
 const grouped = groupFacts([

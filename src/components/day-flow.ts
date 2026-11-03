@@ -2,21 +2,8 @@
 import { MEMORY_GROUPS, type CalendarBlock, type DayEvent, type FirstPick, type FreeSlot, type Goal, type MemoryGroup, type Progress, type Step, type StepStatus, type TalkAction } from "@/lib/day";
 import { dayBounds, formatTime, localDate } from "@/lib/tz";
 
-export type Screen = "signed-out" | "setup" | "ready" | "talk" | "plan" | "focus" | "checkin" | "wrap";
-
-export const STAGES = ["Brief", "Pick one thing", "First step", "Focus"];
-
-// Which STAGES entry each screen lights up; signed-out and setup (it has its own dots) light none.
-export const STAGE_OF: Record<Screen, number> = {
-  "signed-out": -1,
-  setup: -1,
-  ready: 0,
-  talk: 1,
-  plan: 2,
-  focus: 3,
-  checkin: 3,
-  wrap: 3,
-};
+// ready is the card, checkin the screen after Done, wrap the one after Stop for now or That's enough today.
+export type Screen = "signed-out" | "setup" | "ready" | "talk" | "focus" | "checkin" | "wrap";
 
 // First-run cards, each answered with one tap; an answer with a sentence saves it as a memory.
 // The first question follows "Hi {name}."; the last card's first answer opens a box for pasted notes.
@@ -88,15 +75,14 @@ export function openSteps(goal: Goal | null): Step[] {
   return [...steps.filter((s) => s.status === "doing"), ...steps.filter((s) => s.status === "todo")];
 }
 
-// Where a reply from /api/talk leaves the person.
+// Where a reply from /api/talk leaves the person: a plan made or changed shows as the card (its first step, ready to
+// start); talking during focus keeps the timer's card while a step is open; anything else is talk.
 export function nextScreen(screen: Screen, actions: TalkAction[], goal: Goal | null): Screen {
   const did = (type: TalkAction["type"]) => actions.some((a) => a.type === type);
   if (did("step-started") && goal?.steps.some((s) => s.status === "doing")) return "focus";
-  if ((did("goal-set") || did("roadmap-changed")) && openSteps(goal).length > 0) return "plan";
+  if ((did("goal-set") || did("roadmap-changed")) && openSteps(goal).length > 0) return "ready";
   if (did("step-finished")) return "checkin";
-  // No step left to show (the goal was cleared or emptied): back to talking it through.
-  if ((screen === "plan" || screen === "focus" || screen === "checkin") && openSteps(goal).length === 0) return "talk";
-  return screen === "ready" || screen === "wrap" ? "talk" : screen;
+  return screen === "focus" && openSteps(goal).length > 0 ? "focus" : "talk";
 }
 
 // A saved line comes back only on the same date and part of the day, so a morning line never greets the evening.
@@ -149,8 +135,9 @@ export function pickFits(pick: FirstPick | null | undefined, goal: Goal | null):
   return pick.stepId ? open.some((step) => step.id === pick.stepId) : open.length === 0;
 }
 
-// The plan a pick makes, shown at once while POST /api/goal saves it; the ids stand in until the save answers.
-export function draftGoal(pick: FirstPick, start: boolean, now: Date): Goal {
+// The plan a pick makes, its first step running, shown at once while POST /api/goal saves it; the ids stand in until
+// the save answers.
+export function draftGoal(pick: FirstPick, now: Date): Goal {
   return {
     id: "draft",
     title: pick.goal,
@@ -159,12 +146,27 @@ export function draftGoal(pick: FirstPick, start: boolean, now: Date): Goal {
       id: `draft-${i}`,
       title: step.title,
       minutes: step.minutes,
-      status: start && i === 0 ? "doing" : "todo",
-      startedAt: start && i === 0 ? now.toISOString() : null,
+      status: i === 0 ? "doing" : "todo",
+      startedAt: i === 0 ? now.toISOString() : null,
       doneAt: null,
     })),
   };
 }
+
+// A plan made or changed in talk, as the card: its first open step, ready to start.
+export function stepCard(goal: Goal | null): FirstPick | null {
+  const step = openSteps(goal)[0];
+  return goal && step ? { goal: goal.title, due: goal.due ?? null, stepId: step.id, steps: [{ title: step.title, minutes: step.minutes ?? 5 }], why: "" } : null;
+}
+
+// What the screen after Done says: the next step, or that the plan is finished.
+export function doneLine(goal: Goal | null): string {
+  const next = openSteps(goal)[0];
+  return next ? `Nice. Next: ${next.title}${next.minutes ? `, ${next.minutes} min` : ""}` : "Nice work. That was the last step.";
+}
+
+// A step that is an email to write, so Focus offers to draft it in Gmail.
+export const isEmailStep = (title: string) => /^(e-?mail|write to|reply to|message)\b/i.test(title.trim());
 
 export const isDraft = (goal: Goal | null) => goal?.id === "draft";
 
@@ -183,46 +185,44 @@ export function withStatus(goal: Goal, stepId: string, status: StepStatus, now: 
   };
 }
 
-// "Due Friday" style (short: "Due Fri"), from YYYY-MM-DD dates.
-export function dueLabel(due: string, today: string, short = false): string {
+// "due Friday" style, from YYYY-MM-DD dates, for the card's "<goal> · due <when>" line.
+export function dueLabel(due: string, today: string): string {
   const days = Math.round((Date.parse(due) - Date.parse(today)) / 86_400_000);
   if (Number.isNaN(days)) return "";
   const date = new Date(`${due}T12:00:00Z`);
-  const weekday = short ? "short" : "long";
-  const named = date.toLocaleDateString("en-US", { timeZone: "UTC", ...(days > 0 && days < 7 ? { weekday } : { month: "short", day: "numeric" }) });
-  if (days < 0) return `Was due ${named}`;
-  return days === 0 ? "Due today" : days === 1 ? "Due tomorrow" : `Due ${named}`;
+  const named = date.toLocaleDateString("en-US", { timeZone: "UTC", ...(days > 0 && days < 7 ? { weekday: "long" } : { month: "short", day: "numeric" }) });
+  if (days < 0) return `was due ${named}`;
+  return days === 0 ? "due today" : days === 1 ? "due tomorrow" : `due ${named}`;
 }
 
 // ---------- Calendar ----------
 
 const FIVE = 5 * 60_000;
 
-// Free time for each step still to book, in order, never overlapping: each gets the earliest gap that fits it
-// after the one before, starting at least half an hour out (rounded to 5 minutes). A step that fits nowhere gets none.
-export function planBlocks(steps: Step[], slots: FreeSlot[], now = new Date()): CalendarBlock[] {
-  const gaps = slots.map((slot) => ({ start: Date.parse(slot.start), end: Date.parse(slot.end) })).filter((gap) => gap.end > gap.start);
-  let cursor = now.getTime() + 30 * 60_000;
-  const blocks: CalendarBlock[] = [];
-  for (const step of steps) {
-    if (step.scheduledAt || (step.status !== "todo" && step.status !== "doing")) continue;
-    const length = (step.minutes ?? 10) * 60_000;
-    for (const gap of gaps) {
-      const start = Math.ceil(Math.max(gap.start, cursor) / FIVE) * FIVE;
-      if (start + length > gap.end) continue;
-      blocks.push({ title: step.title, kind: "step", start: new Date(start).toISOString(), end: new Date(start + length).toISOString(), stepId: step.id });
-      cursor = start + length;
-      break;
-    }
-  }
-  return blocks;
+// Stopping offers one block tomorrow only for a big commitment (Vi, Nov 2): the plan's open steps add up to an hour or
+// more and none of it is booked yet. The block's minutes, at most two hours, or 0 when there is nothing to offer.
+export function laterMinutes(goal: Goal | null): number {
+  const open = openSteps(goal);
+  const total = open.reduce((sum, step) => sum + (step.minutes ?? 10), 0);
+  return total >= 60 && !open[0].scheduledAt ? Math.min(total, 120) : 0;
 }
 
-// For "Stop for now": the next step's block in tomorrow's earliest free time, or the earliest when tomorrow has none.
-export function laterBlock(step: Step, slots: FreeSlot[], timeZone: string, now = new Date()): CalendarBlock | null {
-  const tomorrow = dayBounds(timeZone, now).end.getTime();
-  const later = slots.filter((slot) => Date.parse(slot.end) > tomorrow).map((slot) => ({ ...slot, start: new Date(Math.max(Date.parse(slot.start), tomorrow)).toISOString() }));
-  return planBlocks([step], later.length > 0 ? later : slots, now)[0] ?? null;
+// That block in tomorrow's earliest free time that fits (a 5-minute start, at least half an hour out), named for the
+// plan and linked to its first open step; null when tomorrow has no room.
+export function laterBlock(goal: Goal, minutes: number, slots: FreeSlot[], timeZone: string, now = new Date()): CalendarBlock | null {
+  const step = openSteps(goal)[0];
+  if (!step) return null;
+  const tomorrow = dayBounds(timeZone, now).end;
+  const dayAfter = dayBounds(timeZone, tomorrow).end.getTime();
+  const from = Math.max(tomorrow.getTime(), now.getTime() + 30 * 60_000);
+  for (const slot of slots) {
+    const start = Math.ceil(Math.max(Date.parse(slot.start), from) / FIVE) * FIVE;
+    const end = start + minutes * 60_000;
+    if (start < dayAfter && end <= Date.parse(slot.end)) {
+      return { title: goal.title, kind: "step", start: new Date(start).toISOString(), end: new Date(end).toISOString(), stepId: step.id };
+    }
+  }
+  return null;
 }
 
 export function isTomorrow(iso: string, timeZone: string, now = new Date()) {
@@ -241,9 +241,6 @@ export function slotLabel(start: string, end: string, timeZone: string, now = ne
   return `${dayWord(start, timeZone, now)}${same ? from.slice(0, -3) : from}–${to}`;
 }
 
-// "9:30 AM", "tomorrow 9:30 AM" or "Mon 9:30 AM", for a booked step.
-export const whenLabel = (iso: string, timeZone: string, now = new Date()) => `${dayWord(iso, timeZone, now)}${formatTime(iso, timeZone)}`;
-
 // The first of today's timed events starting in the next `within` ms (not already started).
 export function soonEvent(events: DayEvent[], now: number, within = 10 * 60_000): DayEvent | null {
   return events.find((event) => !event.allDay && Date.parse(event.start) > now && Date.parse(event.start) - now <= within) ?? null;
@@ -256,17 +253,6 @@ export const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export function streakLine(progress: Progress) {
   const steps = progress.stepsThisWeek;
   return `Day ${progress.streak} · ${steps} ${steps === 1 ? "step" : "steps"} this week`;
-}
-
-// What Zeno says after a Done: a milestone, a restart after a break (never shame), the day's first step, or another.
-export function doneLine(before: Progress | null, after: Progress | undefined, more: boolean): string {
-  const next = more ? " Next one's ready." : "";
-  if (!after) return `Nice.${next}`;
-  if (after.milestone) return `${after.milestone} days in a row. That's a real habit now.`;
-  const already = before?.week.includes("done") && before.week.indexOf("today") === -1;
-  if (already || after.streak === 0) return `Nice, another one down.${next}`;
-  if (after.streak === 1 && after.best > 1) return `Day 1 again. Your best is ${after.best}.`;
-  return after.streak === 1 ? `Day 1. That's how it starts.${next}` : `Nice. That's day ${after.streak}.${next}`;
 }
 
 // ---------- Focus check-ins ----------

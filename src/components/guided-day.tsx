@@ -6,6 +6,7 @@ import type {
   BookResponse,
   CalendarBlock,
   DayResponse,
+  EmailDraft,
   FirstPick,
   FreeResponse,
   Goal,
@@ -26,9 +27,9 @@ import type {
 } from "@/lib/day";
 import { listenAuto, type ListenHandlers } from "@/lib/listen";
 import { audioContext } from "@/lib/speak";
-import { formatTime, localDate } from "@/lib/tz";
+import { localDate } from "@/lib/tz";
 import { useVoice } from "@/lib/use-voice";
-import { addToVault, readVault, removeFromVault, sameFact, vaultRemoved, vaultTexts, type VaultFact } from "@/lib/vault";
+import { addToVault, readVault, removeFromVault, vaultRemoved, vaultTexts, type VaultFact } from "@/lib/vault";
 import {
   asks,
   CHECKINS,
@@ -38,27 +39,29 @@ import {
   forPlanning,
   greeting,
   isDraft,
+  isEmailStep,
   isTomorrow,
   laterBlock,
+  laterMinutes,
   nextScreen,
   openSteps,
   pickFits,
-  planBlocks,
   quickReplies,
   SETUP,
   slotLabel,
   soonEvent,
+  stepCard,
   withStatus,
   type Fact,
   type Screen,
 } from "@/components/day-flow";
 import type { Booking } from "@/components/booking-chip";
-import DayView, { type Chip, type Sheet } from "@/components/day-view";
-import type { Quiet } from "@/components/noted-line";
+import DayView, { type Sheet } from "@/components/day-view";
 
 const SIGNED_OUT_LINE = "Zeno helps you start the thing you keep putting off.";
 const THINK_FAIL = "I couldn't think that through just now. Try again?";
 const SAVE_FAIL = "I couldn't save that just now. Try again?";
+const WRAP_LINE = "Saved. I'll bring it back next time.";
 const VOICE_NOTE = {
   blocked: "Your microphone is blocked, so typing works for now. To talk, allow the microphone from the icon in your browser's address bar.",
   unsupported: "Voice isn't available in this browser, so typing works for now.",
@@ -73,9 +76,10 @@ type Opening = { text: string; options: string[]; pick: FirstPick | null };
 // shortcut: first paint trusts it, so a day written as the account switched (an /api/day already in flight, or a switch
 // outside this page's Sign in / Sign out) shows until /api/day answers; check a readable cookie set at sign-in to close that.
 type Saved = { v: 3; part: string; day: Day; opening: Opening | null; setupDone: boolean };
+// One answer on the screen: the first is its big button, the rest links under it.
+type Answer = { label: string; run(): void };
 
 const SAVED_KEY = "zeno:day";
-const CHECKINS_KEY = "zeno:checkins";
 const scannedKey = (account: string) => `zeno:scanned:${account}`;
 const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -97,7 +101,7 @@ function writeSaved(saved: Saved | null) {
   }
 }
 
-// Per-viewer conveniences (check-ins muted, today's scan done); blocked storage just means the defaults.
+// Per-viewer conveniences (today's scan done); blocked storage just means the defaults.
 function readLocal(key: string) {
   try {
     return localStorage.getItem(key);
@@ -115,9 +119,8 @@ function writeLocal(key: string, value: string) {
 }
 
 // Read once per page load, so the first paint and every later render agree.
-let boot: { part: string; hour: number; saved: Saved | null; checkins: boolean } | undefined;
-const readBoot = () =>
-  (boot ??= { part: dayPart(new Date()), hour: new Date().getHours(), saved: readSaved(), checkins: readLocal(CHECKINS_KEY) !== "off" });
+let boot: { part: string; hour: number; saved: Saved | null } | undefined;
+const readBoot = () => (boot ??= { part: dayPart(new Date()), hour: new Date().getHours(), saved: readSaved() });
 
 // Network errors and non-JSON replies (a platform 504 page) come back as { state: "error" }.
 async function getJson<T>(url: string, init?: RequestInit): Promise<T | { state: "error" }> {
@@ -171,6 +174,10 @@ const offerLabel = (block: CalendarBlock) =>
     : `Add “${block.title}” on ${new Date(`${block.date}T12:00:00Z`).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric" })}?`;
 const asFact = (memory: Memory): Fact => ({ id: memory.id, text: memory.text, group: memory.group, device: false });
 const asDeviceFact = (fact: VaultFact): Fact => ({ id: fact.id, text: fact.text, group: fact.group, device: true });
+// Only a Gmail compose window opens from Open in Gmail.
+const gmailDraft = (draft: EmailDraft | null | undefined) => (typeof draft?.url === "string" && draft.url.startsWith("https://mail.google.com/") ? draft : null);
+// "15 min" on the screen is said as "15 minutes".
+const spoken = (line: string) => line.replace(/(\d) min$/, "$1 minutes");
 
 export default function GuidedDay() {
   // null on the server and while hydrating; then this browser's saved day, if any.
@@ -190,7 +197,6 @@ export default function GuidedDay() {
   const [goalSet, setGoal] = useState<Goal | null | undefined>(undefined);
   const [pickSet, setPick] = useState<FirstPick | null | undefined>(undefined);
   const [progressSet, setProgress] = useState<Progress | null>(null);
-  const [checkinsSet, setCheckins] = useState<boolean | null>(null);
   // Setup waits for /api/day to say the person is still new, so a tap on a saved setup card is never undone.
   const screen = screenSet ?? (saved && (!saved.day.isNew || saved.setupDone) ? "ready" : null);
   const line =
@@ -200,7 +206,6 @@ export default function GuidedDay() {
   const goal = goalSet === undefined ? saved?.day.goal ?? null : goalSet;
   const pick = pickSet === undefined ? (same && pickFits(same.opening?.pick, same.day.goal) ? same.opening?.pick ?? null : null) : pickSet;
   const progress = progressSet ?? day?.progress ?? null;
-  const checkinsOn = checkinsSet ?? booted?.checkins ?? true;
 
   const [heard, setHeard] = useState("");
   const [typing, setTyping] = useState(false);
@@ -213,10 +218,9 @@ export default function GuidedDay() {
   const [leaving, setLeaving] = useState<Step | null>(null);
   const [celebrate, setCelebrate] = useState(false);
   const [timer, setTimer] = useState<number | null>(null);
-  // "See the plan" for a picked step: the plan leads with that step and starts it at the pick's minutes.
-  const [lead, setLead] = useState<{ stepId: string; minutes: number } | null>(null);
   const [hear, setHear] = useState(false);
-  const [quiet, setQuiet] = useState<Quiet[]>([]);
+  const [draft, setDraft] = useState<EmailDraft | null>(null); // an email Zeno wrote, offered as Open in Gmail
+  const [sources, setSources] = useState(false); // Focus shows its step's sources
   const [bookings, setBookings] = useState<Record<string, Booking>>({});
   const [offerKeys, setOfferKeys] = useState<string[]>([]);
   const [setupAt, setSetupAt] = useState(0);
@@ -227,8 +231,6 @@ export default function GuidedDay() {
   const [unsaved, setUnsaved] = useState(0); // setup answers and pasted notes that failed to save
   const [reading, setReading] = useState(0);
   const history = useRef<Turn[]>([]);
-  // Noted facts the person undid while this history still holds the turn that asked for them.
-  const undone = useRef<string[]>([]);
   const cache = useRef<Saved | null>(null);
   const tapped = useRef(false); // the turn in flight came from a chip, not the type box
   const moved = useRef(false); // the person has taken a turn since the opening was shown
@@ -239,7 +241,6 @@ export default function GuidedDay() {
   const starting = useRef<Promise<Goal | null> | null>(null); // a plan from the first card still being saved
   const booking = useRef(new Set<string>()); // booking chips with a request in flight, so a double tap books once
   const replied = useRef<string[]>([]); // the last talk turn's quick replies, which came with its booking offers
-  const slotsAsked = useRef(""); // the plan whose free time was asked for
   const warned = useRef(new Set<string>()); // events already given a heads-up
   const cardAt = useRef(0); // when the card last changed, so the second tap of a double tap can't answer the next one
   useEffect(() => {
@@ -301,45 +302,12 @@ export default function GuidedDay() {
     if (cache.current?.opening) store({ opening: { ...cache.current.opening, pick: next } });
   }
 
-  // ---------- Quiet lines: Noted, Kept on this device, heads-ups ----------
-  function sayQuiet(entry: Quiet) {
-    setQuiet((list) => [...list.filter((one) => one.key !== entry.key), entry].slice(-3));
-  }
-  const dropQuiet = (key: string) => setQuiet((list) => list.filter((one) => one.key !== key));
-
-  function noted(memory: { id: string; text: string }) {
-    const key = `m:${memory.id}`;
-    sayQuiet({
-      key,
-      text: `Noted: ${memory.text}`,
-      undo() {
-        dropQuiet(key);
-        undone.current.push(memory.text);
-        void forgetMemory(memory.id);
-      },
-    });
-  }
-
-  // Private facts go to this device only (never to /api/memory); returns the ones newly kept.
-  function keep(facts: PrivateFact[] | undefined, say = true): VaultFact[] {
+  // Private facts go to this device only (never to /api/memory), silently like every memory (Vi, Nov 2); returns the
+  // ones newly kept.
+  function keep(facts: PrivateFact[] | undefined): VaultFact[] {
     const mine = account();
     if (!mine || !Array.isArray(facts) || facts.length === 0) return [];
-    const added = addToVault(mine, facts);
-    if (say) {
-      for (const fact of added) {
-        const key = `v:${fact.id}`;
-        sayQuiet({
-          key,
-          text: `Kept on this device: ${fact.text}`,
-          undo() {
-            dropQuiet(key);
-            removeFromVault(mine, fact.id);
-            setDevice(readVault(mine));
-          },
-        });
-      }
-    }
-    return added;
+    return addToVault(mine, facts);
   }
 
   // Returns whether the model's opening should follow.
@@ -380,16 +348,14 @@ export default function GuidedDay() {
       setLine(data.opening);
       setOptions(quickReplies(data.options));
     }
-    // The first open of the day (not the first run) re-reads calendar and email quietly; new facts show as Noted lines.
+    // The first open of the day (not the first run) re-reads calendar and email quietly; what it learns saves silently.
     const today = localDate(zone());
     if (readLocal(scannedKey(data.account)) !== today) {
       setTimeout(() => {
         void post<ProfileResponse>("/api/profile/scan", { private: vaultTexts(data.account), removed: vaultRemoved(data.account) }).then((res) => {
           // A failed scan is tried again on the next open today.
           if (res.state === "ok" || res.state === "no-access") writeLocal(scannedKey(data.account), today);
-          if (res.state !== "ok") return;
-          for (const memory of res.learned ?? []) noted(memory);
-          keep(res.private);
+          if (res.state === "ok") keep(res.private);
         });
       }, 1500);
     }
@@ -459,7 +425,7 @@ export default function GuidedDay() {
     setSheet(null);
     setHear(false);
     setPick(null);
-    setQuiet([]);
+    setDraft(null);
     setOfferKeys([]);
     setBookings({});
     setLine(SIGNED_OUT_LINE);
@@ -484,8 +450,7 @@ export default function GuidedDay() {
       remember([{ role: "assistant", content: before.line }]);
     }
     moved.current = true;
-    setLead(null);
-    // Answering the opening is picking one thing, so the card and the progress row move on at once.
+    // Answering the opening is picking one thing, so the card moves on at once.
     if (before.screen === "ready" || before.screen === "wrap") setScreen("talk");
     if (fromChip) setTyping(false);
     setHear(false);
@@ -493,6 +458,7 @@ export default function GuidedDay() {
     setLine("");
     setOptions([]);
     setOfferKeys([]);
+    setDraft(null);
     setCelebrate(false);
     setHeard(text);
     const mine = account();
@@ -516,15 +482,8 @@ export default function GuidedDay() {
       { role: "user", content: text },
       { role: "assistant", content: res.reply },
     ]);
+    // What the turn remembered stays quiet (Vi, Nov 2): it shows in Memory, and private facts only on this device.
     keep(res.private);
-    // The model reads an undone request in the history and saves it again: it goes again, unannounced, unless this
-    // message asks to remember something (then it shows as Noted, with Undo).
-    const asked = /\b(remember|save|keep|note)\b/i.test(text);
-    for (const action of res.actions ?? []) {
-      if (action.type !== "remembered" || !action.memoryId) continue;
-      if (!asked && undone.current.some((one) => sameFact(one, action.label))) void forgetMemory(action.memoryId);
-      else noted({ id: action.memoryId, text: action.label });
-    }
     // shortcut: a step already on the calendar is not offered again (booking it would double-book); add "Move to …?" if people ask.
     const proposal = (Array.isArray(res.proposal) ? res.proposal : []).filter(
       (block) => !block.stepId || !res.goal?.steps.some((step) => step.id === block.stepId && step.scheduledAt),
@@ -535,26 +494,33 @@ export default function GuidedDay() {
     const now = latest.current;
     const next = nextScreen(now.screen ?? "ready", res.actions ?? [], res.goal);
     const done = now.screen === "focus" && next === "checkin" ? openSteps(now.goal)[0] : undefined;
+    // After a Done, said or tapped, Zeno says what is next.
+    const said = next === "checkin" ? doneLine(res.goal) : res.reply;
     if (next === "checkin") setCelebrate(Boolean(res.progress));
     if (next !== "focus" || openSteps(res.goal)[0]?.id !== openSteps(now.goal)[0]?.id) setTimer(null);
+    // A plan made or changed here is the card now: its first step, ready to start.
+    if (next === "ready") changePick(stepCard(res.goal));
     if (done) {
-      // Said "done" out loud: same stamp as the Done button, so the card and pills wait for it too.
+      // Said "done" out loud: same stamp as the Done button, so the card and its answers wait for it too.
       setStamping(true);
       setBusy(true);
       setTimeout(() => {
         setBusy(false);
         changeGoal(res.goal);
-        fileAway(done, res.reply);
+        fileAway(done, said);
       }, 400);
     } else {
       changeGoal(res.goal);
-      setLine(res.reply);
+      setLine(said);
       setScreen(next);
     }
-    replied.current = quickReplies(res.options, proposal.length > 0);
+    const drafted = gmailDraft(res.draft);
+    setDraft(drafted);
+    // A draft, the card and the screen after Done have their own answers.
+    replied.current = !drafted && (next === "talk" || next === "focus") ? quickReplies(res.options, proposal.length > 0) : [];
     setOptions(replied.current);
-    // The hook says the reply; hands-free listens again after a question.
-    return res.reply;
+    // The hook says it; hands-free listens again after a question.
+    return spoken(said);
   }
 
   // The finished card slides onto the pile while the next card rises with Zeno's line.
@@ -585,14 +551,16 @@ export default function GuidedDay() {
   function enterFocus(minutes: number | null) {
     setOptions([]);
     setOfferKeys([]);
+    setDraft(null);
+    setSources(false);
     setCelebrate(false);
     setScreen("focus");
     const said = CHECKINS.start(minutes ?? 0);
     setLine(minutes ? said : "");
-    if (minutes && checkinsOn) speakLine(said);
+    if (minutes) speakLine(said);
   }
 
-  // The first card's Start: an existing step starts; a new plan is saved and started in one request.
+  // The card's Start: an existing step starts; a new plan is saved and started in one request.
   function startPick(card: FirstPick) {
     const before = goal;
     const minutes = card.steps[0].minutes;
@@ -610,14 +578,14 @@ export default function GuidedDay() {
       });
       return;
     }
-    changeGoal(draftGoal(card, true, new Date()));
+    changeGoal(draftGoal(card, new Date()));
     enterFocus(minutes);
-    starting.current = savePick(card, true, before);
+    starting.current = savePick(card, before);
   }
 
   // POST /api/goal; a due date that passed since the card was shown gets the fresh card instead.
-  async function savePick(card: FirstPick, start: boolean, before: Goal | null) {
-    const res = await post<GoalResponse>("/api/goal", { title: card.goal, due: card.due, steps: card.steps, start });
+  async function savePick(card: FirstPick, before: Goal | null) {
+    const res = await post<GoalResponse>("/api/goal", { title: card.goal, due: card.due, steps: card.steps, start: true });
     if (res.state === "ok") {
       changeGoal(res.goal);
       return res.goal;
@@ -632,39 +600,27 @@ export default function GuidedDay() {
     return null;
   }
 
+  // A fresh first card: today's quick line at once, then the model's opening and pick, said aloud, unless the person
+  // moved on meanwhile.
   async function refreshOpening() {
     moved.current = false;
     setScreen("ready");
     setLine(cache.current?.day.opening ?? line);
+    setOptions(quickReplies(cache.current?.day.options));
     setPick(null);
     const res = await fetchOpening(account());
-    if (res.state !== "ok") return;
+    if (res.state !== "ok" || moved.current) return;
     const card = pickFits(res.pick, latest.current.goal) ? res.pick : null;
     store({ opening: { text: res.opening, options: quickReplies(res.options), pick: card } });
     setLine(res.opening);
     setOptions(quickReplies(res.options));
     setPick(card);
-  }
-
-  // "See the plan": the steps at once; a new plan is saved behind them, so Start and booking use real steps.
-  function seePlan(card: FirstPick) {
-    moved.current = true;
-    const minutes = card.steps[0].minutes;
-    const said = card.stepId ? `Here's the plan. This step first, ${minutes} minutes.` : `Here's the plan. The first step takes ${minutes} minutes.`;
-    setScreen("plan");
-    setLine(said);
-    setOptions([]);
-    speakLine(said);
-    if (card.stepId) return setLead({ stepId: card.stepId, minutes });
-    const before = goal;
-    changeGoal(draftGoal(card, false, new Date()));
-    starting.current = savePick(card, false, before);
+    speakLine(res.opening);
   }
 
   async function finishStep(step: Step) {
     setStamping(true);
     setBusy(true);
-    const before = progress;
     const real = await realStep(step);
     const [res] = await Promise.all([real ? patchStep(real.id, "done") : Promise.resolve({ state: "error" as const }), wait(400)]);
     setBusy(false);
@@ -677,22 +633,22 @@ export default function GuidedDay() {
     changeGoal(res.goal);
     changePick(null);
     if (res.progress) changeProgress(res.progress);
-    if (res.learned) noted(res.learned);
     setTimer(null);
+    setDraft(null);
+    setOptions([]);
     setCelebrate(Boolean(res.progress));
-    // The stamp, then straight to the next step's card: no question.
-    const said = doneLine(before, res.progress, openSteps(res.goal).length > 0);
+    // The stamp, then what is next, with Keep going.
+    const said = doneLine(res.goal);
     fileAway(step, said);
-    speakLine(said);
+    speakLine(spoken(said));
   }
 
-  async function startStep(step: Step, minutes?: number) {
+  async function startStep(step: Step) {
     const before = goal;
-    const back = screen ?? "plan";
-    setLead(null);
-    setTimer(minutes ?? null);
+    const back = screen ?? "ready";
+    setTimer(null);
     if (goal) changeGoal(withStatus(goal, step.id, "doing", new Date()));
-    enterFocus(minutes ?? step.minutes);
+    enterFocus(step.minutes);
     const real = await realStep(step);
     if (!real) return failStart({ state: "error" }, before, back);
     const res = await patchStep(real.id, "doing");
@@ -700,89 +656,51 @@ export default function GuidedDay() {
     else failStart(res, before, back);
   }
 
-  // Words a chip or pill says for the person; onUserTurn sees the flag.
+  // Words a chip says for the person; onUserTurn sees the flag.
   function tap(text: string) {
     tapped.current = true;
     void voice.submit(text);
   }
 
-  // A question from Zeno that wants an answer: said aloud with answers to tap, then listened for if the person is
-  // talking; the type box opens only when there is nothing to tap.
-  function ask(question: string, answers: string[]) {
-    remember([{ role: "assistant", content: question }]);
-    setNote(null);
-    setOptions(answers);
-    setLine(question);
-    if (!voice.muted) void voice.speak(question);
-    if (answers.length === 0 && (!talking.current || !voice.supported || voice.muted)) setTyping(true);
-  }
-
-  // "Stop for now": a short wrap-up, and the next step offered for tomorrow with one tap.
+  // "Stop for now" and "That's enough today": the step stays open, so the next opening brings it back. A plan with an
+  // hour or more left gets one block tomorrow offered (Vi, Nov 2); its button shows only once free time answers, so
+  // nothing moves under a tap.
   function stopForNow() {
     voice.stop();
     setTyping(false);
     setOptions([]);
+    setDraft(null);
     setCelebrate(false);
     setTimer(null);
     setScreen("wrap");
-    const next = isDraft(goal) ? undefined : openSteps(goal)[0];
-    const write = day?.calendarWrite;
-    if (!next || write === "no-access" || !write) {
-      setOfferKeys([]);
-      const said = "Good place to stop. See you tomorrow.";
-      setLine(said);
-      return speakLine(said);
-    }
-    if (bookings[next.id]?.state === "booked" || next.scheduledAt) {
-      setOfferKeys([]);
-      const said = "Good place to stop. The next step is already on your calendar.";
-      setLine(said);
-      return speakLine(said);
-    }
-    const said = `Good place to stop. Want me to put “${next.title}” on your calendar?`;
-    setLine(said);
-    speakLine(said);
-    setOfferKeys([next.id]);
-    if (write !== "ok") return;
-    void post<FreeResponse>("/api/calendar/free", { minutes: next.minutes ?? 10, days: 2 }).then((res) => {
+    setLine(WRAP_LINE);
+    speakLine(WRAP_LINE);
+    const plan = isDraft(goal) ? null : goal;
+    const minutes = day?.calendarWrite === "ok" ? laterMinutes(plan) : 0;
+    const first = openSteps(plan)[0];
+    if (!plan || !minutes || !first) return setOfferKeys([]);
+    // Its own key, and an earlier unbooked one goes, so no old offer stands in while free time loads (a booked one
+    // means the step is scheduled, so this is never reached).
+    const key = `later:${first.id}`;
+    setBookings((all) => Object.fromEntries(Object.entries(all).filter(([one]) => one !== key)));
+    setOfferKeys([key]);
+    const free = post<FreeResponse>("/api/calendar/free", { minutes, days: 2 });
+    void Promise.race([free, wait(5000).then(() => ({ state: "error" as const }))]).then((res) => {
       if (res.state === "signed-out") return showSignedOut();
       if (latest.current.screen !== "wrap") return;
-      const block = res.state === "ok" ? laterBlock(next, res.slots, zone()) : null;
-      if (block) offer(next.id, [block], offerLabel(block));
-      else setLine("Good place to stop. I couldn't find a free time for the next step, so it's on your plan for tomorrow.");
+      const block = res.state === "ok" ? laterBlock(plan, minutes, res.slots, zone()) : null;
+      if (block) offer(key, [block], offerLabel(block));
+      else setOfferKeys([]);
     });
   }
 
+  // Back to my day (or No thanks): the home card, nothing picked until the next opening.
   function wrapDone() {
     setOfferKeys([]);
     setOptions([]);
     changePick(null);
     setLine("Nice work today.");
     setScreen("ready");
-  }
-
-  function primary() {
-    if (performance.now() - cardAt.current < 400) return;
-    const step = openSteps(goal)[0];
-    const led = lead && openSteps(goal).find((one) => one.id === lead.stepId);
-    if (screen === "signed-out") void signIn("google", { redirectTo: "/" });
-    else if (screen === "plan" && lead && led) void startStep(led, lead.minutes);
-    else if (screen === "plan" && step) void startStep(step);
-    else if (screen === "focus" && step) void finishStep(step);
-    else if (screen === "checkin" && step) void startStep(step);
-    else if (screen === "checkin") {
-      setScreen("talk");
-      setCelebrate(false);
-      ask("What's the next thing you want to start?", ["Something small", "Plan tomorrow"]);
-    }
-  }
-
-  function secondary() {
-    if (performance.now() - cardAt.current < 400) return;
-    const step = openSteps(goal)[0];
-    if (screen === "plan") ask("What should change?", ["Make step one smaller", "Fewer steps", "Different order"]);
-    else if (screen === "focus" && step) tap(`I'm stuck on: ${step.title}.`);
-    else if (screen === "checkin") stopForNow();
   }
 
   function talk() {
@@ -856,14 +774,7 @@ export default function GuidedDay() {
     // Only what Google confirmed counts as booked.
     setBookings((all) => ({ ...all, [key]: { ...entry, blocks: res.booked, state: "booked" } }));
     linkSteps(res.booked, true);
-    if (key === "import") {
-      // Setup's own line, gone when setup ends; a batch booked after that (its notes read late) has Booked · Undo.
-      if (latest.current.screen === "setup") sayQuiet({ key: "import", text: `Added ${res.booked.length} to your Zeno calendar.` });
-      // A booked to-do lives on the calendar now, so its "To do:" memory is gone.
-      void getJson<MemoryResponse>("/api/memory").then((list) => {
-        if (list.state === "ok") setLearned(list.memories);
-      });
-    } else if (latest.current.screen === "wrap") {
+    if (latest.current.screen === "wrap") {
       const said = res.booked[0].start && isTomorrow(res.booked[0].start, zone()) ? "Booked. Tomorrow's streak is planned." : "Booked. It's on your calendar.";
       setLine(said);
       speakLine(said);
@@ -887,34 +798,18 @@ export default function GuidedDay() {
     }
     setBookings((all) => ({ ...all, [key]: { ...entry, blocks: entry.blocks.map((block) => ({ ...block, eventId: undefined })), state: "offer" } }));
     linkSteps(entry.blocks, false);
-    if (key === "import") dropQuiet("import");
+    // The offer is back, so the line no longer says Booked.
+    if (latest.current.screen === "wrap") setLine(WRAP_LINE);
   }
-
-  // The plan's booking chips: free time for each step not yet booked, asked for once per plan.
-  const loadSlots = useEffectEvent(() => {
-    if (screen !== "plan" || !goal || isDraft(goal) || day?.calendarWrite !== "ok") return;
-    const shown = openSteps(goal).slice(0, 4);
-    const ask = `${goal.id}:${shown.map((step) => step.id).join(",")}`;
-    if (shown.length === 0 || slotsAsked.current === ask) return;
-    slotsAsked.current = ask;
-    const minutes = Math.min(...shown.map((step) => step.minutes ?? 10));
-    void post<FreeResponse>("/api/calendar/free", { minutes, days: 2 }).then((res) => {
-      if (res.state !== "ok") return;
-      for (const block of planBlocks(shown, res.slots)) offer(block.stepId ?? blockKey(block), [block], offerLabel(block));
-    });
-  });
-  useEffect(() => {
-    loadSlots();
-  }, [screen, goal]);
 
   // ---------- Focus check-ins and heads-ups ----------
   const focusStep = screen === "focus" ? openSteps(goal)[0] ?? null : null;
   const focusMinutes = timer ?? focusStep?.minutes ?? null;
   const checkin = useEffectEvent((kind: "half" | "end") => {
-    if (latest.current.screen !== "focus" || options.length > 0 || voice.phase === "listening" || voice.phase === "thinking") return;
+    if (latest.current.screen !== "focus" || options.length > 0 || draft || voice.phase === "listening" || voice.phase === "thinking") return;
     const said = CHECKINS[kind];
     setLine(said);
-    if (checkinsOn && voice.phase === "idle") speakLine(said);
+    if (voice.phase === "idle") speakLine(said);
   });
   useEffect(() => {
     if (!focusStep?.startedAt || !focusMinutes) return;
@@ -927,19 +822,13 @@ export default function GuidedDay() {
     return () => timers.forEach(clearTimeout);
   }, [focusStep?.id, focusStep?.startedAt, focusMinutes]);
 
+  // A heads-up before an event is only spoken (Vi, Nov 2): once, never over the person talking, nothing when muted.
   const headsUp = useEffectEvent(() => {
-    setQuiet((list) => list.filter((one) => !one.until || one.until > Date.now()));
     const keyOf = (event: { title: string; start: string }) => `${event.title}@${event.start}`;
     const soon = soonEvent((day?.events ?? []).filter((event) => !warned.current.has(keyOf(event))), Date.now());
     if (!soon) return;
-    const key = keyOf(soon);
-    warned.current.add(key);
+    warned.current.add(keyOf(soon));
     const minutes = Math.max(1, Math.round((Date.parse(soon.start) - Date.now()) / 60_000));
-    const text = `Heads up: ${soon.title} at ${formatTime(soon.start, zone())}.`;
-    // In focus it is the lead line (unless a question waits for an answer); elsewhere a quiet line until it starts.
-    if (latest.current.screen === "focus" && options.length === 0) setLine(text);
-    else sayQuiet({ key: `w:${key}`, text, until: Date.parse(soon.start) });
-    // Said once, never over the person talking.
     if (voice.phase === "idle" || voice.phase === "speaking") speakLine(`Heads up, ${soon.title} in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`);
   });
   const watching = screen !== null && screen !== "signed-out" && screen !== "setup";
@@ -965,7 +854,7 @@ export default function GuidedDay() {
       if (res.state !== "ok") return;
       const found = res.learned ?? [];
       setLearned((list) => [...list.filter((m) => !found.some((n) => n.id === m.id)), ...found]);
-      const added = keep(res.private, false);
+      const added = keep(res.private);
       setSetupDevice((list) => [...added, ...list]);
     });
     saves.current.push(scan);
@@ -995,6 +884,7 @@ export default function GuidedDay() {
     nextSetupCard();
   }
 
+  // Pasted notes become memories (ImportResponse.proposal is always empty since Nov 2: no to-dos on the calendar).
   function savePaste(text: string) {
     setReading((n) => n + 1);
     saves.current.push(
@@ -1002,14 +892,8 @@ export default function GuidedDay() {
         setReading((n) => n - 1);
         learn(res);
         if (res.state !== "ok") return;
-        const added = keep(res.private, false);
+        const added = keep(res.private);
         setSetupDevice((list) => [...added, ...list]);
-        // Only offered when Zeno may write to its calendar; one tap books the whole batch.
-        const proposal = Array.isArray(res.proposal) ? res.proposal : [];
-        if (proposal.length > 0) {
-          offer("import", proposal, `Add ${proposal.length === 1 ? "this" : `these ${proposal.length}`} to your calendar?`);
-          setOfferKeys(["import"]);
-        }
       }),
     );
     nextSetupCard();
@@ -1020,7 +904,6 @@ export default function GuidedDay() {
     moved.current = false;
     setPasting(false);
     setOfferKeys([]);
-    dropQuiet("import");
     setScreen("ready");
     setLine(day?.opening || greeting(new Date().getHours(), day?.firstName ?? null));
     setOptions(quickReplies(day?.options));
@@ -1084,10 +967,10 @@ export default function GuidedDay() {
     if (res.state !== "ok" || !Array.isArray(res.memories)) return setNote(SAVE_FAIL);
     setMemories(res.memories);
     const mine = account();
-    if (mine && keep((res as { private?: PrivateFact[] }).private, false).length > 0) setDevice(readVault(mine));
+    if (mine && keep((res as { private?: PrivateFact[] }).private).length > 0) setDevice(readVault(mine));
   }
 
-  // ---------- Chips ----------
+  // ---------- The screen's answers ----------
   const setupCard = SETUP[setupAt];
   const name = day?.firstName ?? saved?.day.firstName;
   const setupFacts = [...learned].sort((a, b) => Number(a.source === "you") - Number(b.source === "you"));
@@ -1108,58 +991,67 @@ export default function GuidedDay() {
   const setupNote = unsaved
     ? `I couldn't save ${unsaved} of your answers. Tell me again anytime.`
     : "Tap × to remove anything. You can change this anytime in Memory.";
-  const startChip = (minutes: number) => `Start · ${minutes} min`;
-  const chips: Chip[] =
-    screen === "setup"
-      ? !setupCard
-        ? [{ label: "Start my day", tone: "ink" }]
-        : pasting
-          ? [{ label: "Skip", tone: "quiet" }]
-          : setupCard.answers.map(([label], i) => ({
-              label,
-              tone: setupCard.answers.length === 2 ? (i === 0 ? "ink" : "quiet") : undefined,
-            }))
-      : screen === "ready"
-        ? !fresh
+  const offers = offerKeys.flatMap((key) => (bookings[key] ? [bookings[key]] : []));
+  const step = openSteps(goal)[0];
+
+  // Every screen has one big button (the first answer) and small links for the rest (Vi, Nov 2).
+  function screenAnswers(): Answer[] {
+    const say = (label: string, run: () => void): Answer => ({ label, run });
+    const replies = options.map((option) => say(option, () => tap(option)));
+    // "Something else": talk if this browser can listen, otherwise type.
+    const other = say("Something else", () => (voice.supported ? talk() : setTyping(true)));
+    if (screen === "signed-out") return [say("Sign in with Google", () => void signIn("google", { redirectTo: "/" }))];
+    if (screen === "setup") {
+      if (!setupCard) return [say("Start my day", finishSetup)];
+      if (pasting) return [say("Skip", () => answerSetup(1))];
+      return setupCard.answers.map(([label], i) => say(label, () => answerSetup(i)));
+    }
+    if (draft) {
+      return [
+        say("Open in Gmail", () => {
+          window.open(draft.url, "_blank", "noopener,noreferrer");
+          setDraft(null);
+        }),
+        say("Not now", () => setDraft(null)),
+      ];
+    }
+    if (screen === "ready") {
+      // A saved card paints at once, but its answers wait for /api/day.
+      if (!fresh) return [];
+      if (pick) return [say(`Start · ${pick.steps[0].minutes} min`, () => startPick(pick)), other];
+      return options.length ? [...replies, other] : [say("Let's start", () => tap("Let's start."))];
+    }
+    if (screen === "talk") return options.length || offers.some((one) => one.state !== "booked") ? [...replies, other] : [];
+    if (screen === "focus" && step) {
+      const done = say("Done", () => void finishStep(step));
+      const stop = say("Stop for now", stopForNow);
+      // A question Zeno asked during focus leads with its answers; Done stays one tap away.
+      if (options.length) return [...replies, done, stop];
+      const extra = isEmailStep(step.title)
+        ? [say("Draft it in Gmail", () => tap(`Draft the email for: ${step.title}`))]
+        : sources || isDraft(goal)
           ? []
-          : pick
-            ? [{ label: startChip(pick.steps[0].minutes), tone: "ink" }, { label: "See the plan" }, { label: "Something else", tone: "quiet" }]
-            : options.length
-              ? [...options.map((label) => ({ label })), { label: "Something else", tone: "quiet" }]
-              : [{ label: "Let's start", tone: "ink" }]
-        : screen === "talk" && (options.length || offerKeys.length)
-          ? [...options.map((label) => ({ label })), { label: "Something else", tone: "quiet" }]
-          : screen === "wrap"
-            ? offerKeys.length || day?.calendarWrite === "needs-permission"
-              ? [{ label: "Not now", tone: "quiet" }]
-              : []
-            : (screen === "focus" || screen === "plan" || screen === "checkin") && options.length
-              ? options.map((label) => ({ label }))
-              : [];
+          : [say("Sources", () => setSources(true))];
+      return [done, say("Stuck?", () => tap(`I'm stuck on: ${step.title}.`)), stop, ...extra];
+    }
+    if (screen === "checkin") {
+      const next = step ? say("Keep going", () => void startStep(step)) : say("Pick the next thing", () => void refreshOpening());
+      return [next, say("That's enough today", stopForNow)];
+    }
+    if (screen === "wrap") {
+      // While free time is asked for, nothing shows, so no button changes under a tap.
+      const wrapOffer = offerKeys.length ? bookings[offerKeys[0]] : undefined;
+      if (offerKeys.length && !wrapOffer) return [];
+      return [say(wrapOffer && wrapOffer.state !== "booked" ? "No thanks" : "Back to my day", wrapDone)];
+    }
+    return [];
+  }
+  const answers = screenAnswers();
 
   function chip(i: number) {
     if (performance.now() - cardAt.current < 400) return;
-    if (screen === "setup") return answerSetup(pasting ? 1 : i);
-    if (screen === "ready" && pick) {
-      if (i === 0) return startPick(pick);
-      if (i === 1) return seePlan(pick);
-    } else if (screen === "wrap") {
-      return wrapDone();
-    } else if (options[i]) {
-      return tap(options[i]);
-    } else if (screen === "ready" && !options.length) {
-      return tap("Let's start.");
-    }
-    // "Something else": talk if this browser can listen, otherwise type.
-    if (voice.supported) talk();
-    else setTyping(true);
+    answers[i]?.run();
   }
-
-  const shownSteps = new Set(screen === "plan" ? openSteps(goal).slice(0, 4).map((step) => step.id) : []);
-  const offers = offerKeys.flatMap((key) => {
-    const entry = bookings[key];
-    return entry && !shownSteps.has(entry.blocks[0]?.stepId ?? "") ? [entry] : [];
-  });
 
   return (
     <DayView
@@ -1176,7 +1068,7 @@ export default function GuidedDay() {
       note={voice.error ? VOICE_NOTE[voice.error] : screen === "setup" && !setupCard ? setupNote : note}
       signInFailed={signInFailed}
       busy={busy || voice.phase === "thinking"}
-      chips={chips}
+      chips={answers.map((one) => one.label)}
       dots={screen === "setup" ? { at: setupAt, of: SETUP.length } : null}
       list={screen === "setup" && !setupCard ? summary : null}
       reading={screen === "setup" && !setupCard ? stillReading : []}
@@ -1185,19 +1077,14 @@ export default function GuidedDay() {
       progress={progress}
       pick={pick}
       celebrate={celebrate}
-      quiet={screen === "setup" ? quiet.filter((one) => one.key === "import") : quiet}
       bookings={bookings}
       offers={offers}
-      calendarAsk={day?.calendarWrite === "needs-permission"}
       timer={timer}
-      lead={lead}
+      sources={sources}
       device={device}
       account={screen && screen !== "signed-out" ? (name?.trim()[0]?.toUpperCase() ?? "") : null}
-      checkins={screen === "focus" ? checkinsOn : null}
       voice={voice}
       on={{
-        primary,
-        secondary,
         chip,
         hear() {
           setHear(false);
@@ -1228,12 +1115,6 @@ export default function GuidedDay() {
         retryMemory: () => void loadMemories(),
         book: (key) => void book(key),
         unbook: (key) => void unbook(key),
-        checkins() {
-          const next = !checkinsOn;
-          setCheckins(next);
-          writeLocal(CHECKINS_KEY, next ? "on" : "off");
-          if (!next && voice.phase === "speaking") voice.stop();
-        },
         mute: () => voice.setMuted(!voice.muted),
         signIn() {
           // The chooser may pick another account, so this one's day must not paint for it.

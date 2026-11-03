@@ -131,7 +131,7 @@ body {
     --rows: 5;
   }
 }
-/* shortcut: a three-line step title over the roadmap still pushes the dock labels past a 690px viewport; shrink long step titles if real plans do that. */
+/* shortcut: a three-line step title still pushes the dock labels past a 690px viewport; shrink long step titles if real plans do that. */
 .card {
   @variant short {
     --fs: 40px;
@@ -294,33 +294,6 @@ body {
   color: var(--ink-2);
 }
 
-/* Roadmap: the steps after this one, fanned out under it, each --n cards deep. */
-.strip {
-  position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 16px;
-  margin: -24px calc(var(--n) * 16px) 0;
-  padding: 32px 32px 8px;
-  min-height: 72px;
-  border-radius: 0 0 4px 4px;
-  background: var(--card);
-  box-shadow: var(--edge);
-  font-size: 20px;
-  line-height: 32px;
-}
-@media (max-width: 639px) {
-  .strip {
-    margin-inline: calc(var(--n) * 8px);
-    padding-inline: 16px;
-  }
-  /* Phones peek at two steps, so Start clears the dock under wrapped titles. */
-  .strip.third {
-    display: none;
-  }
-}
-
 /* Stamped in the card's empty lower right, clear of the words. */
 .stamp {
   position: absolute;
@@ -478,13 +451,55 @@ button:active .tap {
   padding: 0 24px;
   font-size: 18px;
 }
-/* Phones stack the answers, so pills sit a little lower to keep four of them and the dock on one screen. */
+/* Phones get slightly smaller pills. */
 @media (max-width: 639px) {
   .pill {
     min-height: 52px;
     padding-inline: 16px;
     font-size: 18px;
   }
+}
+/* The screen's one big button (Vi, Nov 2): the ink pill, as wide as the card. */
+.pill-big {
+  width: 100%;
+  min-height: 64px;
+  padding-block: 12px;
+  font-size: 22px;
+  line-height: 28px;
+}
+
+/* Every other action: a small muted word under the big button, underlined on hover and focus, a 44px tap target. */
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  column-gap: 8px;
+  color: var(--ink-2);
+}
+.link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 4px;
+  border-radius: 8px;
+  color: var(--ink-2);
+  font-weight: 500;
+  text-underline-offset: 4px;
+}
+.link:focus-visible {
+  color: var(--ink);
+  text-decoration: underline;
+}
+@media (hover: hover) {
+  .link:hover {
+    color: var(--ink);
+    text-decoration: underline;
+  }
+}
+.link[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .knob {
@@ -568,11 +583,7 @@ button:active .tap {
   text-indent: 0;
 }
 
-/* A plan's deadline in the minutes' place: words, so not the Mono. */
-.mins.due {
-  font-family: var(--font-atkinson), system-ui, sans-serif;
-}
-/* Booked · Undo and Booked · tomorrow 7:00 PM: the offer's chip shape, held still (one family with "Book …?"). */
+/* Booked · Undo: the offer's chip shape, held still (one family with "Book …?"). */
 .booked {
   display: inline-flex;
   align-items: center;
@@ -585,24 +596,6 @@ button:active .tap {
   line-height: 24px;
   font-weight: 700;
   white-space: nowrap;
-}
-/* On a step's own row (the card or a strip) the chip sits within the line, so the rows keep their height. */
-.strip :is(.pill-small, .booked),
-.lines .slot > :is(.pill-small, .booked) {
-  min-height: 40px;
-  padding-inline: 16px;
-}
-.strip .booked .quiet-x,
-.lines .slot .quiet-x {
-  min-height: 36px;
-}
-/* The plan card's booking chip: under the deadline, at the right end of the title's second line. */
-.lines .slot {
-  float: right;
-  clear: right;
-  margin: calc((var(--lh) - 40px) / 2) 0 0 16px;
-  font-size: 18px;
-  line-height: 24px;
 }
 
 /* Undo and the like: a quiet underlined word, still a full-height tap target. */
@@ -916,7 +909,7 @@ button:active .tap {
 
 /* Desk */
 /* Today's calendar and inbox in one wide view over the dimmed desk; full screen on phones. */
-/* --top (set on open) is the card's top edge, so the dialog starts under the four steps instead of cutting through them. */
+/* --top (set on open) is the card's top edge, so the dialog starts at the card, under the top bar. */
 .desk {
   width: min(1120px, calc(100% - 64px));
   max-width: none;
@@ -971,7 +964,7 @@ button:active .tap {
 }
 
 /* ---------- Desk: Today | Week, and the week grid ---------- */
-/* The desk's two views, marked like the four steps: an ink bar under the one showing. */
+/* The desk's two views: an ink bar under the one showing. */
 .desk-tab {
   min-height: 52px;
   font-size: 28px;
