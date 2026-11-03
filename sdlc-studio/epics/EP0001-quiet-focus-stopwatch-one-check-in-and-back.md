@@ -7,7 +7,7 @@
 > **Size:** M
 > **Approval:** Draft, awaiting Vi's approval
 > **Priority:** Nov 4, must ship (demo shot 4)
-> **Target Release:** Nov 4 demo, on production by Nov 3 evening
+> **Target Release:** Nov 4 demo, on production before the Nov 3 reset (2 PM PT, DQ-1); after that only as a fix
 > **Owner:** Claude
 > **Reviewer:** Vi
 > **PRD:** A3, A4, A5, L2, and the Nov 4 slice of A6
@@ -15,9 +15,9 @@
 ## Summary
 
 Focus becomes quiet. The timer counts up instead of down, so a step never "runs out". Each step gets one soft
-check-in line, at a minute Muse picks for that task. When you come back to Zeno's tab after a while away, the line
-under the card says where you were: "Back. 23 min on 'Outline claim 2'." Zeno says nothing out loud while you focus,
-unless you talk to it.
+check-in line on the card, at a minute Muse picks for that task. When you come back to Zeno's tab after a while away,
+the card says where you were: "Back. 23 min on 'Outline claim 2'." Zeno says nothing out loud while you focus, unless
+you talk to it.
 
 **Goal:** Maya starts a step and stays with it. No alarm, no pings, no questions to answer.
 
@@ -54,7 +54,7 @@ want to help people think better and focus more." Vi chose check-ins that are "e
 | --- | --- | --- | --- |
 | Lines Zeno speaks during a step, when nobody talks to it | 2 to 3 | 0 | A run on production with Sound on |
 | New steps that carry a check-in minute from Muse | 0% | 90% or more | SQL: share of steps created after release with `checkin` set |
-| Finished steps per active day (O1) | Not measured | 2 or more (proposed, OQ-15) | `steps.done_at`, per person |
+| Finished steps per day with at least one finished step (O1's stand-in until EP0005's daily "opened" mark exists) | Not measured | 2 or more (proposed, OQ-15) | `steps.done_at`, per person, in their time zone |
 
 ## Scope
 
@@ -65,14 +65,19 @@ want to help people think better and focus more." Vi chose check-ins that are "e
   default)
 - One check-in minute per step, picked by Muse when it writes the steps. Muse sees the patterns Zeno already learns
   from use (real step lengths, time of day), which is the Nov 4 version of "learned per person". (A4, OQ-12 default)
-- One soft check-in line at that minute. Visual only, shown once, never needs an answer. (A4)
-- "Back. N min on '<step>'." after 1 minute or more away from Zeno's tab, during Focus only. (A5, L2)
+- One soft check-in line at that minute, on the card: it takes the goal line's rule while it shows (OQ-19 default).
+  Visual only, shown once, never needs an answer. (A4)
+- "Back. N min on '<step>'." on the card, in the same place, after 1 minute or more away from Zeno's tab, during
+  Focus only. (A5, L2)
 - The `/preview` gallery shows the new looks.
 
 ### Out of Scope
 
-- A check-in that adapts from how the person responds to it (the deeper A6). Later, in EP0013: nothing measures a
-  response today, and Zeno never asks.
+- A check-in that adapts from how the person responds to it (the deeper A6). Later, in EP0013: it learns from how
+  steps go after the line shows (finished soon after, or ran far past), from the times Zeno already saves; Zeno never
+  asks.
+- Going back into Focus after a reload or a closed tab. For Nov 4 a reload shows the card, as today, and Start
+  restarts the stopwatch (Start saves a new start time). Later, in EP0005 (OQ-22).
 - Any notification, sound or vibration for a check-in. Never (brief §2).
 - Idle detection, screen recording or app tracking. Never (L2).
 - The lock-screen stopwatch on iPhone. Later, EP0015.
@@ -88,11 +93,11 @@ want to help people think better and focus more." Vi chose check-ins that are "e
 
 - [ ] Focus shows a stopwatch counting up, with the planned time in grey. Nothing happens when the planned time
       passes.
-- [ ] A reload shows the same running time.
+- [ ] A reload during Focus shows the card, as today; Start then restarts the stopwatch from 0:00.
 - [ ] Zeno says nothing out loud during Focus unless the person talks to it.
 - [ ] Each new step carries a check-in minute from Muse; a step without one uses a default minute.
-- [ ] One soft line shows at the check-in minute, once, and never needs an answer.
-- [ ] After 1 minute or more away from Zeno's tab during Focus, the line reads "Back. N min on '<step>'."
+- [ ] One soft line shows on the card at the check-in minute, once, and never needs an answer.
+- [ ] After 1 minute or more away from Zeno's tab during Focus, the card reads "Back. N min on '<step>'."
 - [ ] Zeno uses only its own tab's visibility. It asks for no permission to do it.
 
 ## Dependencies
@@ -107,7 +112,7 @@ want to help people think better and focus more." Vi chose check-ins that are "e
 
 | Dependency | Why | Status |
 | --- | --- | --- |
-| Vi's answers: OQ-6, OQ-7, the check-in copy, where the line sits, the default minute | The stories use the defaults until Vi answers | Open |
+| Vi's answers: OQ-6, OQ-7, OQ-19 (where both lines sit, and the check-in's words), the default minute | The stories use the defaults until Vi answers | Open |
 
 ### Blocking
 
@@ -131,8 +136,8 @@ want to help people think better and focus more." Vi chose check-ins that are "e
 | Muse leaves the minute out or picks nonsense | Medium | Low | Only a whole number from 1 to the planned minutes minus 1 is kept; otherwise the default minute |
 | Background tabs slow timers, so the line shows late | Medium | Low | The minute is measured from the saved start; a moment already passed is not shown late |
 | A new field on steps breaks checks that compare whole steps | High | Low | US0003 updates those checks in the same change |
-| Vi reads "under the card" as not "on the card" | Medium | Low | Asked below; moving the line is a small markup change |
-| 14 points in this epic before Nov 3 evening | Medium | High | Cut order in the [epic index](_index.md): the default minute alone (US0004 without US0003) still gives one quiet line |
+| The line on the card hides the goal line while it shows | Medium | Low | The goal line comes back with the next step; OQ-19 offers "right under the card" instead, a small markup change |
+| 14 points in this epic before the Nov 3 reset (2 PM PT, DQ-1) | Medium | High | All five stories are in what the video needs (brief §2: Muse picks the minute "per task"); the default minute is only the fallback when Muse leaves one out. Cut order for the rest of Nov 4 in the [epic index](_index.md) |
 
 ## Technical Considerations
 
@@ -142,8 +147,9 @@ want to help people think better and focus more." Vi chose check-ins that are "e
   NOT EXISTS` in `ensureSchema` (`src/lib/db.ts`).
 - `Step.checkin` and `NewStep.checkin`; a `checkin` field in the `set_goal` and `update_steps` tool steps and in the
   opening's `PLAN_STEP` (`src/lib/agent.ts`).
-- The rest is in the browser: the stopwatch (`src/components/day-view.tsx`), the line's timer and the visibility
-  listener (`src/components/guided-day.tsx`), pure helpers with self-checks (`src/components/day-flow.ts`).
+- The rest is in the browser: the stopwatch and the card's line in the goal line's place
+  (`src/components/day-view.tsx`), the line's timer and the visibility listener (`src/components/guided-day.tsx`), pure
+  helpers with self-checks (`src/components/day-flow.ts`).
 - Written against `main` at `7adcddb` (the tidy round, Nov 2 11:43 PM): the Focus card already holds three rules
   (title, goal line, timer).
 
@@ -185,9 +191,9 @@ want to help people think better and focus more." Vi chose check-ins that are "e
 - [ ] OQ-6: keep spoken heads-ups before events outside Focus? Default: yes, for timed events, never during Focus. -
       Owner: Vi
 - [ ] OQ-7: how long away before "Back." shows? Default: 1 minute. - Owner: Vi
-- [ ] The check-in line's words. Default: "Still with it? Keep going." - Owner: Vi
-- [ ] Where the line sits. Default: right under the card, where Focus already shows Zeno's words. The card's three
-      rules are full, and the short-laptop layout has no room for a fourth. - Owner: Vi
+- [ ] OQ-19: where the check-in and "Back." lines sit, and the check-in's words. Default: on the card, as the brief
+      says, in the goal line's place while the line shows (the card's three rules are full and the short-laptop
+      layout has no fourth); words "Still with it? Keep going." Option: right under the card. - Owner: Vi
 - [ ] The minute when Muse gives none. Default: 80% of the planned time (minute 20 of 25), and no line for steps
       under 4 minutes. - Owner: Vi
 - [ ] Is "learned per person" for Nov 4 enough as: Muse sees the patterns Zeno already learns when it picks the
@@ -199,3 +205,4 @@ want to help people think better and focus more." Vi chose check-ins that are "e
 | --- | --- | --- |
 | 2026-11-03 | Claude | Created via `new` (deterministic) |
 | 2026-11-03 | Claude | Wrote the epic from the PRD, Vi's Nov 3 brief and the code at `7adcddb`. Three Amigos lenses applied in-session by the author, not an independent review |
+| 2026-11-03 | Claude | Review fixes: both lines sit on the card (OQ-19 default, the brief's words); a reload shows the card as today (resuming is Later, OQ-22); O1 counted per day with a finished step; US0003 is in what the video needs; reset-time target |

@@ -7,7 +7,7 @@
 > **Size:** S
 > **Approval:** Draft, awaiting Vi's approval
 > **Priority:** Nov 4, must ship (demo shot 5)
-> **Target Release:** Nov 4 demo, on production by Nov 3 evening
+> **Target Release:** Nov 4 demo, on production before the Nov 3 reset (2 PM PT, DQ-1); after that only as a fix
 > **Owner:** Claude
 > **Reviewer:** Vi
 > **PRD:** J2
@@ -50,7 +50,7 @@ when the sentence sounds unfinished, reply quickly to a complete question, and g
 
 | Metric | Current | Target | Measurement |
 | --- | --- | --- | --- |
-| Unfinished sentences cut off, in Vi's own test | Most of them | 0 of 10 tries | Vi says 10 sentences with a 2-second pause after "and" |
+| Cut-offs in Vi's own test, by where the pause falls | Most of them | 0 when the pause comes after a joining word or "the"; the other places reported as they are | Vi says 10 natural sentences with a 2-second pause in different places: after "and", before "and", after a complete clause ("…next Thursday [pause] and I haven't started"), after "the". Claude writes down each result honestly |
 | Complete question to Zeno's first words, no tool | About 1.3-2.4 s plus speech start | About 2.5 s or less (median of 10) | Stopwatch from the end of speech to the first sound |
 
 ## Scope
@@ -76,11 +76,13 @@ when the sentence sounds unfinished, reply quickly to a complete question, and g
 
 ## Acceptance Criteria (Epic Level)
 
-- [ ] A sentence ending in a joining word, a filler or a trailing comma keeps Zeno listening for 3 more seconds.
+- [ ] A sentence ending in a joining word or a filler (or, on the Web Speech fallback, a trailing comma) keeps Zeno
+      listening for 3 more seconds.
 - [ ] Speaking again inside those 3 seconds joins the two parts into one turn.
 - [ ] A complete sentence or question is sent at once, as today.
 - [ ] "Done talking" sends what was heard at once; with nothing heard, it just stops listening.
-- [ ] In Vi's test, no unfinished sentence is cut off and complete questions are answered in about 2.5 s.
+- [ ] In Vi's test (10 natural sentences, the pause in different places), no pause after a joining word or "the" is
+      cut off, the other results are written down as they are, and complete questions are answered in about 2.5 s.
 
 ## Dependencies
 
@@ -107,8 +109,9 @@ when the sentence sounds unfinished, reply quickly to a complete question, and g
 
 ### Assumptions
 
-- Meta's transcripts end on the last word spoken, so "…and" is visible at the end of the text. The rule does not need
-  punctuation.
+- Meta's transcripts end on the last word spoken, so "…and" is visible at the end of the text. They come back
+  lowercase and unpunctuated (tested Oct 29), so on Meta's listener only the word list can trigger a hold; the
+  trailing-comma and "?" rules matter only on the Web Speech fallback.
 - A held Web Speech recognition can restart without a new tap once the mic is allowed (Chrome allows it).
 
 ### Risks
@@ -116,7 +119,8 @@ when the sentence sounds unfinished, reply quickly to a complete question, and g
 | Risk | Likelihood | Impact | Mitigation |
 | --- | --- | --- | --- |
 | A complete sentence that ends in a listed word ("…for my mom") waits 3 s | Medium | Low | Short list of words that rarely end a sentence; Vi's test tunes it |
-| Fillers ("um") never reach the transcript | Medium | Low | The joining words and trailing commas still catch most pauses |
+| Known miss: a pause right after a clause that sounds complete ("…next Thursday [pause] and I haven't started") is still sent at once | High | Medium | Written down in Vi's test, not hidden. The person keeps talking and it becomes the next turn (Zeno reads the last 12); holding every sentence would slow every complete question. "Done talking" ends a turn early when they finish sooner |
+| Fillers ("um") never reach the transcript | Medium | Low | The joining words still catch most pauses |
 | A hold makes the mic stay open longer | Low | Low | The 30-second listen limit still ends it, and sends the held words |
 
 ## Technical Considerations
@@ -169,3 +173,4 @@ when the sentence sounds unfinished, reply quickly to a complete question, and g
 | --- | --- | --- |
 | 2026-11-03 | Claude | Created via `new` (deterministic) |
 | 2026-11-03 | Claude | Wrote the epic from the PRD, Vi's Nov 3 brief and the code at `7adcddb`. Three Amigos lenses applied in-session by the author, not an independent review |
+| 2026-11-03 | Claude | Review fixes: Vi's test uses 10 natural sentences with the pause in different places; Meta's transcripts are unpunctuated, so only the word list holds a turn; the known miss is written down; reset-time target |

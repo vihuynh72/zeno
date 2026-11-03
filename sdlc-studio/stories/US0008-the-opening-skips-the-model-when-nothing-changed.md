@@ -131,7 +131,8 @@ the prompt itself would change every minute. The key below covers the inputs, mi
   key needs it).
 - Validate `since`: `typeof since === "string" && /^[0-9a-f]{16}$/.test(since)`; anything else is treated as absent.
 - Never log `since`, the key or the inputs.
-- If US0013 lands, its new-pattern ids join the key's inputs, so "same" never hides a new pattern.
+- US0013 (Nov 4) puts new-pattern ids into the opening; they join the key's inputs, so "same" never hides a new
+  pattern.
 
 ### API Contracts
 
@@ -185,8 +186,8 @@ the prompt itself would change every minute. The key below covers the inputs, mi
 
 ## Open Questions
 
-- [ ] Ship before the video (only if on production by Nov 3 evening) or right after it? Default: before, if ready. -
-      Owner: Vi
+- [ ] When does it ship? Default: first after the Nov 9 live final (EP0003 moved to Later: nothing about it shows on
+      screen, and it rewrites the opening path the demo runs). - Owner: Vi
 
 ## Revision History
 
@@ -194,3 +195,4 @@ the prompt itself would change every minute. The key below covers the inputs, mi
 | --- | --- | --- |
 | 2026-11-03 | Claude | Created via `new` (deterministic) |
 | 2026-11-03 | Claude | Wrote the story against `main` at `7adcddb`. Three Amigos lenses applied in-session by the author, not an independent review |
+| 2026-11-03 | Claude | Review fix: EP0003 moved to Later, first after the Nov 9 final; US0013's new-pattern ids join the key |

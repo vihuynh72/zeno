@@ -6,8 +6,8 @@
 > **Raised-by:** Claude; agent; claude-opus-5-5
 > **Size:** XL
 > **Approval:** Draft, awaiting Vi's approval
-> **Priority:** Later, #3 of 12 (Vi's "first big project after Nov 4", built on EP0006)
-> **Target Release:** After Nov 4
+> **Priority:** Later, #5 of 13 (Vi's "first big project after Nov 4", built on EP0006, with EP0010 first so dragging writes to the main calendar)
+> **Target Release:** After the Nov 9 live final (only fixes reach `main` before then)
 > **Owner:** Claude
 > **Reviewer:** Vi
 > **PRD:** F1, F2, F3, F4, F5; OQ-18
@@ -95,7 +95,7 @@ it to be a really proactive agent." Make it impressive.
 
 | Dependency | Why | Status |
 | --- | --- | --- |
-| EP0010 | Dragging onto the main calendar; until then, drag books on Zeno's own calendar with a tap | Draft |
+| EP0010 | Dragging onto the calendar writes to the person's main calendar (one tap, "[Suggested] …"). EP0010 comes before this epic in the order, so the drag never books on a separate "Zeno" calendar, which Vi said no to | Draft |
 | EP0012 | Dropping files from outside the app | Draft |
 | An RFC on the layout and the phone version | The PRD's confidence for the details is LOW | Not started |
 
@@ -142,6 +142,8 @@ Stories are written after Vi approves this epic and its RFC.
 
 - [ ] OQ-18: which models the picker offers. Default: Muse Spark 1.3 (default) and Muse Wonder with a cost note;
       never `*-contributor` models. - Owner: Vi
+- [ ] OQ-21: does talk in Do mode get the same model choice (brief §8: "Chat: choose among Muse models")? Default:
+      yes, one choice in the account menu shared with this panel (built with EP0013). - Owner: Vi
 - [ ] Plan mode on a phone. Default: one column with three tabs (Cloud · Stage · Zeno). - Owner: Vi
 - [ ] What "make it impressive" means for the first release. Default: settled in the RFC with mockups. - Owner: Vi
 
@@ -151,3 +153,4 @@ Stories are written after Vi approves this epic and its RFC.
 | --- | --- | --- |
 | 2026-11-03 | Claude | Created via `new` (deterministic) |
 | 2026-11-03 | Claude | Wrote the epic from the PRD and Vi's Nov 3 brief |
+| 2026-11-03 | Claude | Review fixes: EP0010 now comes first, so drag to schedule writes to the main calendar, never a separate Zeno calendar; OQ-21 asks if talk shares the model choice; #5 of 13 |

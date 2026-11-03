@@ -4,7 +4,7 @@
 > **Created:** 2026-11-03
 > **Created-by:** sdlc-studio new
 > **Raised-by:** Claude; agent; claude-opus-5-5
-> **Affects:** src/lib/ai.ts, src/lib/agent.check.ts
+> **Affects:** src/lib/ai.ts, src/lib/agent.ts, src/lib/agent.check.ts
 > **Epic:** EP0004
 > **Points:** 2
 > **Persona:** Maya Torres
@@ -60,18 +60,21 @@ lines are Zeno's, so the video shows whichever tone ships (OQ-2).
 
 - **Given** the diff of this story
 - **When** it is reviewed
-- **Then** only the persona's tone lines in `ZENO_VOICE_PROMPT` change; `RULES`, `NEVER_KEEP`, the tool descriptions and
-  the JSON rules are unchanged
+- **Then** only the persona's tone lines in `ZENO_VOICE_PROMPT` and the question line in `openingPrompt` (AC3)
+  change; `RULES`, `NEVER_KEEP`, the tool descriptions and the JSON rules are unchanged
 - **Caller:** `systemPrompt` in src/lib/agent.ts
 - **Verified:** no
 
-### AC3: The opening still offers with a question
+### AC3: The opening ends with one direct question
 
-- **Given** `openingPrompt`'s "end with one soft question that offers it"
+- **Given** `openingPrompt` in src/lib/agent.ts, which today says "end with one soft question that offers it" (the
+  line seen on every open, and in shots 3 and 6)
 - **When** the tone changes
-- **Then** the opening still ends with one short question (a direct one, like "Outline claim 2 first. Start now?"), so
-  `parseReply` keeps its tap answers
-- **Caller:** src/app/api/day/opening/route.ts
+- **Then** that phrase becomes "end with one short, direct question that pushes the next step (for example 'Start
+  now?')", and `agent.check.ts` asserts the new words and that "soft question" is gone; the opening still ends with
+  one question, so `parseReply` keeps its tap answers
+- **Verify:** shell node src/lib/agent.check.ts
+- **Caller:** `opening()` in src/app/api/day/opening/route.ts
 - **Verified:** no
 
 ### AC4: Vi reads ten real lines before merge
@@ -97,6 +100,7 @@ lines are Zeno's, so the video shows whichever tone ships (OQ-2).
 ### In Scope
 
 - The tone lines of `ZENO_VOICE_PROMPT` in `src/lib/ai.ts`.
+- The question line of `openingPrompt` in `src/lib/agent.ts` (AC3).
 - Assertions on the new wording in `src/lib/agent.check.ts`.
 
 ### Out of Scope
@@ -110,7 +114,8 @@ lines are Zeno's, so the video shows whichever tone ships (OQ-2).
   "Be direct: straight to the point, no sugarcoating. Push them toward the next step, like 'Outline claim 2. Five
   minutes. Start now?'", "Be blunt, never cruel: never shame, mock or guilt-trip them.", "Be honest: if a plan won't fit
   the time they have, say so plainly and offer a smaller cut."
-- `openingPrompt`'s "one soft question" can stay; the persona sets the voice.
+- `openingPrompt`'s "end with one soft question that offers it" changes too (AC3): a soft question in the prompt would
+  pull every opening back toward the sugarcoating Vi dislikes, whatever the persona says.
 
 ## Edge Cases & Error Handling
 
@@ -159,3 +164,4 @@ lines are Zeno's, so the video shows whichever tone ships (OQ-2).
 | --- | --- | --- |
 | 2026-11-03 | Claude | Created via `new` (deterministic) |
 | 2026-11-03 | Claude | Wrote the story against `main` at `7adcddb`. Three Amigos lenses applied in-session by the author, not an independent review |
+| 2026-11-03 | Claude | Review fix: openingPrompt's 'one soft question' becomes 'one short, direct question that pushes the next step', asserted in agent.check.ts; src/lib/agent.ts added to Affects |

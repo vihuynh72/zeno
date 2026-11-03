@@ -6,8 +6,8 @@
 > **Raised-by:** Claude; agent; claude-opus-5-5
 > **Size:** L
 > **Approval:** Draft, awaiting Vi's approval
-> **Priority:** Later, #4 of 12
-> **Target Release:** After Nov 4
+> **Priority:** Later, #6 of 13
+> **Target Release:** After the Nov 9 live final (only fixes reach `main` before then)
 > **Owner:** Claude
 > **Reviewer:** Vi
 > **PRD:** D2, E1; OQ-10, OQ-14
@@ -55,12 +55,14 @@ proposal, and Vi accepted them.
   exam).
 - One line of why with each pick (where it shows: OQ-14).
 - Missed-work triage by kind (E1): Deadline or Commitment moves to the next good slot; Nice-to-have slides silently;
-  at risk or slid twice gets one inline question next time they open Zeno, at most once a day: [Tomorrow] [Let it
-  go].
+  a missed Step follows OQ-23 (default: slides like a Nice-to-have unless its goal is at risk); at risk or slid twice
+  gets one inline question next time they open Zeno, at most once a day: [Tomorrow] [Let it go].
+- The full weighing replaces EP0006's simple turn rule (whose turn a long-term goal gets).
 
 ### Out of Scope
 
-- Moving events on the main calendar: EP0010 (until then, moves change the plan, not the calendar).
+- Moving events on the main calendar: EP0010 (the plan moves quietly; a calendar event moves only with one tap,
+  OQ-10).
 - Notifications about missed work: never.
 
 ### Affected Personas
@@ -75,6 +77,7 @@ proposal, and Vi accepted them.
 - [ ] The pick weighs stakes and lead time, and its one line of why names the reason.
 - [ ] A missed Deadline or Commitment moves to the next good slot with no message.
 - [ ] A missed Nice-to-have slides with no message.
+- [ ] A missed Step follows the rule Vi chose in OQ-23.
 - [ ] Something at risk or slid twice gets one inline question on the next open, never a notification, at most once
       a day.
 
@@ -131,7 +134,11 @@ Stories are written after Vi approves this epic.
 ## Open Questions
 
 - [ ] OQ-14: where the one line of why shows. Default: in Zeno's spoken or written line, not on the card. - Owner: Vi
-- [ ] OQ-10: can Zeno quietly move only events it created, and never the person's own? Default: yes. - Owner: Vi
+- [ ] OQ-10: how moves reach the calendar. Default: the plan moves quietly; a calendar event Zeno created moves only
+      with one tap, offered the next time they open Zeno (Meta's rules ask apps to confirm calendar writes); never
+      the person's own events. - Owner: Vi
+- [ ] OQ-23: what happens to a missed Step. Default: it slides like a Nice-to-have unless its goal is at risk, then it
+      moves like a Deadline. - Owner: Vi
 
 ## Revision History
 
@@ -139,3 +146,4 @@ Stories are written after Vi approves this epic.
 | --- | --- | --- |
 | 2026-11-03 | Claude | Created via `new` (deterministic) |
 | 2026-11-03 | Claude | Wrote the epic from the PRD and Vi's Nov 3 brief |
+| 2026-11-03 | Claude | Review fixes: a missed Step follows OQ-23; calendar moves take one tap (OQ-10); replaces EP0006's simple turn rule; #6 of 13 |

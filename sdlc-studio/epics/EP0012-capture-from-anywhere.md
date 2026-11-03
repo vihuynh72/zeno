@@ -6,8 +6,8 @@
 > **Raised-by:** Claude; agent; claude-opus-5-5
 > **Size:** L
 > **Approval:** Draft, awaiting Vi's approval
-> **Priority:** Later, #8 of 12
-> **Target Release:** After Nov 4
+> **Priority:** Later, #9 of 13
+> **Target Release:** After the Nov 9 live final (only fixes reach `main` before then)
 > **Owner:** Claude
 > **Reviewer:** Vi
 > **PRD:** H6
@@ -133,3 +133,4 @@ Stories are written after Vi approves this epic.
 | --- | --- | --- |
 | 2026-11-03 | Claude | Created via `new` (deterministic) |
 | 2026-11-03 | Claude | Wrote the epic from the PRD and Vi's Nov 3 brief |
+| 2026-11-03 | Claude | Order renumbered to #9 of 13 after review (EP0003 joined Later, EP0010 moved up); target after the Nov 9 final |

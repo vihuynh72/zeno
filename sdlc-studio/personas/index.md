@@ -2,7 +2,7 @@
 
 Personas for Zeno. **Status:** Draft, awaiting Vi's approval.
 
-**Last updated:** 2026-11-02
+**Last updated:** 2026-11-03 (Daniel's source corrected: the brief says "students and professionals")
 
 ---
 
@@ -26,8 +26,9 @@ The three sections below are the registry the sprint tools read: one bullet per 
 ## How the cast was chosen
 
 - **Maya** comes from the brief: the demo persona is a college student, and people with ADHD are a key audience.
-- **Daniel** comes from the brief's "busy professional with scattered tools". Maya's design mostly serves him; he adds
-  more sources (Outlook, Slack, Jira), people waiting on him and protected deep work.
+- **Daniel** stands for the brief's "students and professionals" (§1: "anyone with work to do"). His job and his set
+  of tools (Outlook, Slack, Jira, Notion) were Claude's choice, matched to the brief's next sources (§7). Maya's
+  design mostly serves him; he adds more sources, people waiting on him and protected deep work.
 - **Rosa** is the third, chosen for Vi's question about managing life and really long-term goals quietly. Her rationale
   is in [her card](rosa-delgado.md#why-she-is-in-the-cast).
 - **Tyler** is the Negative persona the cast needs: the brief's trust rules ("never does the work wholesale") exclude

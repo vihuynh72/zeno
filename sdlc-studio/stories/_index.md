@@ -7,13 +7,13 @@
 
 | Status | Count |
 | --- | --- |
-| Draft | 16 |
+| Draft | 17 |
 | Ready | 0 |
 | Planned | 0 |
 | In Progress | 0 |
 | Review | 0 |
 | Done | 0 |
-| **Total** | **16** |
+| **Total** | **17** |
 
 ## Stories by Epic
 
@@ -52,6 +52,7 @@
 | [US0014](US0014-the-demo-account-reads-as-maya.md) | The demo account reads as Maya | Draft | 1 | Vi |
 | [US0015](US0015-release-check-and-freeze-before-recording.md) | Release check and freeze before recording | Draft | 2 | Claude |
 | [US0016](US0016-reset-the-demo-account-right-before-shot-3.md) | Reset the demo account right before shot 3 | Draft | 2 | Claude |
+| [US0017](US0017-live-demo-check-before-the-nov-9-final.md) | Live-demo check before the Nov 9 final | Draft | 2 | Claude |
 
 ## All Stories
 
@@ -73,6 +74,7 @@
 | [US0014](US0014-the-demo-account-reads-as-maya.md) | The demo account reads as Maya | EP0004 | Draft | 1 | Maya Torres |
 | [US0015](US0015-release-check-and-freeze-before-recording.md) | Release check and freeze before recording | EP0004 | Draft | 2 | Maya Torres |
 | [US0016](US0016-reset-the-demo-account-right-before-shot-3.md) | Reset the demo account right before shot 3 | EP0004 | Draft | 2 | Maya Torres |
+| [US0017](US0017-live-demo-check-before-the-nov-9-final.md) | Live-demo check before the Nov 9 final | EP0004 | Draft | 2 | Maya Torres |
 
 ## Notes
 

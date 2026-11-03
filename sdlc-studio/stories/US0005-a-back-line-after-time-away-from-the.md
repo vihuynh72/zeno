@@ -4,7 +4,7 @@
 > **Created:** 2026-11-03
 > **Created-by:** sdlc-studio new
 > **Raised-by:** Claude; agent; claude-opus-5-5
-> **Affects:** src/components/guided-day.tsx, src/components/day-flow.ts, src/components/day-flow.check.ts, src/app/preview/gallery.tsx
+> **Affects:** src/components/guided-day.tsx, src/components/day-view.tsx, src/components/day-flow.ts, src/components/day-flow.check.ts, src/app/preview/gallery.tsx
 > **Epic:** EP0001
 > **Points:** 2
 > **Persona:** Maya Torres
@@ -33,8 +33,9 @@ The brief: "No surveillance: no screen recording, no app tracking. Browsers requ
 idle, so Zeno uses only its own tab's visibility (no permission): when the person comes back to Zeno after being
 away, the card greets them with the step and the time so far ('Back. 23 min on 'Outline claim 2'.')." PRD A5 and L2.
 
-The line goes where Zeno's Focus lines go: right under the card. `listenMeta` (`src/lib/listen-meta.ts`) already ends
-a listening session when the tab is hidden; this story only adds the greeting.
+The line goes on the card, as the brief says ("the card greets them"): in the goal line's place, the same slot as the
+check-in line (US0004; OQ-19, whose option is right under the card instead). `listenMeta` (`src/lib/listen-meta.ts`)
+already ends a listening session when the tab is hidden; this story only adds the greeting.
 
 ## Inherited Constraints
 
@@ -50,8 +51,8 @@ a listening session when the tab is hidden; this story only adds the greeting.
 
 - **Given** Focus on "Outline claim 2", started 23 minutes ago, and Zeno's tab hidden for 61 seconds or more
 - **When** the tab is shown again
-- **Then** the line under the card reads "Back. 23 min on 'Outline claim 2'." at once, with no network call, and
-  nothing is spoken
+- **Then** the card's second rule (the goal line's place) reads "Back. 23 min on 'Outline claim 2'." at once, with no
+  network call, and nothing is spoken
 - **Caller:** the visibility effect in src/components/guided-day.tsx
 - **Verified:** no
 
@@ -106,6 +107,8 @@ a listening session when the tab is hidden; this story only adds the greeting.
 
 - `BACK_AFTER_MS` and `backLine` in `src/components/day-flow.ts`, with checks.
 - One effect in `src/components/guided-day.tsx` while the screen is Focus.
+- The card slot in `src/components/day-view.tsx` that draws the line in place of the goal line (shared with US0004;
+  whichever story ships first adds it).
 - A `/preview?state=focus-back` sample in `src/app/preview/gallery.tsx`.
 
 ### Out of Scope
@@ -118,7 +121,8 @@ a listening session when the tab is hidden; this story only adds the greeting.
 - In `src/components/guided-day.tsx`: a `hiddenAt` ref; a `useEffect` active while `screen === "focus"` adds a
   `visibilitychange` listener on `document`. On `hidden`, store `Date.now()`. On `visible`, if
   `Date.now() - hiddenAt >= BACK_AFTER_MS` and the focus step has a `startedAt`, and AC6's conditions don't hold,
-  `setLine(backLine(step.title, step.startedAt, Date.now()))`. Clear `hiddenAt` after.
+  sets the card's `note` to `backLine(step.title, step.startedAt, Date.now())` (the same slot as US0004's check-in,
+  also written into the polite live region). Clear `hiddenAt` after.
 - Minutes are whole minutes since the step's start, rounded down, at least 1.
 - Side-by-side windows: if Zeno's tab stays visible while the person works in another window, no greeting. That is
   the rule ("its own tab's visibility"), not a bug.
@@ -130,7 +134,7 @@ a listening session when the tab is hidden; this story only adds the greeting.
 | The laptop slept for an hour | The tab was hidden, so on wake: "Back. N min on '…'." with the full time |
 | Hidden and shown several times | Each return after 60 s or more updates the line |
 | `startedAt` is null | No line |
-| A very long title | Shown whole; the line wraps under the card |
+| A very long title | The rule cuts the line with an ellipsis; the full title is on the card's first rule anyway |
 | A title with quotes in it ("Read 'Hamlet' act 1") | Shown as is inside the quotes; no escaping problem in text |
 | The step was finished on another device while away | The local step still shows; the next `/api/day` read corrects it (as today) |
 
@@ -148,7 +152,7 @@ a listening session when the tab is hidden; this story only adds the greeting.
 
 | Story | Type | What's Needed | Status |
 | --- | --- | --- | --- |
-| None | - | - | - |
+| [US0004](US0004-one-quiet-check-in-line-at-that-minute.md) | Code | Shares the card slot for the line; whichever ships first adds it | Draft |
 
 ## Estimation
 
@@ -166,6 +170,8 @@ a listening session when the tab is hidden; this story only adds the greeting.
 ## Open Questions
 
 - [ ] OQ-7: how long away before "Back." shows? Default: 1 minute. - Owner: Vi
+- [ ] OQ-19: where the line sits. Default: on the card, in the goal line's place; option: right under the card. -
+      Owner: Vi
 
 ## Revision History
 
@@ -173,3 +179,4 @@ a listening session when the tab is hidden; this story only adds the greeting.
 | --- | --- | --- |
 | 2026-11-03 | Claude | Created via `new` (deterministic) |
 | 2026-11-03 | Claude | Wrote the story against `main` at `7adcddb`. Three Amigos lenses applied in-session by the author, not an independent review |
+| 2026-11-03 | Claude | Review fix: the Back. line sits on the card in the goal line's place, sharing US0004's slot (OQ-19); day-view.tsx added to Affects |

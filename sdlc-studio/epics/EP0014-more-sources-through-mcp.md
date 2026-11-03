@@ -6,15 +6,16 @@
 > **Raised-by:** Claude; agent; claude-opus-5-5
 > **Size:** XL
 > **Approval:** Draft, awaiting Vi's approval
-> **Priority:** Later, #10 of 12
-> **Target Release:** After Nov 4
+> **Priority:** Later, #11 of 13
+> **Target Release:** After the Nov 9 live final (only fixes reach `main` before then)
 > **Owner:** Claude
 > **Reviewer:** Vi
 > **PRD:** H7, H8
 
 ## Summary
 
-More places Zeno reads work from: Outlook and Microsoft 365, Notion and Todoist, GitHub, Linear and Jira, and Slack.
+More places Zeno reads work from: Outlook and Microsoft 365, Notion and Todoist, GitHub, Linear and Jira, Slack, and
+Google Docs (read only, for knowing when work is done).
 Zeno becomes an MCP client, so "any MCP integration" can plug in without Zeno building each one by hand. Every source
 follows the same privacy rules as Gmail and Canvas.
 
@@ -47,6 +48,9 @@ reaches Zeno. ([PRD section H](../prd.md#h-capture-sources-and-integrations))
 
 - Zeno as an MCP client: connect a server, read its tools' results as data.
 - First sources, in an order set with Vi: Outlook / Microsoft 365, Notion / Todoist, GitHub / Linear / Jira, Slack.
+- Google Docs, read only, so EP0009 can mark work done from a document's progress (the brief §3: "later Docs/GitHub
+  progress → marked done"). Through a read-only Google Docs permission (another Google scope, so it joins the app's
+  one verification request) or a Google Drive MCP server; the RFC picks one with Vi.
 - Every source's data treated like calendar and email text: data, never instructions.
 - The privacy rules on every source: private facts on the device only, the never-keep list, nothing personal to
   `*-contributor` models.
@@ -55,7 +59,7 @@ reaches Zeno. ([PRD section H](../prd.md#h-capture-sources-and-integrations))
 
 - Writing to these tools on the person's behalf. Asking first is the rule for anything other people see (L3); writes
   are a later decision.
-- Done detection from GitHub and Docs progress: EP0009 can use these sources once they exist.
+- Marking work done from GitHub and Docs progress: EP0009 owns it (its last story), on the sources this epic adds.
 
 ### Affected Personas
 
@@ -86,7 +90,7 @@ reaches Zeno. ([PRD section H](../prd.md#h-capture-sources-and-integrations))
 
 | Item | Type | Impact |
 | --- | --- | --- |
-| EP0009 | Epic | GitHub and Docs progress for done detection |
+| EP0009 | Epic | Its last story marks work done from GitHub and Google Docs progress, read through this epic |
 
 ## Risks & Assumptions
 
@@ -120,6 +124,8 @@ Stories are written after Vi approves this epic.
 - [ ] Which source first? Default: Outlook / Microsoft 365, for people outside Google. - Owner: Vi
 - [ ] Where MCP tokens live: on the server (like Google's) or the device (like Canvas)? Default: decided per source in
       an RFC. - Owner: Vi
+- [ ] Google Docs through a Google permission or an MCP server? Default: decided in the RFC; a Google permission joins
+      the app's one verification request. - Owner: Vi
 
 ## Revision History
 
@@ -127,3 +133,4 @@ Stories are written after Vi approves this epic.
 | --- | --- | --- |
 | 2026-11-03 | Claude | Created via `new` (deterministic) |
 | 2026-11-03 | Claude | Wrote the epic from the PRD and Vi's Nov 3 brief |
+| 2026-11-03 | Claude | Review fixes: Google Docs added as a read-only source; marking work done from Docs and GitHub belongs to EP0009; #11 of 13 |

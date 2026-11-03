@@ -6,8 +6,8 @@
 > **Raised-by:** Claude; agent; claude-opus-5-5
 > **Size:** L
 > **Approval:** Draft, awaiting Vi's approval
-> **Priority:** Later, #12 of 12
-> **Target Release:** After Nov 4
+> **Priority:** Later, #13 of 13
+> **Target Release:** After the Nov 9 live final (only fixes reach `main` before then)
 > **Owner:** Claude
 > **Reviewer:** Vi
 > **PRD:** K4
@@ -23,9 +23,9 @@ the stopwatch and Done, without opening a browser.
 
 ### Problem Statement
 
-On a laptop, Zeno is a browser tab among many. The brief's long-term picture is "the quiet layer between all your
-tools and your day": on the laptop, the phone's lock screen and the Mac's menu bar, always showing one thing.
-([PRD section K](../prd.md#k-platforms))
+On a laptop, Zeno is a browser tab among many. The PRD's vision (§1, Claude's wording) pictures Zeno long term as
+"the quiet layer between all your tools and your day": on the laptop, the phone's lock screen and the Mac's menu bar,
+always showing one thing. ([PRD section K](../prd.md#k-platforms))
 
 **What the brief says (§9):** native next: the iPhone app, then a Mac menu-bar companion from the same code.
 
@@ -112,3 +112,4 @@ None yet; this epic waits for EP0015.
 | --- | --- | --- |
 | 2026-11-03 | Claude | Created via `new` (deterministic) |
 | 2026-11-03 | Claude | Wrote the epic from the PRD and Vi's Nov 3 brief |
+| 2026-11-03 | Claude | Review fixes: the 'quiet layer' line is credited to PRD section 1 (Claude's wording), not the brief; #13 of 13 |

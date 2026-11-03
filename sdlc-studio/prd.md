@@ -1,8 +1,8 @@
 # Product Requirements Document
 
 **Project:** Zeno
-**Version:** 0.1
-**Last Updated:** 2026-11-02 (the night of Nov 2-3)
+**Version:** 0.2
+**Last Updated:** 2026-11-03 (after two reviews against the brief)
 **Status:** Draft, awaiting Vi's approval
 
 **Source of truth:** Vi's 40 answers from the night of Nov 2-3 (the product brief). Where this PRD and an older doc
@@ -11,9 +11,10 @@ still open.
 
 **Labels used on every feature:**
 
-- **Live**: on `main` and in production today (commit `e716f09`, Nov 2).
+- **Live**: on `main` and in production today (commit `7adcddb`, the tidy round, Nov 2 11:43 PM).
 - **Nov 4**: ships before the demo video (Nov 4, 6 PM PT; production stable that morning).
-- **Later**: after Nov 4.
+- **Later**: after Nov 4. Judging runs Nov 4-8 and the live final is Nov 9, so only fixes reach production until
+  the final (§5 Availability); Later work is built on branches until then.
 
 **How it is used:** Vi approves this PRD, then each epic. Claude runs the sprints (build, test, review, ship) and
 reports. A change after approval goes through a change request (`sdlc-studio/change-requests/`).
@@ -24,15 +25,16 @@ reports. A change after approval goes through a change request (`sdlc-studio/cha
 
 - **What Zeno is:** "It runs my work for me." Zeno gathers what you owe, plans it, schedules it, stays with you while
   you do it, and learns. Your only job is the next small step.
-- **Mission (recommended):** "Other AI does your work. Zeno gets you to do it." Tagline: "From 'I should' to 'I did.'"
+- **Mission (recommended):** "Other AI does your work. Zeno gets you to do it.", with "Built on Meta's Muse." under
+  it. Tagline: "From 'I should' to 'I did.'"
 - **Who it is for:** anyone with work to do. Designed first for a college student who knows what to do but can't
   start, often with ADHD: Zeno is "for brains that know what to do but can't start".
 - **What Nov 4 adds:** a stopwatch instead of a countdown, one quiet check-in per step, a "Back." greeting when you
   return, and voice that waits while you think.
 - **First big project after Nov 4:** Plan mode, a workspace for goals and projects that Zeno keeps current.
 - **Success at two weeks:** steps finished per day, deadlines met, back on most days, less stress.
-- **For Vi now:** 8 questions to answer before Nov 4 (section 11, group A). Each has a default, so "yes to the
-  defaults" is a full answer.
+- **For Vi now:** 10 questions to answer before Nov 4 (section 11, group A), and 5 about the recording in
+  `docs/DEMO-NOV4.md`. Each has a default, so "yes to the defaults" is a full answer.
 - **What to read:** this page, then "Product principles", "What Zeno is NOT" and "The quiet way to manage long-term
   goals and projects". Sections 3-10 are the detail for building.
 
@@ -60,13 +62,14 @@ and the AI age.
 
 | Option | Wording | Strength |
 | --- | --- | --- |
-| A. The AI-age flip (**recommended**) | "Other AI does your work. Zeno gets you to do it: it finds what matters, makes it small enough to start, and stays with you until it's done." | Says what is new in one breath. Judges see at once why Zeno is not another chat app. |
+| A. The AI-age flip | "Other AI does your work. Zeno gets you to do it: it finds what matters, makes it small enough to start, and stays with you until it's done." | Says what is new in one breath. Judges see at once why Zeno is not another chat app. Does not name Muse. |
+| A+. The flip, on Muse (**recommended**) | A's line, with "Built on Meta's Muse." under it on the last frame (and the first, if the video opens with the line). In one breath instead: "Other AI does your work. Zeno, built on Meta's Muse, gets you to do it." | Ties the line to Meta's Muse, as Vi asked, without making the line longer. Use of Meta AI is 25% of judging. |
 | B. Chief of staff | "A chief of staff for your work: Zeno runs it, so your only job is the next step." (draft wording) | Familiar and warm. Less tied to the AI age. |
 | C. The paradox story | "Zeno's paradox says you never arrive: there is always half the way left. Zeno's answer: small steps add up, and you do arrive." | Explains the name. Best as a story, too long as a line. |
 
-**Recommendation:** use A as the mission line, "From 'I should' to 'I did.'" as the tagline, and C as the optional
-ten-second opener of the video and the "why the name" story. B's idea lives on in the promise ("It runs my work for
-me").
+**Recommendation:** use A+ as the mission line (A's words with "Built on Meta's Muse." under them), "From 'I
+should' to 'I did.'" as the tagline, and C as the optional ten-second opener of the video and the "why the name"
+story. B's idea lives on in the promise ("It runs my work for me").
 
 **The first small step is the heart.** Vi: "The feature of having Zeno identify the first small step is just amazing
 for me."
@@ -159,6 +162,11 @@ The four measures are Vi's. The target numbers are proposals until Vi sets them 
 | O3 Back on most days | Share of people who open Zeno on 8 or more of their first 14 days | A once-a-day "opened" mark per account (no tracking outside Zeno) | 50% or more | No: needs the daily mark |
 | O4 Less stress | Change in a 1-5 "How stressed are you about your work?" rating, day 1 vs day 14 | Asking conflicts with "learn from use, never ask" (OQ-16) | A drop of 1 point or more | No |
 
+**Making them measurable:** one small story in EP0005 (the first slot after the Nov 9 final) adds the three missing
+pieces: a once-a-day "opened" mark per account and local date, written by `/api/day`; an opaque account key on every
+"Model call" log line (for the cost per person); and the stress measure, once Vi answers OQ-16. Until it ships, O1 is
+counted per day with at least one finished step, and O3 and O4 cannot be computed for anyone.
+
 ---
 
 ## Product principles
@@ -169,8 +177,10 @@ The four measures are Vi's. The target numbers are proposals until Vi sets them 
    edit, but never have to: "They can just tell Zeno." Zeno learns from what people do, never by asking questions
    about them.
 3. **Quiet by default.** No alarms, no check-in sounds, no notifications for check-ins, calendar events or missed work.
-   About one nudge a day at most, unless something is critical (due today, an exam tomorrow) or about a long-term
-   goal. "Normally I don't want to have it nudging you constantly."
+   The brief: nudges are "very few. About once a day, or when something is critical (due today, an exam tomorrow) or
+   about long-term goals." Proposed budget (OQ-9): one nudge a day; a second only when something critical comes up
+   after it, so never more than two; a long-term goal rides in the daily nudge or the Sunday line. "Normally I don't
+   want to have it nudging you constantly."
 4. **No surveillance.** No screen recording, no app tracking, no idle-detection permission. Zeno knows only whether
    its own tab is showing.
 5. **Trust rules.** Zeno never does the work wholesale. It never sends mail without you. It never keeps private data
@@ -201,9 +211,11 @@ doesn't make them change their life, "just be a quiet part in their life". The b
    notices it in Canvas, the calendar or email. Zeno proposes the goal, its projects and today's step. One tap
    confirms. (C2, C3)
 2. **Every item has a kind, so Zeno's choices make sense.** Deadline, Commitment, Step or Nice-to-have, shown as a
-   label. (C4)
+   label. (C4; "Step" is also the name of the smallest level, so what it means as a kind is OQ-23)
 3. **A long-term goal shows up only as today's step, when it is its turn.** The home stays one card. Goals live inside
-   the Today sheet, not on a new screen. (A1, C5, D2)
+   the Today sheet, not on a new screen. Whose turn it is, until the full weighing (D2) ships: work due soon comes
+   first; otherwise the goal that moved least recently; a commitment ("gym 3 times a week") gets as many turns as its
+   weekly count; once the Sunday drafted week is confirmed, the card follows it. (A1, C5, D2; proposed in EP0006)
 4. **One ritual a week, one line long.** Sunday evening: "3 goals moving, 1 slipping. Plan the week?" One tap gets a
    drafted week. (C6)
 5. **Slips are handled quietly.** Deadlines and commitments move to the next good slot; nice-to-haves slide. Only
@@ -222,10 +234,11 @@ doesn't make them change their life, "just be a quiet part in their life". The b
 | A1 | One card, one big button; small links under it | Live | Complete | `src/components/guided-day.tsx`, `day-view.tsx` |
 | A2 | Card → Focus → Done, with Stuck?, Stop for now, That's enough today | Live | Complete | `src/components/day-flow.ts` |
 | A3 | Focus stopwatch: counts up, planned time shown softly, no alarm | Nov 4 | Not Started (a countdown today) | `day-view.tsx` (`Countdown`) |
-| A4 | One quiet check-in per step: a soft line at a moment Muse picks | Nov 4 | Not Started (spoken start, halfway and end lines today) | `guided-day.tsx`, `day-flow.ts` (`CHECKINS`) |
-| A5 | Return greeting: "Back. 23 min on 'Outline claim 2'." | Nov 4 | Not Started | `guided-day.tsx` |
+| A4 | One quiet check-in per step: a soft line on the card at a moment Muse picks | Nov 4 | Not Started (spoken start, halfway and end lines today) | `guided-day.tsx`, `day-flow.ts` (`CHECKINS`) |
+| A5 | Return greeting on the card: "Back. 23 min on 'Outline claim 2'." | Nov 4 | Not Started | `guided-day.tsx` |
 | A6 | Check-in moment learned per person over time | Later | Not Started | - |
-| A7 | Focus music, sources for the step, Draft it in Gmail | Live | Complete | `focus-music.tsx`, `src/lib/prep.ts`, `gmail.ts` |
+| A7 | Focus music, sources for the step (one compact card since the tidy round), Draft it in Gmail | Live | Complete | `focus-music.tsx`, `prep-pack.tsx`, `src/lib/prep.ts`, `gmail.ts` |
+| A8 | Reopening Zeno during a step (a reload, a phone that closed the tab) goes back to Focus, the time still counting | Later (OQ-22) | Not Started (a reload shows the card; Start restarts the time) | `guided-day.tsx`, `goals.ts` |
 | B1 | One-tap Done; saying "finished the outline" also counts | Live | Complete | `guided-day.tsx`, `src/lib/agent.ts` (`finish_step`) |
 | B2 | Done is rewarding: the DONE stamp and the next step ready | Live | Complete | `day-view.tsx` |
 | B3 | A small sound with the stamp | Nov 4 or Later (OQ-3) | Not Started | - |
@@ -252,11 +265,11 @@ doesn't make them change their life, "just be a quiet part in their life". The b
 | G3 | Main calendar, Zeno's events in a distinct color, after re-consent | Later | Not Started | `src/auth.ts` (scopes) |
 | G4 | Title tags [Suggested] [Moved] [Delayed] [Postponed]; reminders off | Later (reminders: OQ-4) | Not Started (blocks carry a 10-minute popup) | `calendar.ts` (`eventFor`) |
 | G5 | Muse decides what is calendar-worthy | Later | Partial (a rule: asked, or 60+ minutes) | `agent.ts` |
-| G6 | Exam prep: study time reserved or suggested, quietly | Later | Not Started | - |
+| G6 | Exam prep: study time offered quietly; one tap reserves it (OQ-10) | Later | Not Started | - |
 | H1 | Talk, type, paste notes | Live | Complete | `guided-day.tsx`, `src/app/api/import` |
 | H2 | First sign-in scan, then the card; a quiet daily re-scan | Live | Complete | `src/lib/profile.ts`, `src/app/api/profile/scan` |
 | H3 | Important-only inbox; Gmail drafts, never sent by Zeno | Live | Complete | `gmail.ts`, `desk.tsx` |
-| H4 | Canvas with a token kept on the device | Live | Complete (real-token test still open, VI-324) | `src/lib/canvas.ts`, `canvas-store.ts` |
+| H4 | Canvas with a token kept on the device | Live | Complete (reworked in the tidy round after Vi connected a real Canvas: short course codes, one line per item, Disconnect deletes the saved Canvas deadlines; VI-324) | `src/lib/canvas.ts`, `canvas-store.ts`, `canvas-sheet.tsx` |
 | H5 | Canvas everything | Later | Not Started | - |
 | H6 | Capture anything: forward, share, photo, a big master plan | Later | Partial (paste) | - |
 | H7 | More sources: Outlook / Microsoft 365, Notion / Todoist, GitHub / Linear / Jira, Slack | Later | Not Started | - |
@@ -266,11 +279,12 @@ doesn't make them change their life, "just be a quiet part in their life". The b
 | I3 | End-of-day recap | Later | Not Started | - |
 | I4 | Direct by default; blunt, never cruel | Nov 4 or Later (OQ-2) | Not Started ("warm, candid friend" today) | `src/lib/ai.ts` (persona prompt) |
 | I5 | Tone setting: Gentle / Direct / Drill sergeant | Later | Not Started | - |
+| I6 | Choose among Muse models for talk too (brief §8: "Chat: choose among Muse models") | Later (OQ-21) | Not Started | - |
 | J1 | Talk with Muse Voice Transcribe; Zeno speaks | Live | Complete | `src/lib/listen*.ts`, `use-voice.ts`, `tts.ts` |
 | J2 | Turn-taking: waits while you think, quick on a complete question, a tap for "done talking" | Nov 4 | Not Started | `listen.ts`, `use-voice.ts` |
 | J3 | Try other realtime voice providers | Later | Not Started | - |
 | K1 | Web app in laptop and phone browsers | Live | Complete | `src/app` |
-| K2 | Installable PWA | Later (first) | Not Started | - |
+| K2 | Installable PWA | Later, early (OQ-20 asks if sooner) | Not Started | - |
 | K3 | SwiftUI iPhone app: Live Activity stopwatch with Done, widgets, Siri | Later | Not Started | - |
 | K4 | Mac menu-bar companion | Later | Not Started | - |
 | K5 | API-first server for web and native | Later | Partial (JSON routes, cookie sessions) | `src/app/api` |
@@ -302,22 +316,27 @@ people think better and focus more." Vi chose check-ins that are "even quieter":
       grey beside it (for example "of 25 min"). Muse sets the planned time, as it does today.
 - [ ] [Nov 4] When the planned time passes, nothing happens: no alarm, no sound, no spoken line, no color change. The
       stopwatch keeps counting (31:12).
-- [ ] [Nov 4] A reload shows the same running time, because it counts from the step's saved start.
+- [ ] [Nov 4, unchanged] A reload during Focus shows the card, as today, and Start restarts the stopwatch from 0:00
+      (Start saves a new start time). Going straight back to Focus with the time still counting is A8, Later (OQ-22).
 - [ ] [Nov 4] Each step has one check-in moment (minutes after the start), picked by Muse for that task, for example
       minute 20 of a 25-minute writing step.
 - [ ] [Nov 4] At that moment a soft line appears on the card (for example "Still with the outline? Keep going."). No
-      sound, no voice, no notification, no button. It never needs an answer; ignoring it changes nothing.
+      sound, no voice, no notification, no button. It never needs an answer; ignoring it changes nothing. Where on the
+      card and its words: OQ-19 (default: in the goal line's place while it shows).
 - [ ] [Nov 4] The spoken start, halfway and end lines go away. During focus Zeno says nothing out loud (spoken
       heads-ups before events: OQ-6).
 - [ ] [Nov 4] When the person comes back to Zeno's tab after being away (how long: OQ-7, default 1 minute), the card
       reads "Back. 23 min on 'Outline claim 2'." Zeno knows only that its own tab was hidden and shown again.
-- [ ] [Later] The check-in moment adapts to each person over time (what it learns from: OQ-12).
+- [ ] [Later] The check-in moment adapts to each person over time, from how their steps go after the line shows
+      (what it learns from: OQ-12).
+- [ ] [Later, OQ-22] Reopening Zeno during a step goes back to Focus with the stopwatch still counting from the step's
+      start.
 - [ ] [Live] Music (open-license lo-fi and piano, or brown noise made in the browser) plays only while focusing.
       Sources finds 2-3 links for the step. An email step opens a Gmail draft.
 
 **Dependencies:** C1 (steps with minutes). A4's check-in moment is decided with the plan.
 **Status:** Partial
-**Confidence:** [HIGH] decided by Vi; [MEDIUM] for the check-in copy and the away threshold
+**Confidence:** [HIGH] decided by Vi; [MEDIUM] for the check-in copy, where it sits on the card and the away threshold
 
 #### B. Knowing work is done
 
@@ -337,9 +356,11 @@ them.)
 - [ ] [Nov 4 or Later, OQ-3] A small sound plays with the stamp when Sound is on.
 - [ ] [Later] The goal's progress bar moves on Done.
 - [ ] [Later] Done from the source: Canvas shows the item "submitted", or a sent Gmail reached the right person, and
-      the step or goal is marked done with no tap. Later still: Google Docs and GitHub progress.
+      the step or goal is marked done with no tap. Canvas is seen only when the browser that holds the Canvas link
+      opens Zeno (the token lives only there). Later still: Google Docs and GitHub progress (EP0009, once EP0014
+      reads them).
 - [ ] [Later] Once a day, at the person's daily moment (OQ-13), a 5-second list asks "Did these get done?" with one
-      tap per item.
+      tap per item. Never before the card.
 - [ ] [Later] Done from the iPhone lock screen, widgets and the watch (with K3).
 
 **Dependencies:** H4 and H5 for Canvas status; H3 for Gmail; K3 for the lock screen.
@@ -365,10 +386,14 @@ tell Zeno."
 - [ ] [Later] Zeno proposes goals and projects from what the person says, Canvas, the calendar and email. One tap
       confirms. Nothing needs typing or arranging.
 - [ ] [Later] Every item shows its kind as a label: Deadline, Commitment (for example gym 3×/week), Step or
-      Nice-to-have. Muse classifies it; the person can change it by saying so.
+      Nice-to-have. Muse classifies it; the person can change it by saying so. (Which items carry which kinds, and
+      what "Step" means as a kind: OQ-23.)
 - [ ] [Later] In Do mode, goals live inside the Today sheet. No new screen.
+- [ ] [Later] Whose turn: when nothing is due soon, the card offers the next step of the goal that moved least
+      recently; a Commitment gets as many turns as its weekly count. A goal with no deadline still reaches the card
+      (proposed: at least twice a week). The full weighing is D2.
 - [ ] [Later] Sunday evening, Zeno offers one line: "3 goals moving, 1 slipping. Plan the week?" One tap gets a
-      drafted week. (How the line reaches them: OQ-9.)
+      drafted week, and the card follows it. (How the line reaches them: OQ-9.)
 - [ ] [Live rule, kept] A health goal stays generic ("Walk 3 times a week"), never a condition's name.
 
 **Dependencies:** C4 before E1 (triage needs kinds); D2.
@@ -413,6 +438,8 @@ week.
 - [ ] [Later] Muse triages each missed item by kind.
 - [ ] [Later] A missed Deadline or Commitment moves quietly to the next good slot.
 - [ ] [Later] A missed Nice-to-have slides later, silently.
+- [ ] [Later] A missed Step: the rule depends on what "Step" means as a kind (OQ-23; default: it slides like a
+      Nice-to-have unless its goal is at risk, then it moves like a Deadline).
 - [ ] [Later] An item at risk (it no longer fits before its due date) or slid twice gets one inline question the next
       time they open Zeno, for example "Section 4.2 slid twice. [Tomorrow] [Let it go]". Never a notification; at most
       one such question a day.
@@ -442,7 +469,8 @@ general agent, I want it to be a really proactive agent." Make it impressive.
       drag steps in from any project), a goal workspace (edit the goal and its timeline, break tasks into small steps,
       see the timeline change) or the calendar (drag to schedule).
 - [ ] [Later] Right, Zeno: proactive one-tap suggestions ("PHIL paper is slipping, add a session Thu?") and a chat
-      scoped to what is selected, with a Muse model picker that never offers a `*-contributor` model.
+      scoped to what is selected, with a Muse model picker that never offers a `*-contributor` model. (Whether talk in
+      Do mode gets the same choice: OQ-21.)
 - [ ] [Later] Subject help: tutoring, planning, and ideas for an outline or a first sentence; the person writes. A
       scratchpad per project. Never does the work wholesale.
 
@@ -472,11 +500,15 @@ much".
 - [ ] [Later] Zeno's items carry a tag at the start of the title: [Suggested], [Moved], [Delayed] or [Postponed]
       (meanings: OQ-11). They never notify: reminders off. (Today's blocks carry a 10-minute popup: OQ-4.)
 - [ ] [Later] Muse decides what is calendar-worthy: meetings, the gym, planned commitments, big work blocks.
-- [ ] [Later] Exam prep: Zeno reserves or suggests study time, quietly, and helps with the material when asked.
-- [ ] [Rule] Zeno acts on small things and asks before big ones, including events on the main calendar (OQ-10 says
-      where [Suggested] and [Moved] events fall).
+- [ ] [Later] Exam prep (Vi: "reserve or suggest study time, quietly"): Zeno offers study time inline, never as a
+      notification, and one tap reserves it as "[Suggested] …". Nothing is written without that tap (OQ-10). It helps
+      with the material when asked.
+- [ ] [Rule] Zeno acts on small things and asks before big ones, including events on the main calendar. Meta's rules
+      for Muse also ask apps to confirm consequential actions such as calendar writes, so every calendar write takes a
+      tap (OQ-10 says how [Suggested], [Moved] and exam prep work within that).
 
-**Dependencies:** G3 needs a new Google scope and re-consent; Google's app verification for more than 100 users.
+**Dependencies:** G3 needs a new Google scope and re-consent. Google's app verification is needed for more than 100
+users whether or not G3 ships (`gmail.readonly` is already a restricted scope; see §5 Scalability).
 **Status:** Partial
 **Confidence:** [HIGH] for the rules; [MEDIUM] for the tags
 
@@ -498,8 +530,10 @@ in the right project, so that capture costs me nothing.
       quizzes, discussions and exams; deadlines become memories; the 3 soonest instructions help plan and find
       sources and are never saved.
 - [ ] [Later] Canvas everything: assignments, instructions, announcements, files, modules, pages, discussions, grades.
+      Grades and scores stay on the device, like the token (§7).
 - [ ] [Later] Capture everything: forward an email, share a link or file, a photo of a page, a big master plan.
-- [ ] [Later] Next sources: Outlook / Microsoft 365, Notion / Todoist, GitHub / Linear / Jira, Slack.
+- [ ] [Later] Next sources: Outlook / Microsoft 365, Notion / Todoist, GitHub / Linear / Jira, Slack; and Google Docs
+      (read only), so "done from the source" (B5) can see Docs progress.
 - [ ] [Later] Zeno is an MCP client, so "any MCP integration" plugs in.
 
 **Dependencies:** K2 or K3 for sharing from other apps; L1 rules apply to every new source.
@@ -526,6 +560,8 @@ you to the right direction". Claude's limits, accepted: blunt, never cruel or sh
 - [ ] [Later] Zeno says a newly noticed pattern out loud once (the day-2 version is OQ-5).
 - [ ] [Nov 4 or Later, OQ-2] Direct by default. Blunt, never cruel or shaming.
 - [ ] [Later] A tone setting: Gentle / Direct / Drill sergeant.
+- [ ] [Later, OQ-21] Brief §8: "Chat: choose among Muse models." Plan mode's panel has a picker (F4); whether talk in
+      Do mode gets the same choice is OQ-21. Never a `*-contributor` model.
 - [ ] [Rule] No tone changes the trust rules: never does the work, never sends mail without you, never keeps private
       data.
 
@@ -567,8 +603,9 @@ glance away.
 **Acceptance Criteria:**
 
 - [ ] [Live] The web app works in laptop and phone browsers, light and dark.
-- [ ] [Later, first] An installable PWA. The brief says "PWA now"; the video does not need it, so it comes first after
-      Nov 4 unless Vi wants it sooner (OQ-9, which also covers notifications).
+- [ ] [Later, early] An installable PWA. The brief says "PWA now (installable, notifications)"; the video does not
+      need it and Nov 3 is full, so the default is to build it right after the video and ship it after the Nov 9
+      final. Whether Vi wants it before Nov 4 is OQ-20 (asked now); how its notifications work is OQ-9.
 - [ ] [Later] A SwiftUI iPhone app: a lock-screen Live Activity with the stopwatch and a Done button, widgets, Siri.
 - [ ] [Later] A Mac menu-bar companion from the same code.
 - [ ] [Later] An API-first server: the web app and the native apps use the same API.
@@ -609,8 +646,8 @@ The daily loop:
 
 1. **Open.** The card is on screen at once (from the browser's cache). The model's line follows.
 2. **Card.** One step, its minutes, goal · due. [Start · N min].
-3. **Focus.** A stopwatch counts up (Nov 4). One soft check-in line (Nov 4). Music if wanted. Coming back to the tab
-   shows "Back. N min on '<step>'." (Nov 4).
+3. **Focus.** A stopwatch counts up (Nov 4). One soft check-in line on the card (Nov 4). Music if wanted. Coming back
+   to the tab, the card reads "Back. N min on '<step>'." (Nov 4).
 4. **Done.** One tap, the stamp, "Nice. Next: …" [Keep going]. Or "That's enough today": saved for next time.
 5. **Talk, any time.** Plan, re-plan, book a big block, draft an email, ask for sources.
 6. **Learn.** What they finish, skip and how long it really took become patterns that shape tomorrow.
@@ -633,11 +670,13 @@ the first card. No questions.
 - **One name per task.** The card, the plan and any calendar block use the step's saved title.
 - **First steps are small.** About 5 minutes, unless the person's patterns point to another length.
 - **Calendar.** Write only when asked or for 60+ minutes; one tap; Undo; never small steps. Later: the main calendar,
-  a distinct color, title tags, reminders off.
+  a distinct color, title tags, reminders off, and still one tap per write (Meta's rules; OQ-10).
 - **Autonomy.** Act on small things (re-plan, reorder, rename, capture). Ask before big ones (main calendar events,
   emails, anything other people see).
-- **Nudge budget.** About one a day, or when something is critical (due today, an exam tomorrow) or about a long-term
-  goal. Never for check-ins, calendar events or missed work.
+- **Nudge budget** (proposed, OQ-9). One nudge a day; a second only when something critical (due today, an exam
+  tomorrow) comes up after it, so never more than two. A long-term goal rides in the daily nudge or the Sunday line.
+  Never for check-ins, calendar events or missed work. A nudge never shows a title, so nothing private reaches a lock
+  screen ("One thing is due today. Open Zeno.").
 - **Missed work.** Deadline or Commitment: move to the next good slot. Nice-to-have: slide. At risk or slid twice: one
   inline question, at most once a day.
 - **Memory.** Rewordings merge; classes and shifts the calendar repeats are not saved; undated to-dos expire after 14
@@ -673,8 +712,9 @@ Oct 31 to Nov 2):
 **Proposed target (OQ-15):** about $0.10 or less per active person per day (median), and $0.25 or less for the
 heaviest 5%. Vi also asked on Nov 2 for fewer, smaller AI calls.
 
-**Estimate today**, from logged token counts and Meta's published prices (Muse Spark, Standard mode: $1.25 per million
-input tokens, $0.15 cached, $4.25 output; Muse Voice Transcribe: $0.18 per hour of audio):
+**Estimate today**, from logged token counts and the published prices (Muse Spark, Standard mode: $1.25 per million
+input tokens, $0.15 cached, $4.25 output; Muse Voice Transcribe: $0.18 per hour of audio; Google Chirp 3 HD: $30 per
+million characters after the first million each month, from Google's price page):
 
 | Call | When | Tokens in / out | Cost each |
 | --- | --- | --- | --- |
@@ -682,17 +722,24 @@ input tokens, $0.15 cached, $4.25 output; Muse Voice Transcribe: $0.18 per hour 
 | Opening (card + line) | Each open | about 1,700 / 400 | about $0.004 |
 | Daily scan | Once a day | about 6,000 / 1,000 (estimate, after `e716f09`) | about $0.012 |
 | Sources | On tap | Muse web search | about $0.005 |
-| Voice | While talking | - | about $0.003 per minute |
+| Voice in (transcription) | While talking | - | about $0.003 per minute |
+| Voice out (Zeno speaks, Sound on by default) | Each spoken line, one `/api/speak` request per sentence | about 150 characters a line | about $0.0045 a line |
 
-A typical active day (3 opens, 8 talk rounds, 1 scan, 1 sources, 5 minutes of voice) comes to about $0.08.
+A typical active day (3 opens, 8 talk rounds, 1 scan, 1 sources, 5 minutes of voice) costs about $0.08 in model and
+transcription calls. Zeno speaking it (3 openings, 8 replies and a few Done lines, about 1,800 characters) adds about
+$0.05, so the day comes to about **$0.13, over the proposed $0.10**. Google's free first million characters a month
+covers about 550 such days, so the first few daily users cost nothing for voice out.
 
-**How it is measured:** each model call already logs its tokens (`src/lib/ai.ts`, `prep.ts`). Add up a day's cost at
-list prices and divide by the people who opened Zeno that day. Seeing the spread per person needs an opaque account key
-on each log line (the same kind of key as the browser cache), never an email.
+**How it is measured:** each model call already logs its tokens (`src/lib/ai.ts`, `prep.ts`). Add a character count
+(never the text) to `/api/speak`'s log line. Add up a day's cost at list prices and divide by the people who opened
+Zeno that day. Seeing the spread per person needs an opaque account key on each log line (the same kind of key as the
+browser cache), never an email; EP0005 adds it.
 
 **Rules:** new judgments (the check-in moment, an item's kind) ride on calls Zeno already makes where possible. Prompt
-caching is not used yet and is the first lever (cached input costs about an eighth). The Muse model picker (F4) shows
-when a model costs more (Muse Wonder costs about 3-5 times as much).
+caching is not used yet and is the first lever (cached input costs about an eighth). For voice out, two levers: not
+speaking an unchanged line again on a reload (asked in EP0003), and keeping the audio of a line that repeats. With
+both, the $0.10 target can hold; otherwise Vi raises it (OQ-15). The Muse model picker (F4) shows when a model costs more (Muse Wonder costs about 3-5
+times as much).
 
 ### Accessibility
 
@@ -710,21 +757,28 @@ when a model costs more (Muse Wonder costs about 3-5 times as much).
   broader scope and re-consent (G3).
 - Secrets stay in `.env.local` and Vercel. The Canvas token stays in the browser.
 - Model output is untrusted: every tool argument, time, title and URL is checked at the boundary.
-- Known gap: the Google access token is readable from `/api/auth/session` (HANDOFF section 0).
+- The Google access token stays on the server. HANDOFF section 0 lists it as readable from `/api/auth/session`, but
+  since Oct 29 that route cuts it from what the browser gets (`withoutAccessToken` in `src/lib/session-json.ts`,
+  wrapped around both Auth.js handlers, with a self-check). A live check (a signed-in `GET /api/auth/session` shows no
+  `accessToken`) closes the note; it runs before EP0010 asks for a broader scope.
 - Rotate the Meta and Google keys after Nov 4 (HANDOFF section 8).
 
 ### Scalability
 
 - The Google app is published but unverified: at most 100 users, and people see Google's warning screen. More users
-  need Google's verification, and G3's broader scope makes verification stricter.
+  need Google's verification, and Zeno already needs the strictest kind: `gmail.readonly` is a restricted scope, so
+  going past 100 users means Google's restricted-scope review with a security assessment, whether or not G3 ships.
+  G3's broader calendar scope (a sensitive one) joins that same review; it does not make it stricter. Plan one
+  verification for the whole app, as its own item, before growth (epic index, "Not an epic yet").
 - Muse limits: 3,000 requests and 4 million tokens per minute for Muse Spark 1.3; 256 concurrent voice streams.
 - Memory holds about 120 facts per person in the prompt (no embeddings: Meta has none). Beyond that, add full-text
   search (VI-318).
 
 ### Availability
 
-- Production stable by the morning of Nov 4. Proposal: after the Nov 4 items ship, only fixes go to `main` until the
-  video is done.
+- Production stable by the morning of Nov 4. Judging runs Nov 4-8, the live final is Nov 9, and the demo score (25%)
+  counts live robustness, so the proposal (DQ-4 in `docs/DEMO-NOV4.md`) is: after the Nov 4 items ship, only fixes go
+  to `main` through the Nov 9 final. Later work is built on branches with Vercel preview deploys and merged after.
 - Every way out lands on the home card with its Start (no dead ends).
 - When the model fails, rules take over (rule pick, rule line) and errors say so plainly ("I couldn't think that
   through just now. Try again?").
@@ -805,10 +859,12 @@ Steps belong to a goal (deleted with it). Each memory text is unique per person.
 ### Storage Mechanisms
 
 **Later additions** (shapes are decided in the epics): projects between goals and steps; an item kind; each step's
-check-in moment; how many times an item slid; a once-a-day "opened" mark for O3. The return greeting needs nothing new:
-it uses the step's start time.
+check-in moment; how many times an item slid; a once-a-day "opened" mark for O3; the person's time zone, saved by
+`/api/day` (today it lives only in a browser cookie, so a scheduled job cannot know a person's "today"). The return
+greeting needs nothing new: it uses the step's start time.
 
-**Never stored:** audio, chat transcripts, raw pasted notes, the emails themselves, Canvas instructions.
+**Never stored:** audio, chat transcripts, raw pasted notes, the emails themselves, Canvas instructions, and Canvas
+grades and scores (Later, EP0011: kept on the device like the token, sent to the model only as a weight).
 
 ---
 
@@ -886,13 +942,15 @@ arrives about 3 s late.
 
 ## 11. Open Questions
 
-Each question has a default. Group A matters before Nov 4; group B can wait for the epic reviews.
+Each question has a default. Group A matters before Nov 4 (OQ-1 to OQ-8, OQ-19, OQ-20); group B can wait for the
+epic reviews. The recording's own questions (DQ-1 to DQ-5) are in `docs/DEMO-NOV4.md`.
 
 ### A. Before Nov 4
 
 - **OQ-1. Mission line.**
-  **Context:** the video opens and closes with it.
-  **Options:** A, B or C (section 1). **Default:** A + "From 'I should' to 'I did.'"; the paradox as the opener.
+  **Context:** the video opens and closes with it. Vi wants it tied to Meta's Muse and the AI age.
+  **Options:** A, A+, B or C (section 1). **Default:** A+ ("Other AI does your work. Zeno gets you to do it." with
+  "Built on Meta's Muse." under it) + "From 'I should' to 'I did.'"; the paradox as the opener.
 - **OQ-2. Direct tone now?**
   **Context:** the brief makes "direct" the default; today's prompt says "warm, candid friend". The video shows Zeno's
   lines. **Default:** switch now (a prompt change), blunt but never cruel.
@@ -913,24 +971,41 @@ Each question has a default. Group A matters before Nov 4; group B can wait for 
 - **OQ-8. Voice timings.**
   **Context:** Vi pauses about 2 seconds while thinking. **Default:** wait 3 seconds after an unfinished sentence;
   answer a complete question within about 2.5 seconds; Claude tunes with Vi's own test.
+- **OQ-19. Where the check-in and "Back." lines sit, and the check-in's words.**
+  **Context:** the brief puts both on the card ("a soft line on the card"; "the card greets them"). The Focus card's
+  three rules are full (the step, its goal line, the stopwatch), and a short laptop screen has no room for a fourth.
+  **Default:** on the card, in the goal line's place while the line shows (the goal line comes back with the next
+  step); the check-in reads "Still with it? Keep going." **Option:** right under the card, where Zeno's replies show.
+- **OQ-20. The PWA: before Nov 4, or first after?**
+  **Context:** the brief says "PWA now (installable, notifications), native next". The video does not need it, Nov 3
+  already holds 32 points, and only fixes reach production through the Nov 9 final. **Default:** build it right after
+  the video (EP0005) and ship it after the final. Option: before Nov 4, in place of other Nov 4 items.
 
 ### B. At the epic reviews (after Nov 4)
 
-- **OQ-9. The PWA, and how nudges reach people.**
-  **Context:** "PWA now (installable, notifications)", but check-ins, calendar and missed work never notify. When does
-  the PWA ship, and where do the once-a-day nudge and the Sunday check-up appear? **Default:** the PWA right after
-  Nov 4; until then nudges show in Zeno when they open it; after it, at most one opt-in notification a day.
-- **OQ-10. [Suggested] and [Moved] on the main calendar.**
-  **Context:** Zeno "asks before big ones (main calendar events)", yet missed work "quietly moves".
-  **Default:** a new event takes one tap and is then written as "[Suggested] …"; Zeno moves only events it created,
-  quietly, with [Moved], [Delayed] or [Postponed]; it never moves the person's own events without asking.
+- **OQ-9. How nudges reach people, and how many.**
+  **Context:** the brief: nudges are "very few. About once a day, or when something is critical (due today, an exam
+  tomorrow) or about long-term goals." Check-ins, calendar events and missed work never notify. Where do the daily
+  nudge and the Sunday check-up appear (when the PWA ships is OQ-20)? **Default:** until the PWA, nudges show in Zeno
+  when they open it. After it, opt-in notifications: one a day at the person's local nudge hour, carrying the most
+  important thing (critical first); a second only for something critical that comes up after it; a long-term goal
+  rides in the daily nudge or the Sunday line. No title on a lock screen ("One thing is due today. Open Zeno.").
+- **OQ-10. [Suggested], [Moved] and exam prep on the main calendar.**
+  **Context:** Zeno "asks before big ones (main calendar events)", yet missed work "quietly moves" and exam prep is
+  "reserve or suggest study time, quietly". Meta's rules for Muse ask apps to confirm consequential actions such as
+  calendar writes, and every calendar write takes a tap today. **Default:** every write takes one tap, offered inline
+  and never as a notification. A new event, exam study time included, is written as "[Suggested] …". A move of an
+  event Zeno created is offered the next time they open Zeno ("Moved to Thu 4 PM?") and written with [Moved],
+  [Delayed] or [Postponed]. The plan inside Zeno still moves quietly. Zeno never moves the person's own events.
 - **OQ-11. What each tag means.**
   **Default:** [Moved] a new time the same day; [Postponed] another day; [Delayed] its due date moved (an extension);
   [Suggested] Zeno proposed it.
 - **OQ-12. What the check-in learns from.**
-  **Default:** only what Zeno already learns (real step lengths, time of day). No new tracking.
+  **Default:** only what Zeno already saves: each step's start, finish and check-in minute (did the person finish soon
+  after the line, or run far past it?), plus real step lengths and time of day. No new tracking.
 - **OQ-13. The daily "did these get done?" moment.**
-  **Default:** the first open of the day, before the card.
+  **Context:** a list in front of the card breaks "one card" and the 200 ms budget for the card. **Default:** right
+  after the day's first Done, skippable. Never before the card.
 - **OQ-14. Where the one line of why shows.**
   **Context:** a line on the card adds clutter. **Default:** in Zeno's spoken or written line, not on the card.
 - **OQ-15. Targets.**
@@ -945,6 +1020,20 @@ Each question has a default. Group A matters before Nov 4; group B can wait for 
 - **OQ-18. The Muse model picker.**
   **Default:** Muse Spark 1.3 (the default) and Muse Wonder, with a note that Wonder costs more; never a
   `*-contributor` model.
+- **OQ-21. Does the model choice also apply to talk in Do mode?**
+  **Context:** the brief's "Chat: choose among Muse models" sits with tone and voice (§8), while this PRD put the
+  picker only in Plan mode's panel (F4). **Default:** yes, as one choice in the account menu next to Sound and the tone
+  setting (EP0013), shared with Plan mode; never on the card; never a `*-contributor` model.
+- **OQ-22. Reopening Zeno during a step.**
+  **Context:** today a reload (or a phone that closed the tab) shows the card, and Start restarts the stopwatch.
+  **Default:** Later, in EP0005: reopening Zeno the same day while a step runs goes straight back to Focus, the time
+  still counting from the step's start; on a later day, the card.
+- **OQ-23. What "Step" means as a kind.**
+  **Context:** "Step" is both the smallest level (Goals → Projects → Steps) and one of the four kinds, and the missed-work
+  rules cover Deadline, Commitment and Nice-to-have only. **Options:** (a) kinds belong to goals and projects and steps
+  inherit them, so "Step" is no longer a kind; (b) "Step" stays as the kind for a one-off task with no date of its
+  own. **Default:** (b), keeping Vi's four kinds: a missed Step slides like a Nice-to-have unless its goal is at risk,
+  then it moves like a Deadline. Settled in EP0006's RFC.
 
 ---
 
@@ -953,6 +1042,7 @@ Each question has a default. Group A matters before Nov 4; group B can wait for 
 | Date | Version | Changes |
 | --- | --- | --- |
 | 2026-11-02 | 0.1 | First draft from Vi's 40 answers (the night of Nov 2-3) and the code at `e716f09`. Awaiting Vi's approval. |
+| 2026-11-03 | 0.2 | Fixes from two reviews against the brief: the mission option on Muse (A+); the Live baseline is `7adcddb`; a reload shows the card (A8 Later); the nudge budget, voice-out cost, verification and token notes corrected; the freeze runs through the Nov 9 final; whose turn a long-term goal gets; Canvas grades stay on the device; new questions OQ-19 to OQ-23. Awaiting Vi's approval. |
 
 ---
 

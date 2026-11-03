@@ -161,7 +161,8 @@ US0008 gives each model opening a `key` and answers `{ state: "same" }` when `si
 
 ## Open Questions
 
-- [ ] On a reload with nothing changed, Zeno says the same line again (once per load, Sound on). OK? Default: yes. -
+- [ ] On a reload with nothing changed, should Zeno say the same line again (once per load, Sound on, as today)?
+      Default: no: the line stays on screen unspoken, which also saves the voice cost (PRD §5; asked in EP0003). -
       Owner: Vi
 
 ## Revision History
@@ -170,3 +171,4 @@ US0008 gives each model opening a `key` and answers `{ state: "same" }` when `si
 | --- | --- | --- |
 | 2026-11-03 | Claude | Created via `new` (deterministic) |
 | 2026-11-03 | Claude | Wrote the story against `main` at `7adcddb`. Three Amigos lenses applied in-session by the author, not an independent review |
+| 2026-11-03 | Claude | Review fix: the reload question's default is now not to speak an unchanged line again (saves the voice cost) |

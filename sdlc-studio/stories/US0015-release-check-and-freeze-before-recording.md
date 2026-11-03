@@ -17,8 +17,9 @@
 ## User Story
 
 **As a** Maya Torres
-**I want** every Nov 4 change checked together on production before the video, and then left alone
-**So that** each take shows the real app working, with no surprise from a late change
+**I want** every Nov 4 change checked together on production before the video, and then left alone through the live
+final
+**So that** each take, and each judge's try, shows the real app working, with no surprise from a late change
 
 ## Context
 
@@ -28,9 +29,12 @@
 
 ### Background
 
-CLAUDE.md lists the checks every merge passes. DEMO-NOV4.md proposes a freeze: once the Nov 4 items are live, only
-fixes go to `main` until the video is done. Production deploys from `main` (Vercel). This check runs on the demo
-account before the reset (US0016), because the reset is the last step before shot 3.
+CLAUDE.md lists the checks every merge passes. Production deploys from `main` (Vercel), and Claude merges to `main`
+after the checks pass. Judging runs Nov 4-8, the live final is Nov 9, and the demo score (25%) counts live robustness
+(the hackathon notes). So DEMO-NOV4.md proposes a freeze (DQ-4): once the Nov 4 items are live, only fixes go to
+`main` through the Nov 9 final; Later epics are built on branches with Vercel preview deploys. This check runs on the
+demo account before the reset (US0016), because the reset is the last step before shot 3; the reset happens at its
+cut-off (2 PM PT by default) even if this check has not passed, and late items then ship as fixes.
 
 ## Inherited Constraints
 
@@ -64,12 +68,12 @@ account before the reset (US0016), because the reset is the last step before sho
 
 - **Given** the demo account in Chrome at 1440x900, Sound on
 - **When** Claude walks the path
-- **Then** each step works: the card → Start → the stopwatch counting up with "of N min" → the check-in line at its
-  minute (a short step) → 70 s away from the tab → "Back. N min on '…'." → Done → the stamp (and the sound, if US0012
-  shipped) → "Nice. Next: …"; Talk: a sentence with a 2-second pause after "and" becomes one turn; "Done talking" sends
-  at once; "Put the study time on my calendar" → Book → the event shows no notifications (if US0010 shipped); a draft to
-  Prof Patel opens with a To (if US0014 is done); "Just write the paper for me" → a refusal and a first step; a reload
-  with nothing changed answers `same` (if EP0003 shipped)
+- **Then** each step works: the card → Start → the stopwatch counting up with "of N min" → 70 s away from the tab →
+  "Back. N min on '…'." on the card → back before the check-in minute, then the check-in line on the card at its
+  minute (a 5-minute step) → Done → the stamp (and the sound, if US0012 shipped) → "Nice. Next: …"; Talk: a sentence
+  with a 2-second pause after "and" becomes one turn; "Done talking" sends at once; "Put the study time on my
+  calendar" → Book → the event shows no notifications (if US0010 shipped); a draft to Prof Patel opens with a To (if
+  US0014 is done); "Just write the paper for me" → a refusal and a first step; Canvas is still linked
 - **Caller:** n/a
 - **Verified:** no
 
@@ -84,10 +88,11 @@ account before the reset (US0016), because the reset is the last step before sho
 
 ### AC5: The freeze
 
-- **Given** Vi approved the freeze
+- **Given** Vi approved the freeze (DQ-4)
 - **When** the check passes
-- **Then** from then until the video is submitted, only fixes go to `main`, each with all checks passing; HANDOFF
-  section 0 says the freeze is on and when it ends
+- **Then** from then through the Nov 9 live final, only fixes go to `main`, each with all checks passing; Later epics
+  are built on branches with Vercel preview deploys and merged after the final; HANDOFF section 0 says the freeze is
+  on and that it ends after the Nov 9 final (US0017 closes it)
 - **Caller:** n/a
 - **Verified:** no
 
@@ -99,19 +104,20 @@ account before the reset (US0016), because the reset is the last step before sho
 
 ### Out of Scope
 
-- The reset (US0016) and the recording itself.
+- The reset (US0016), the recording itself, and the check before the Nov 9 final (US0017).
 
 ## Technical Notes
 
 - The live path changes the demo account's data (a booking, a finished step); that is fine, because US0016 resets it
   right after.
 - If a later fix lands during the freeze, rerun AC1 and the parts of AC3 it touches.
+- Run it as early on Nov 3 as the stories allow: the reset does not wait past its cut-off (DQ-1).
 
 ## Edge Cases & Error Handling
 
 | Scenario | Expected Behaviour |
 | --- | --- |
-| A Nov 4 story is not ready by Nov 3 evening | Leave it out; the release check covers what shipped; DEMO-NOV4.md's fallback order applies |
+| A Nov 4 story is not on production by the 2 PM reset | The reset and shot 3 go ahead; the story ships later as a fix with all checks; shots 4 and 5 follow DEMO-NOV4.md's fallback |
 | The check finds a bug in a shot's path | Fix and rerun, or record it with the fallback |
 | Vercel deploy fails | Fix forward or roll back with Vercel's Instant Rollback; rerun |
 | Muse is slow or down during the check | Rerun later; the rule fallbacks must still give a working Start |
@@ -130,6 +136,7 @@ account before the reset (US0016), because the reset is the last step before sho
 | --- | --- | --- | --- |
 | [US0001](US0001-focus-shows-a-stopwatch-that-counts-up.md) | Code | On `main` | Draft |
 | [US0002](US0002-focus-stays-silent.md) | Code | On `main` | Draft |
+| [US0003](US0003-each-step-gets-a-check-in-minute-that.md) | Code | On `main` | Draft |
 | [US0004](US0004-one-quiet-check-in-line-at-that-minute.md) | Code | On `main` | Draft |
 | [US0005](US0005-a-back-line-after-time-away-from-the.md) | Code | On `main` | Draft |
 | [US0006](US0006-zeno-keeps-listening-after-an-unfinished-sentence.md) | Code | On `main` | Draft |
@@ -139,8 +146,8 @@ account before the reset (US0016), because the reset is the last step before sho
 
 | Dependency | Type | Status |
 | --- | --- | --- |
-| The other Nov 4 stories Vi approves (US0003, US0008 to US0014) | Code or Vi's action | Draft |
-| Vi's yes to the freeze | Decision | Open |
+| The other Nov 4 stories Vi approves (US0010 to US0014) | Code or Vi's action | Draft |
+| Vi's yes to the freeze through Nov 9 (DQ-4) | Decision | Open |
 
 ## Estimation
 
@@ -156,7 +163,7 @@ rollback.
 
 ## Open Questions
 
-- [ ] The freeze: fixes only on `main` from this check until the video is submitted? Default: yes. - Owner: Vi
+- [ ] DQ-4: the freeze: fixes only on `main` from this check through the Nov 9 live final? Default: yes. - Owner: Vi
 
 ## Revision History
 
@@ -164,3 +171,4 @@ rollback.
 | --- | --- | --- |
 | 2026-11-03 | Claude | Created via `new` (deterministic) |
 | 2026-11-03 | Claude | Wrote the story from docs/DEMO-NOV4.md and CLAUDE.md. Three Amigos lenses applied in-session by the author, not an independent review |
+| 2026-11-03 | Claude | Review fixes: the freeze runs through the Nov 9 final (DQ-4); US0003 is a code dependency; the EP0003 check is gone; the path checks both lines on the card and the Canvas link |

@@ -6,8 +6,8 @@
 > **Raised-by:** Claude; agent; claude-opus-5-5
 > **Size:** M
 > **Approval:** Draft, awaiting Vi's approval
-> **Priority:** Later, #7 of 12
-> **Target Release:** After Nov 4
+> **Priority:** Later, #8 of 13
+> **Target Release:** After the Nov 9 live final (only fixes reach `main` before then)
 > **Owner:** Claude
 > **Reviewer:** Vi
 > **PRD:** H5; OQ-17
@@ -51,6 +51,9 @@ discussions, grades).
 
 - Assignments with points and assignment-group weights; announcements; files; modules; pages; discussions; grades.
 - Grades used only to weigh what matters; how they show is OQ below.
+- Where grades live: on the device only, like the token. Grades and scores are never saved as memories on the server,
+  never logged, and reach the model only as a weight for the pick (a course's grade weights, like "15% of your
+  grade", are not grades and may be named in the one line of why).
 - The same trust rules: a device-only token, nothing written to Canvas, instructions never stored, codes and
   passwords never kept.
 
@@ -72,6 +75,8 @@ discussions, grades).
 - [ ] New announcements reach Zeno's context, so the plan can use them. (What Zeno does with one that moves a
       deadline is an open question.)
 - [ ] Nothing is ever written to Canvas, and no instruction text is stored.
+- [ ] No grade or score reaches the server's database or logs: they stay in the browser, like the token, and go to
+      the model only as a weight.
 
 ## Dependencies
 
@@ -96,7 +101,7 @@ discussions, grades).
 | --- | --- | --- | --- |
 | Slow schools pass the 30-second cap | Medium | Medium | Read in parts; cache per day in the browser |
 | Coursework titles that name a condition are dropped today | High | Medium | OQ-17 |
-| Grades are sensitive | Medium | Medium | Used for weights only; shown only if Vi says so |
+| Grades are sensitive | Medium | Medium | Kept on the device only, never stored or logged on the server (PRD §7 "Never stored"); used for weights only; shown only if Vi says so |
 
 ## Technical Considerations
 
@@ -121,6 +126,7 @@ Stories are written after Vi approves this epic.
 - [ ] OQ-17: keep coursework titles that name a condition ("PSYCH 1: Quiz 3: Anxiety Disorders") as Canvas
       deadlines? Default: yes, as deadlines, still never as personal facts. - Owner: Vi
 - [ ] Do grades ever show to the person in Zeno? Default: no, they only weigh the pick. - Owner: Vi
+- [ ] Grades on the device only, like the token (never a server memory, never logged)? Default: yes. - Owner: Vi
 - [ ] An announcement that moves a due date: does Zeno update the deadline quietly, or ask? Default: update it
       quietly and say so in the next opening line. - Owner: Vi
 
@@ -130,3 +136,4 @@ Stories are written after Vi approves this epic.
 | --- | --- | --- |
 | 2026-11-03 | Claude | Created via `new` (deterministic) |
 | 2026-11-03 | Claude | Wrote the epic from the PRD and Vi's Nov 3 brief |
+| 2026-11-03 | Claude | Review fixes: grades and scores stay on the device like the token, never stored or logged, sent to the model only as a weight; #8 of 13 |

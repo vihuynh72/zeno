@@ -6,8 +6,8 @@
 > **Raised-by:** Claude; agent; claude-opus-5-5
 > **Size:** S
 > **Approval:** Draft, awaiting Vi's approval
-> **Priority:** Nov 4, should ship (cost and speed; nothing new on screen). First to move after the video if time runs short
-> **Target Release:** Nov 4, only if it is on production by Nov 3 evening; otherwise right after the video
+> **Priority:** Later, #1 of 13 (moved out of Nov 4: it changes nothing on screen and rewrites the opening path the demo runs; its stories are written, so it merges first when the freeze ends)
+> **Target Release:** First after the Nov 9 live final (it was "Nov 4, if on production by Nov 3 evening"; moved after review)
 > **Owner:** Claude
 > **Reviewer:** Vi
 > **PRD:** §5 AI cost per person per day
@@ -45,8 +45,13 @@ fewer and smaller AI calls (PRD §5).
 
 ### Value Proposition
 
-- **With it:** opening Zeno again costs nothing when nothing changed, and the line never flickers to a reworded one.
+- **With it:** opening Zeno again makes no model call when nothing changed (about $0.004 saved per load, or $0.008
+  with device facts or Canvas), and the line never flickers to a reworded one. With Sound on, a reload still speaks
+  the same line through Google's voice, which costs about as much as the call it saves; not speaking an unchanged line
+  again is a separate fix (PRD §5, "AI cost").
 - **Without it:** every open pays one or two model calls, which adds up as people come back often (O3).
+- **Why not Nov 4:** nothing about it shows on screen, it rewrites the opening route and the load path that shots 3
+  and 6 run on, and it would land in the middle of the release check, the reset and the freeze.
 
 ### Success Metrics
 
@@ -97,7 +102,10 @@ fewer and smaller AI calls (PRD §5).
 
 | Item | Type | Impact |
 | --- | --- | --- |
-| EP0004 (US0013) | Epic | The day-2 line must put its new-pattern ids in the key, so "same" never hides a new pattern |
+| None | - | - |
+
+US0013 (Nov 4) adds new-pattern ids to the opening; when this epic ships, its key must include them, so "same" never
+hides a new pattern (US0008 notes it).
 
 ## Risks & Assumptions
 
@@ -112,7 +120,7 @@ fewer and smaller AI calls (PRD §5).
 | --- | --- | --- | --- |
 | A change the key misses leaves a stale line | Low | Low | The key covers every prompt input except the clock and free time; a new part of the day always refreshes |
 | A rule line gets reused after a model failure | Low | Medium | Rule answers carry no key |
-| It lands late and risks the demo | Medium | Medium | Ship only if it is on production by Nov 3 evening; otherwise right after the video |
+| It lands late and risks the demo | Medium | Medium | Moved after the Nov 9 final: it never touches the demo's opening path before then |
 
 ## Technical Considerations
 
@@ -151,10 +159,10 @@ fewer and smaller AI calls (PRD §5).
 
 ## Open Questions
 
-- [ ] Ship before the video (only if it is on production by Nov 3 evening) or right after it? Default: before, if
-      ready in time. - Owner: Vi
-- [ ] On a reload with nothing changed, Zeno says the same line again (once per load, as today, with Sound on). OK?
-      Default: yes. - Owner: Vi
+- [ ] When does it ship? Default: first after the Nov 9 final, built on a branch with a preview deploy before then.
+      Option: before the video, only if Vi wants it and it is on production before the Nov 3 reset. - Owner: Vi
+- [ ] On a reload with nothing changed, should Zeno say the same line again (with Sound on it speaks it once per load
+      today)? Default: no, the line stays on screen unspoken, which also saves the voice cost (PRD §5). - Owner: Vi
 
 ## Revision History
 
@@ -162,3 +170,4 @@ fewer and smaller AI calls (PRD §5).
 | --- | --- | --- |
 | 2026-11-03 | Claude | Created via `new` (deterministic) |
 | 2026-11-03 | Claude | Wrote the epic from the PRD, Vi's Nov 3 brief and the code at `7adcddb`. Three Amigos lenses applied in-session by the author, not an independent review |
+| 2026-11-03 | Claude | Review fixes: moved to Later, first after the Nov 9 final (nothing on screen, and it rewrites the demo's opening path); the 'costs nothing' line corrected for the voice cost; no longer blocks US0013 |

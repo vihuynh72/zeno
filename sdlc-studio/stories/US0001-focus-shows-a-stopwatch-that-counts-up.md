@@ -64,12 +64,15 @@ Code as of `main` at `7adcddb`: the Focus card has three rules (the step's title
 - **Caller:** the Focus card in src/components/day-view.tsx
 - **Verified:** no
 
-### AC3: A reload keeps the running time
+### AC3: A reload behaves as today (resuming is Later)
 
 - **Given** Focus running at about 7:12 on production
 - **When** the page reloads
-- **Then** the timer shows about 7:13 within a second (from the saved day, then `/api/day`), never 0:00
-- **Caller:** `GuidedDay` (src/components/guided-day.tsx) passes the saved goal's `startedAt` to the card
+- **Then** the ready card shows that step, as today (a load always lands on the card: `onDay` sets the screen to
+  "ready"); tapping Start restarts the stopwatch from 0:00, because Start on a running step saves a new start time
+  (`changeStepStatus` in src/lib/goals.ts, `withStatus` in src/components/day-flow.ts). Going straight back to Focus
+  with the time still counting is Later (PRD A8, OQ-22, EP0005)
+- **Caller:** `onDay` and `startPick` in src/components/guided-day.tsx
 - **Verified:** no
 
 ### AC4: The time format, past an hour and at the edges
@@ -112,6 +115,8 @@ Code as of `main` at `7adcddb`: the Focus card has three rules (the step's title
 - The check-in line: US0004.
 - Any server change: `startedAt` is already saved on Start (`changeStepStatus` sets `started_at = now()`), and the
   draft plan sets it at the tap (`draftGoal`).
+- Going back into Focus after a reload, with the time still counting: Later (PRD A8, OQ-22), because it needs a load
+  path that opens Focus and a Start that keeps a running step's start time (`goals.ts`, `guided-day.tsx`).
 
 ## Technical Notes
 
@@ -144,7 +149,8 @@ None. No new fields.
 
 - [ ] `day-flow.check.ts` asserts the eight `elapsed` cases in AC4 (the old `clock` asserts go).
 - [ ] `/preview?state=focus` at 1440x900 and 390 px wide, light and dark: the time and `of 10 min` fit on one rule.
-- [ ] Production: start a 1-minute step, wait to 1:30: nothing happens; reload: the time carries on.
+- [ ] Production: start a 1-minute step, wait to 1:30: nothing happens; reload: the ready card shows, and Start counts
+      from 0:00 again (as today; AC3).
 - [ ] VoiceOver on the Focus card reads the time and "so far, of N minutes planned" once.
 
 ## Dependencies
@@ -178,3 +184,4 @@ None. "of 25 min" is the PRD's wording.
 | --- | --- | --- |
 | 2026-11-03 | Claude | Created via `new` (deterministic) |
 | 2026-11-03 | Claude | Wrote the story against `main` at `7adcddb`. Three Amigos lenses applied in-session by the author, not an independent review |
+| 2026-11-03 | Claude | Review fix: AC3 now says what ships, a reload shows the card and Start restarts the stopwatch (Start saves a new start time); resuming Focus after a reload is Later (PRD A8, OQ-22) |

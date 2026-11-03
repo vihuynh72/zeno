@@ -42,18 +42,22 @@ DEMO-NOV4.md asks DQ-2 and DQ-3.
 
 ## Acceptance Criteria
 
-### AC1: The greeting says Maya (DQ-3)
+### AC1: The greeting says Maya (DQ-3), and Canvas is linked again
 
 - **Given** Vi renamed the demo Google account's first name to Maya (Google Account → Personal info → Name)
 - **When** the demo account signs out of Zeno and signs in again (the session takes the name at sign-in)
-- **Then** Zeno's greeting uses "Maya"
+- **Then** Zeno's greeting uses "Maya"; and because Sign out in the account menu removes the Canvas link from this
+  browser (it deletes every `zeno.vault.*` and `zeno.canvas.*` key: `signOut` in src/components/guided-day.tsx), Vi
+  re-links Canvas right away (account menu → Connect Canvas, Vi pastes the token; agents never type tokens), before the
+  release check (US0015) and the reset (US0016)
 - **Caller:** the opening (`firstName` from `session.user.name` in src/app/api/day/opening/route.ts)
 - **Verified:** no
 
 ### AC2: A real Prof Patel email (DQ-2)
 
-- **Given** one email sent to the demo account from a second address Vi owns, with the display name "Prof. Patel" and a
-  subject about CS 146 office hours
+- **Given** one email sent to the demo account from a new mailbox made only for the demo, with the display name
+  "Prof. Patel" and a subject about CS 146 office hours (never one of Vi's own addresses: the To field shows it on
+  camera in shot 5)
 - **When** Vi says "Draft an email to Professor Patel asking about office hours"
 - **Then** Gmail's compose window opens with To set to that address
 - **Caller:** `draft_email` in `talk()`, src/lib/agent.ts
@@ -71,32 +75,39 @@ DEMO-NOV4.md asks DQ-2 and DQ-3.
 
 ### In Scope
 
-- A name change in the demo Google account; one incoming email from an address Vi owns.
+- A name change in the demo Google account; one incoming email from a new mailbox made only for the demo; re-linking
+  Canvas after the new sign-in.
 
 ### Out of Scope
 
 - Code changes. None.
 - Sending any email from Zeno. Never.
+- Any of Vi's own addresses or accounts on camera. Never.
 
 ## Technical Notes
 
-- Order on Nov 3: do this before the release check (US0015) and before the reset (US0016), so shot 3's first sign-in
-  already says Maya.
+- Order on Nov 3, by noon (DEMO-NOV4.md, "Vi's Nov 3"): rename, send the Patel email, sign out and in, re-link Canvas.
+  All of it before the release check (US0015) and the 2 PM reset (US0016), so shot 3's first sign-in already says Maya
+  and Canvas is linked.
+- Signing out through the account menu clears this browser's Canvas link and vault on purpose (a shared computer must
+  not keep them). The reset (US0016) keeps the Canvas key; shot 3 signs out by deleting only the session cookie.
 
 ## Edge Cases & Error Handling
 
 | Scenario | Expected Behaviour |
 | --- | --- |
-| The old session still says "De" | Sign out of Zeno and in again |
+| The old session still says "De" | Sign out of Zeno and in again, then re-link Canvas |
+| Canvas shows as not connected after the new sign-in | Expected after Sign out: Vi pastes the token again in Connect Canvas |
 | The Patel email lands in Promotions or Updates | Move it to Primary; the inbox shows only people and school |
 | Vi prefers not to rename the account | Keep "Hi De" and cut the greeting in the edit (DEMO-NOV4.md fallback) |
-| No second address is available | The draft opens with an empty To; narration skips the address |
+| No demo mailbox yet | The draft opens with an empty To; narration skips the address |
 | The scan learns a fact from the Patel email | Fine: it is a real school contact for the demo |
 
 ## Test Scenarios
 
 - [ ] After the rename and a new sign-in, the opening greets Maya.
-- [ ] The draft request opens compose with the Patel address in To.
+- [ ] After re-linking, the account menu shows Canvas as connected.
+- [ ] The draft request opens compose with the Patel address in To, and that address is the demo-only mailbox.
 
 ## Dependencies
 
@@ -111,7 +122,8 @@ DEMO-NOV4.md asks DQ-2 and DQ-3.
 | Dependency | Type | Status |
 | --- | --- | --- |
 | Vi's answers to DQ-2 and DQ-3 | Decision | Open |
-| A second email address Vi owns | Account | Open |
+| A new mailbox made only for the demo (display name "Prof. Patel") | Account | Open |
+| The Canvas token, pasted by Vi | Account | Open |
 
 ## Estimation
 
@@ -126,8 +138,8 @@ DEMO-NOV4.md asks DQ-2 and DQ-3.
 
 ## Open Questions
 
-- [ ] DQ-2: send one email to the demo account from a second address Vi owns, signed Prof Patel? Default: yes. -
-      Owner: Vi
+- [ ] DQ-2: send one email to the demo account from a new mailbox made only for the demo, display name "Prof. Patel"
+      (never one of Vi's own addresses: it shows in the To field on camera)? Default: yes. - Owner: Vi
 - [ ] DQ-3: rename the demo Google account's first name to Maya? Default: yes. - Owner: Vi
 
 ## Revision History
@@ -136,3 +148,4 @@ DEMO-NOV4.md asks DQ-2 and DQ-3.
 | --- | --- | --- |
 | 2026-11-03 | Claude | Created via `new` (deterministic) |
 | 2026-11-03 | Claude | Wrote the story from docs/DEMO-NOV4.md and HANDOFF section 0. Three Amigos lenses applied in-session by the author, not an independent review |
+| 2026-11-03 | Claude | Review fixes: re-link Canvas after signing out and in (Sign out clears the Canvas key); the Patel email comes from a new demo-only mailbox, never Vi's own address |

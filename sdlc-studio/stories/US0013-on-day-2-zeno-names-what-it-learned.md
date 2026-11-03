@@ -47,14 +47,16 @@ pattern mentions it once.
 
 ## Acceptance Criteria
 
-### AC1: A new pattern reaches the opening's prompt
+### AC1: A pattern learned yesterday reaches today's opening
 
-- **Given** a memory with source "pattern" created since the start of the person's yesterday (`dayBounds`), whose id is
-  not in the request's `heard` list
-- **When** `newPattern(memories, heard, since)` picks it and `openingPrompt` is built with it
+- **Given** a memory with source "pattern" learned on an earlier local day: created at or after the start of the
+  person's yesterday and before the start of their today (`yesterday.start <= created_at < today.start`, from
+  `dayBounds`), whose id is not in the request's `heard` list
+- **When** `newPattern(memories, heard, since, before)` picks it and `openingPrompt` is built with it
 - **Then** the prompt has one extra line, "New since yesterday, from what they did: <text>. Say it once, in a few
-  words, if it shapes the pick, like 'You get more done before noon, so the hard one first.'" (the route then
-  returns the memory's id in `noticed`: AC2)
+  words, like 'You get more done before noon, so the hard one first.'" (no "if it shapes the pick": the browser
+  marks it heard, so Muse must say it); the route returns the memory's id in `noticed` (AC2). A pattern learned
+  today is not picked: it waits for tomorrow's first opening, so reopening Zeno on day 1 never spends it
 - **Verify:** shell node src/lib/agent.check.ts
 - **Caller:** `opening()` in src/app/api/day/opening/route.ts
 - **Verified:** no
@@ -70,7 +72,7 @@ pattern mentions it once.
 
 ### AC3: Nothing new, nothing added
 
-- **Given** no pattern memory newer than the start of yesterday, or all of them already heard
+- **Given** no pattern memory learned yesterday (only older ones, or ones learned today), or all of them already heard
 - **When** the opening is written
 - **Then** the prompt has no "New since yesterday" line, and `noticed` is empty or absent
 - **Verify:** shell node src/lib/agent.check.ts
@@ -87,21 +89,13 @@ pattern mentions it once.
 - **Caller:** `opening()` in src/app/api/day/opening/route.ts
 - **Verified:** no
 
-### AC5: It works with the cheaper opening
+### AC5: The demo (shot 6)
 
-- **Given** US0008 is in
-- **When** the key is computed
-- **Then** the new-pattern ids are part of it, so a `same` answer never hides a newly learned pattern
-- **Verify:** shell node src/lib/agent.check.ts
-- **Caller:** `openingKey` in src/lib/agent.ts
-- **Verified:** no
-
-### AC6: The demo (shot 6)
-
-- **Given** the demo account after a real day 1 that taught Zeno a pattern
+- **Given** the demo account after a real day 1 (Nov 3) that taught Zeno a pattern, and no opening of the demo
+  account on Nov 4 before shot 6
 - **When** Zeno opens on the morning of Nov 4
 - **Then** the first opening names the pattern in Zeno's words, and an opening later that day does not repeat it as
-  news
+  news; a retake works after `zeno:heard:<account>` is removed from local storage (DEMO-NOV4.md, "Before every take")
 - **Caller:** src/app/api/day/opening/route.ts
 - **Verified:** no
 
@@ -121,11 +115,13 @@ pattern mentions it once.
 ## Technical Notes
 
 - Two small pure helpers in `src/lib/agent.ts`, next to `cleanCanvas`, so `agent.check.ts` can test them:
-  `cleanHeard(raw)` (at most 20 id-shaped strings) and `newPattern(memories, heard, since)` (the newest memory with
-  source "pattern", created at or after `since`, not in `heard`, or null).
-- Route: `since` is the start of the person's yesterday, which the route already computes as `yesterday.start`; it
-  passes `newPattern(context.memories, cleanHeard(body.heard), yesterday.start)` to `openingPrompt` and returns its id
-  in `noticed`.
+  `cleanHeard(raw)` (at most 20 id-shaped strings) and `newPattern(memories, heard, since, before)` (the newest memory
+  with source "pattern", created at or after `since` and before `before`, not in `heard`, or null).
+- Route: `since` is the start of the person's yesterday and `before` the start of their today, which the route already
+  computes (`yesterday.start`, `today.start`); it passes `newPattern(context.memories, cleanHeard(body.heard),
+  yesterday.start, today.start)` to `openingPrompt` and returns its id in `noticed`.
+- If EP0003 (the cheaper opening, Later) ships, its key must include the new-pattern ids, so a "same" answer never
+  hides a pattern (US0008 notes it).
 - `openingPrompt(context, firstName, finished, refs, now, noticed?)`: one line when `noticed` is set.
 - Browser: `zeno:heard:<account>` (the opaque account key, like the vault's). It holds memory ids only, nothing
   private, so sign-out may leave it. A blocked storage means a pattern can be named once per part of the day;
@@ -141,14 +137,18 @@ pattern mentions it once.
 | `heard` holds junk or 500 items | Junk dropped; at most 20 kept |
 | Storage blocked | No heard list; the pattern may be named once per part of the day |
 | The pattern was said in talk on day 1 | Still named once on day 2 (shot 6 needs it) unless already in `heard` |
+| A pattern learned today (day 1, after the 5th finished step), then Zeno reopened that day | Not named: it is not from an earlier day yet; tomorrow's first opening names it |
+| A pattern learned two or more days ago, never named (the person skipped a day) | Not named: the line says "since yesterday"; the pattern still shapes plans silently |
+| A shot-6 retake | Remove `zeno:heard:<account>` from local storage first; the next opening names it again |
 
 ## Test Scenarios
 
-- [ ] `agent.check.ts`: `openingPrompt` with and without `noticed`; the route helper that picks the newest unheard
-      pattern since yesterday; `heard` cleaning; the key includes the ids (with US0008).
+- [ ] `agent.check.ts`: `openingPrompt` with and without `noticed` (the line has no "if it shapes the pick"); the
+      helper picks the newest unheard pattern from yesterday and skips one from today and one from two days ago;
+      `heard` cleaning.
 - [ ] Local: a throwaway user with a pattern memory dated yesterday: the first opening names it and returns its id; the
-      next, with `heard`, does not.
-- [ ] Nov 4 morning on the demo account (shot 6).
+      next, with `heard`, does not; a pattern dated today is not named.
+- [ ] Nov 4 morning on the demo account (shot 6), with no opening of the account before it.
 
 ## Dependencies
 
@@ -156,13 +156,13 @@ pattern mentions it once.
 
 | Story | Type | What's Needed | Status |
 | --- | --- | --- | --- |
-| [US0008](US0008-the-opening-skips-the-model-when-nothing-changed.md) | API | Only if it ships: the key must include the new-pattern ids | Draft |
+| None for Nov 4 | - | EP0003 (Later) must put the new-pattern ids in its key when it ships | - |
 
 ### External Dependencies
 
 | Dependency | Type | Status |
 | --- | --- | --- |
-| A real day 1 on the demo account with 5+ finished steps, mostly in one part of the day | Data (DEMO-NOV4.md) | Nov 3 |
+| A real day 1 on the demo account (Nov 3, from the 2 PM reset) with 5+ finished steps, 60% in one part of the day | Data (DEMO-NOV4.md) | Nov 3 |
 
 ## Estimation
 
@@ -187,3 +187,4 @@ pattern mentions it once.
 | --- | --- | --- |
 | 2026-11-03 | Claude | Created via `new` (deterministic) |
 | 2026-11-03 | Claude | Wrote the story against `main` at `7adcddb`. Three Amigos lenses applied in-session by the author, not an independent review |
+| 2026-11-03 | Claude | Review fixes: only a pattern learned on an earlier day (yesterday) is named, so day 1 reopenings never spend it; the prompt line is unconditional; AC5 on the cheaper opening removed (EP0003 is Later); shot-6 retake and no-open-before-shot-6 rules |
