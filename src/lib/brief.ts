@@ -1,78 +1,39 @@
 import type { UserContext } from "@/lib/context";
-import type { FirstPick, Goal } from "@/lib/day";
+import type { Goal } from "@/lib/day";
 import { sensitiveEmail } from "@/lib/profile";
-import { localHour } from "@/lib/tz";
+import { formatTime, localHour } from "@/lib/tz";
 
 // A deadline's days left the way people say it.
 export const dueIn = (daysLeft: number) => (daysLeft <= 0 ? "today" : daysLeft === 1 ? "tomorrow" : `in ${daysLeft} days`);
 
-// The one step the rule card, line and options all name: the started one, else the first todo.
+// The step the first option names: the started one, else the first todo.
 const nextStep = (goal: Goal | null) =>
   goal?.steps.find((step) => step.status === "doing") ?? goal?.steps.find((step) => step.status === "todo");
 
-// The first card when the model is unavailable: the next step (5 minutes into it when it is long, unsized or
-// the streak is at risk), else the nearest deadline. null when there is neither, and before 5 AM, when the
-// line offers to set up tomorrow instead.
-export function rulePick(context: UserContext, now = new Date()): FirstPick | null {
-  if (localHour(context.timeZone, now) < 5) return null;
-  const { goal } = context;
-  const step = nextStep(goal);
-  if (goal && step) {
-    const minutes = !context.progress.atRisk && step.minutes !== null && step.minutes <= 15 ? step.minutes : 5;
-    return {
-      goal: goal.title,
-      due: goal.due ?? null,
-      stepId: step.id,
-      steps: [{ title: step.title, minutes }],
-      why: `${step.status === "doing" ? "You already started it" : "It's next on your plan"}${minutes === step.minutes ? "." : "; 5 minutes gets it going."}`,
-    };
-  }
-  const deadline = context.deadlines[0];
-  if (deadline) {
-    return { goal: deadline.title, due: deadline.date, stepId: null, steps: [{ title: "Open it and work 5 minutes", minutes: 5 }], why: `Due ${dueIn(deadline.daysLeft)}.` };
-  }
-  const todo = firstTodo(context);
-  return todo ? { goal: todo, due: null, stepId: null, steps: [{ title: "Open it and work 5 minutes", minutes: 5 }], why: "It's on your to-do list." } : null;
+// Her free time until the next timed event today ("You're free until PHIL 134 at 1:30 PM."), or the event she is in
+// now; null when the calendar could not be read.
+export function freeLine({ calendarState, events, timeZone }: Pick<UserContext, "calendarState" | "events" | "timeZone">, now = new Date()): string | null {
+  if (calendarState !== "ok") return null;
+  const at = now.getTime();
+  const timed = events.filter((event) => !event.allDay).sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+  const current = timed.find((event) => Date.parse(event.start) <= at && at < Date.parse(event.end));
+  if (current) return `You're in ${current.title} until ${formatTime(current.end, timeZone)}.`;
+  const next = timed.find((event) => Date.parse(event.start) > at);
+  return next ? `You're free until ${next.title} at ${formatTime(next.start, timeZone)}.` : "Your calendar's clear for the rest of today.";
 }
 
-// A new person's only work is often a pasted to-do ("To do: Read chapter 4, due Tuesday, November 3."): one with a
-// due date first, named without its date.
-function firstTodo({ memories }: UserContext): string | null {
-  const todos = memories.filter((memory) => memory.group === "projects" && memory.text.startsWith("To do: "));
-  const todo = todos.find((memory) => /, due /.test(memory.text)) ?? todos[0];
-  return todo ? todo.text.slice("To do: ".length).replace(/, due .*$/, "").replace(/\.$/, "").trim() || null : null;
-}
-
-// Before 5 AM it is still the night before for most people, not morning.
-function greetingAt(timeZone: string, now: Date, firstName: string | null) {
-  const hour = localHour(timeZone, now);
-  const who = firstName ? `, ${firstName}` : "";
-  if (hour < 5) return `Still up${who}?`;
-  return `Good ${hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening"}${who}.`;
-}
-
-// Zeno's first line when the model is unavailable: it offers the next step or the nearest deadline (what
-// rulePick puts on the card) and never guesses the day.
-export function ruleOpening(context: UserContext, firstName: string | null, now = new Date()): string {
-  const { goal } = context;
-  const next = nextStep(goal);
-  const deadline = context.deadlines[0];
-  const todo = firstTodo(context);
-  const late = localHour(context.timeZone, now) < 5;
+// The line under the home's greeting when the model is unavailable (Vi, Nov 3). The home greets her and lists her goals,
+// so it greets nobody, picks nothing and asks nothing: what she finished yesterday (else a streak worth saying; a streak
+// at risk tonight comes first), then her free time until the next event. Before 5 AM it says to set up tomorrow.
+export function ruleOpening(context: UserContext, finished: string[] = [], now = new Date()): string {
+  const { streak, atRisk } = context.progress;
   const unread = [context.calendarState !== "ok" && "calendar", context.emailState !== "ok" && "inbox"].filter(Boolean);
+  const done =
+    finished.length === 1 ? `Yesterday you got ${finished[0]} done.` : finished.length > 1 ? `Yesterday you got ${finished.length} steps done.` : null;
+  const momentum = atRisk ? `One 5-minute step keeps your ${streak}-day streak going.` : (done ?? (streak > 1 ? `You're on a ${streak}-day streak.` : null));
   return [
-    greetingAt(context.timeZone, now, firstName),
     unread.length > 0 && `I couldn't check your ${unread.join(" or ")} just now.`,
-    !late && context.progress.atRisk && `One 5-minute step keeps your ${context.progress.streak}-day streak going.`,
-    late
-      ? "Set up tomorrow's first step before you sleep?"
-      : goal && next
-        ? `Next up for ${goal.title}: ${next.title}. Start now?`
-        : deadline
-          ? `${deadline.title} is due ${dueIn(deadline.daysLeft)}. Open it for 5 minutes?`
-          : todo
-            ? `From your list: ${todo}. Give it 5 minutes?`
-            : "What's one thing you want to move forward today?",
+    ...(localHour(context.timeZone, now) < 5 ? ["Set up tomorrow's first step, then sleep."] : [momentum, freeLine(context, now)]),
   ]
     .filter(Boolean)
     .join(" ");

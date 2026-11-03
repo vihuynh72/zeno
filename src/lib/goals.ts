@@ -2,7 +2,7 @@ import { MEMORY_GROUPS, type Goal, type Memory, type MemoryGroup, type MemorySou
 import { ensureSchema, getSql } from "@/lib/db";
 // profile.ts imports this file too; neither uses the other until a call, so the cycle is safe.
 import { factVerdict } from "@/lib/profile";
-import { formatDate } from "@/lib/tz";
+import { dayBounds, formatDate } from "@/lib/tz";
 import { sameFact, within } from "@/lib/vault";
 
 // A step for a new or edited roadmap; `id` keeps an existing todo step.
@@ -58,6 +58,69 @@ export async function currentGoal(email: string): Promise<Goal | null> {
     ORDER BY created_at DESC LIMIT 1
   `;
   return goal ? goalFrom(await goalQuery(email, String(goal.id))) : null;
+}
+
+// An open plan before ordering: current is the plan currentGoal returns, updatedAt its updated_at in epoch ms.
+export type OpenGoal = { goal: Goal; current: boolean; updatedAt: number };
+
+// The home's goal options, the Desk and the Week (Vi, Nov 3): the current plan first, then by due date with undated
+// ones last, then the most recently updated; at most 5.
+export function orderGoals(open: OpenGoal[]): Goal[] {
+  return [...open]
+    .sort(
+      (a, b) =>
+        Number(b.current) - Number(a.current) ||
+        Number(!a.goal.due) - Number(!b.goal.due) ||
+        (a.goal.due ?? "").localeCompare(b.goal.due ?? "") ||
+        b.updatedAt - a.updatedAt,
+    )
+    .slice(0, 5)
+    .map((item) => item.goal);
+}
+
+// Every active or paused plan with a todo or doing step, with its steps, in orderGoals' order.
+export async function openGoals(email: string): Promise<Goal[]> {
+  await ensureSchema();
+  const rows = await getSql()`
+    SELECT g.id AS goal_id, g.title AS goal_title, to_char(g.due, 'YYYY-MM-DD') AS goal_due, g.updated_at AS goal_updated,
+      g.id = (SELECT id FROM goals WHERE user_email = ${email} AND status = 'active' ORDER BY created_at DESC LIMIT 1) AS goal_current,
+      s.id, s.title, s.minutes, s.status, s.started_at, s.done_at, s.prep, s.event_id, s.scheduled_at
+    FROM goals g JOIN steps s ON s.goal_id = g.id AND s.user_email = ${email}
+    WHERE g.user_email = ${email} AND g.status IN ('active', 'paused')
+      AND EXISTS (SELECT 1 FROM steps o WHERE o.goal_id = g.id AND o.user_email = ${email} AND o.status IN ('todo', 'doing'))
+    ORDER BY g.id, s.position
+  `;
+  const groups = Map.groupBy(rows, (row) => String(row.goal_id));
+  return orderGoals(
+    [...groups.values()].map((group) => ({
+      goal: goalFrom(group) as Goal,
+      current: group[0].goal_current === true,
+      updatedAt: new Date(group[0].goal_updated as string).getTime(),
+    })),
+  );
+}
+
+// Opening a plan makes it the current one (Vi, Nov 3). One transaction pauses the current plan, when it is another one,
+// and activates this one; a goal that is not this person's or is done changes nothing and returns null.
+export async function activateGoal(email: string, goalId: string): Promise<Goal | null> {
+  await ensureSchema();
+  const sql = getSql();
+  const results = await sql.transaction([
+    // One step at a time across plans too: a step left running in another plan goes back in line, as Stop for now leaves it.
+    sql`
+      UPDATE steps SET status = 'todo', started_at = NULL
+      WHERE user_email = ${email} AND status = 'doing' AND goal_id <> ${goalId}
+        AND EXISTS (SELECT 1 FROM goals WHERE id = ${goalId} AND user_email = ${email} AND status <> 'done')
+    `,
+    sql`
+      UPDATE goals SET status = 'paused', updated_at = now()
+      WHERE user_email = ${email} AND status = 'active' AND id <> ${goalId}
+        AND EXISTS (SELECT 1 FROM goals WHERE id = ${goalId} AND user_email = ${email} AND status <> 'done')
+    `,
+    sql`UPDATE goals SET status = 'active', updated_at = now() WHERE id = ${goalId} AND user_email = ${email} AND status <> 'done' RETURNING id`,
+    goalQuery(email, goalId),
+  ]);
+  return results[2].length > 0 ? goalFrom(results[3]) : null;
 }
 
 // Any goal at all, paused and done ones included.
@@ -423,6 +486,13 @@ export async function stepsFinishedBetween(email: string, start: Date, end: Date
     ORDER BY done_at
   `;
   return rows.map((row) => String(row.title));
+}
+
+// Titles of the steps finished on the person's yesterday, for the line under the home's greeting.
+export async function finishedYesterday(email: string, timeZone: string, now = new Date()): Promise<string[]> {
+  // The last instant before today's midnight falls on the person's yesterday, DST included.
+  const yesterday = dayBounds(timeZone, new Date(dayBounds(timeZone, now).start.getTime() - 1));
+  return stepsFinishedBetween(email, yesterday.start, yesterday.end);
 }
 
 // Finished steps per local calendar date (YYYY-MM-DD in timeZone), over the whole history so the best streak is true.
