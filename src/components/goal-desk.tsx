@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { CanvasBrief, MailResponse, Step } from "@/lib/day";
-import { dueLabel, realMinutes } from "@/components/day-flow";
+import { dueLabel, isEmailStep, realMinutes } from "@/components/day-flow";
 import { senderName } from "@/components/desk-rows";
 import PrepPack from "@/components/prep-pack";
 
@@ -121,7 +121,9 @@ export function DeskMaterials({ materials, step, brief }: { materials?: Material
             <p className="mt-1">{stopped}</p>
           </article>
         )}
+        {/* A reply is hers to write: no web sources for an email step. */}
         {step &&
+          !isEmailStep(step.title) &&
           (sources ? (
             <article className="mini">
               <h3 className="font-bold text-ink-2">Sources for this step</h3>

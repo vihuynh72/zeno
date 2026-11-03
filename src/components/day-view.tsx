@@ -327,7 +327,7 @@ export default function DayView(props: DayViewProps) {
                   {choices.map((choice, i) => (
                     <li key={`${i}:${choice.title}`}>
                       <button type="button" data-answer aria-disabled={props.busy} onClick={() => choose(i)} className="choice">
-                        <span className="lines">
+                        <span className="lines block">
                           <span className="flex items-baseline justify-between gap-4">
                             <span className="line-clamp-2 min-w-0 font-bold">{choice.title}</span>
                             {choice.minutes ? <span className="shrink-0 font-mono text-ink-2">{choice.minutes} min</span> : null}

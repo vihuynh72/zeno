@@ -301,8 +301,9 @@ export default function GuidedDay() {
   const today = useToday();
   const choices = homeChoices(goal, goals, base?.deadlines ?? [], day?.emails ?? [], today, Object.values(mailGoals));
   const proposed = proposedStep(goal, proposedId);
-  // The desk shows while its plan is made, has a step open, or is in Focus or after a Done; otherwise the home.
-  const onDesk = view === "desk" && (planning !== null || proposed !== null || screen === "focus" || screen === "checkin");
+  // Focus and the screen after Done are always on the desk; the card and talk are while its plan is made or has a step
+  // open; otherwise the home.
+  const onDesk = screen === "focus" || screen === "checkin" || (view === "desk" && (planning !== null || proposed !== null));
   const history = useRef<Turn[]>([]);
   const cache = useRef<Saved | null>(null);
   const tapped = useRef(false); // the turn in flight came from a chip, not the type box
@@ -408,6 +409,12 @@ export default function GuidedDay() {
     setGoals(list);
     latest.current.goals = list;
     if (cache.current) store({ day: { ...cache.current.day, goals: list } });
+  }
+
+  // A plan saved new after she moved on is the server's current one, so it is here too, unless she opened another desk.
+  function takeNew(next: Goal) {
+    if (latest.current.view === "desk") takeGoal(next);
+    else changeGoal(next);
   }
 
   function changeProgress(next: Progress) {
@@ -698,9 +705,10 @@ export default function GuidedDay() {
     if (next === "checkin") setCelebrate(Boolean(res.progress));
     // A step's timer ends with its focus.
     if (next !== "focus" || openSteps(res.goal)[0]?.id !== openSteps(now.goal)[0]?.id) setTimer(null);
-    // A plan made or changed here opens its desk, proposing its first new step ("Something smaller"'s first piece).
+    // A plan made or changed here opens its desk, proposing its first new step ("Something smaller"'s first piece); a
+    // step started here runs on it.
+    if (next === "ready" || next === "focus") setView("desk");
     if (next === "ready") {
-      setView("desk");
       setStuck(false);
       setProposedId(addedStep(now.goal, res.goal));
     }
@@ -938,7 +946,7 @@ export default function GuidedDay() {
     const res = await post<GoalResponse>("/api/goal/plan", { title: deadline.title, due, ...(canvas ? { canvas } : {}) } satisfies PlanRequest);
     if (res.state === "signed-out") return showSignedOut();
     if (ticket !== opened.current) {
-      if (res.state === "ok") takeGoal(res.goal);
+      if (res.state === "ok") takeNew(res.goal);
       return;
     }
     setPlanning(null);
@@ -966,7 +974,7 @@ export default function GuidedDay() {
       setMailGoals(map);
     }
     if (ticket !== opened.current) {
-      if (res.state === "ok") takeGoal(res.goal);
+      if (res.state === "ok") takeNew(res.goal);
       return;
     }
     setPlanning(null);
