@@ -829,7 +829,7 @@ assert.ok(calls.length > 0 && calls.every((row) => !privateWords.test(row)), cal
 reset();
 replies.push({ content: JSON.stringify({ facts: [], todos: [], deadlines: [] }) });
 await extractNotes("Immigration hearing Nov 20. Pay back Jake $1,200 by the 15th.", zone, new Date("2026-11-01T17:00:00Z"));
-assert.match(sent[0].messages[0].content ?? "", /Every item has private, true or false\. Mark it private when it is about their health \(a condition; care or treatment[\s\S]*Never keep, not even privately: passwords, sign-in codes or verification links, a medicine's name/);
+assert.match(sent[0].messages[0].content ?? "", /Every item has private, true or false\. Mark it private when it is about their health \(care or treatment[\s\S]*Never keep, not even privately: passwords, sign-in codes or verification links, the name of a condition, diagnosis or medicine/);
 assert.match(sent[0].messages[0].content ?? "", /Say health generically and never name a condition, diagnosis or medicine, like 'Doctor check-in Nov 3' or 'Mornings feel foggy lately\.'/);
 const notesSchema = (sent[0] as unknown as { response_format: { json_schema: { schema: { properties: Record<string, { items: { required: string[] } }> } } } }).response_format.json_schema.schema;
 for (const list of ["facts", "todos", "deadlines"]) assert.ok(notesSchema.properties[list].items.required.includes("private"), list);

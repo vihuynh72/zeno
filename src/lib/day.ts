@@ -145,7 +145,7 @@ export type TalkAction = {
   // "kept-private": a private fact went to the device (it is in the response's `private`), never to Zeno's servers.
   type: "goal-set" | "roadmap-changed" | "step-started" | "step-finished" | "remembered" | "kept-private" | "forgot";
   label: string;
-  // For "remembered": the saved memory, so the Noted line can undo it.
+  // For "remembered": the saved memory's id.
   memoryId?: string;
 };
 
@@ -186,7 +186,7 @@ export type PrepResponse =
   | { state: "signed-out" | "not-found" | "bad-request" | "error" };
 
 // PATCH /api/steps/[id] body: { status: StepStatus }. Finishing a step also returns the new progress and any
-// pattern Zeno just noticed (shown as a Noted line).
+// pattern Zeno just noticed (already saved; Memory shows it).
 export type StepResponse =
   | { state: "ok"; goal: Goal; progress?: Progress; learned?: Memory | null }
   | { state: "signed-out" | "not-found" | "bad-request" | "error" };

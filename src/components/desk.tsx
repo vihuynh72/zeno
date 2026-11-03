@@ -33,21 +33,16 @@ const time = (event: DayEvent) => (event.allDay ? "All day" : formatTime(event.s
 type DeskTab = "today" | "week";
 const TABS: Record<DeskTab, string> = { today: "Today", week: "Week" };
 
-// The day's Gmail link (DayResponse.mailUrl), for the inbox's "Open Gmail".
-type DeskToday = Today & { mailUrl?: string };
-
 // tab is the view it opens on; the person switches between Today and Week inside. booked is what the card booked since
 // the day loaded, which Today shows. Nothing here writes to the calendar.
 type DeskProps = {
   open: boolean;
   tab?: DeskTab;
-  today: DeskToday | null;
+  today: Today | null;
   goal: Goal | null;
   booked?: DayEvent[];
   onClose(): void;
   onSignIn(): void;
-  // Unused since the Week went read-only; day-view.tsx may still pass it.
-  onBooked?: unknown;
 };
 
 // Only the backdrop: a click on the dialog's own scrollbar lands inside its box.
@@ -234,7 +229,7 @@ function Roadmap({ goal }: { goal: Goal }) {
 function Calendar({ today, now, booked }: { today: Today; now: number; booked: DayEvent[] }) {
   const { calendar } = today.sources;
   const zone = browserZone();
-  // Today's blocks booked from the card or the Week join the list, in time order after the all-day ones.
+  // Today's blocks booked from the card join the list, in time order after the all-day ones.
   const added = booked.filter((event) => now && localDate(zone, new Date(event.start)) === localDate(zone, new Date(now)));
   const events = added.length
     ? [...today.events, ...added].sort((a, b) => Number(b.allDay) - Number(a.allDay) || Date.parse(a.start) - Date.parse(b.start))
@@ -321,7 +316,7 @@ function Deadlines({ deadlines }: { deadlines: Deadline[] }) {
 }
 
 // Only important mail reaches the desk: one line each, sender and subject, unread in bold.
-function Inbox({ today }: { today: DeskToday }) {
+function Inbox({ today }: { today: Today }) {
   const { email } = today.sources;
   const gmail = httpsOnly(today.mailUrl);
   return (

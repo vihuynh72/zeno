@@ -6,52 +6,6 @@ import { dayBounds, formatTime, localDate } from "@/lib/tz";
 // after Stop for now or That's enough today.
 export type Screen = "signed-out" | "setup" | "ready" | "talk" | "focus" | "checkin" | "wrap";
 
-// shortcut: no screen asks these since Nov 2 (Zeno learns from use); kept only because src/lib/agent.check.ts reads
-// the focus answers' sentences. Delete once that check stops importing it.
-export const SETUP: { ask: string; answers: [label: string, memory: string | null][] }[] = [
-  {
-    ask: "I'm Zeno. I help you start the thing you keep putting off. Thirty seconds to set me up?",
-    answers: [
-      ["Let's go", null],
-      ["Skip", null],
-    ],
-  },
-  {
-    ask: "What fills most of your days?",
-    answers: [
-      ["Classes", "Spends most days in classes."],
-      ["Work", "Spends most days at work."],
-      ["Both", "Splits most days between classes and work."],
-      ["Something else", null],
-    ],
-  },
-  {
-    ask: "When do you focus best?",
-    answers: [
-      ["Mornings", "Focuses best in the morning."],
-      ["Afternoons", "Focuses best in the afternoon."],
-      ["Evenings", "Focuses best in the evening."],
-      ["Late at night", "Focuses best late at night."],
-    ],
-  },
-  {
-    ask: "What makes starting hard?",
-    answers: [
-      ["It feels too big", "Starting is hard when a task feels too big."],
-      ["I don't know where to begin", "Starting is hard when it's unclear where to begin."],
-      ["I get distracted", "Gets distracted easily when starting."],
-      ["Low energy", "Starting is hard when energy is low."],
-    ],
-  },
-  {
-    ask: "Anything else I should know? Paste a syllabus, a to-do list or notes and I'll pull out what matters.",
-    answers: [
-      ["Paste notes", null],
-      ["Skip", null],
-    ],
-  },
-];
-
 // The plain names the Memory sheet shows, in MEMORY_GROUPS order (docs/PLAN-NOV.md).
 export const GROUP_NAMES: Record<MemoryGroup, string> = {
   about: "About you",

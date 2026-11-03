@@ -32,8 +32,6 @@ const SKELETON: [day: number, hour: number, hours: number][] = [
   [4, 9, 1],
 ];
 
-// What the Week booked or took off. The Week is read-only now; day-view.tsx still imports this until flow-ui drops it.
-export type Booked = { event: WeekEvent; stepId?: string; undone?: boolean };
 // A day column's width, one Mono digit's, and the height under the day heads, in px.
 type Metrics = { column: number; ch: number; room: number };
 // Text cut short in its box, shown whole beside it.

@@ -13,7 +13,6 @@ import Desk from "@/components/desk";
 import { bookedEvents } from "@/components/desk-rows";
 import FocusMusic from "@/components/focus-music";
 import MemorySheet from "@/components/memory-sheet";
-import type { Booked } from "@/components/week-grid";
 import PrepPack from "@/components/prep-pack";
 import StreakRow from "@/components/streak-row";
 import VoiceRing from "@/components/voice-ring";
@@ -29,6 +28,7 @@ export type Today = {
   // The rest of today's free time and the next deadlines (missing from days saved before they existed).
   free?: FreeSlot[];
   deadlines?: Deadline[];
+  mailUrl?: string; // this account's Gmail, for the inbox's "Open Gmail"
 };
 
 export type DayViewProps = {
@@ -81,7 +81,6 @@ export type DayViewProps = {
     signIn(): void;
     signOut(): void;
     canvasSynced(): void; // Canvas linked or unlinked in its sheet
-    booked?(change: Booked): void; // a block booked or taken off in the desk's Week
   };
 };
 
@@ -427,7 +426,6 @@ export default function DayView(props: DayViewProps) {
         booked={bookedEvents(Object.values(bookings))}
         onClose={() => on.sheet(null)}
         onSignIn={on.signIn}
-        onBooked={on.booked}
       />
       <SheetPanel open={props.sheet === "memory"} title="Memory" onClose={() => on.sheet(null)}>
         {props.sheet === "memory" && (

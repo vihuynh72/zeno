@@ -11,20 +11,25 @@ export default function Privacy() {
   return (
     <main className="mx-auto max-w-[680px] px-4 py-12 text-[18px] leading-[1.6] text-ink">
       <h1 className="text-[32px] font-bold leading-tight">Zeno and your data</h1>
-      <p className="mt-2 text-ink-2">Updated November 1, 2026</p>
+      <p className="mt-2 text-ink-2">Updated November 2, 2026</p>
 
       <h2 className="mt-10 text-[22px] font-bold">What Zeno reads</h2>
       <p className="mt-3">
         When you sign in with Google and allow it, Zeno reads your Google Calendar and Gmail so it can plan
         around your real day and learn what matters to you. It reads them only to help you inside Zeno.
       </p>
+      <p className="mt-3">
+        If you connect Canvas, Zeno reads your assignments for the next two weeks with an access token you create. The
+        token stays only in this browser: Zeno&apos;s servers use it for that one request and never save it. Zeno never
+        submits or changes anything in Canvas.
+      </p>
 
       <h2 className="mt-10 text-[22px] font-bold">What Zeno keeps</h2>
       <ul className="mt-3 list-disc pl-6">
-        <li>Your goals and steps, and short facts Zeno remembers about you (like your classes or how you like to work).</li>
+        <li>Your goals and steps, and short facts Zeno remembers about you (like your classes, how you like to work, or a Canvas due date).</li>
         <li>You can see every remembered fact in Memory and delete any of them, any time.</li>
-        <li>Zeno does not save your emails or calendar events. It reads them when it needs them.</li>
-        <li>Zeno is built never to keep passwords, sign-in codes, verification links or the names of medicines, not even on your device.</li>
+        <li>Zeno does not save your emails, calendar events or Canvas instructions. It reads them when it needs them.</li>
+        <li>Zeno is built never to keep passwords, sign-in codes, verification links or the names of health conditions or medicines, not even on your device.</li>
       </ul>
 
       <h2 className="mt-10 text-[22px] font-bold">Private things stay on your device</h2>
@@ -33,7 +38,7 @@ export default function Privacy() {
         private. Zeno keeps them only in this browser on this device. They are sent with each conversation, opening
         and daily scan, to write that reply through Meta&apos;s model, and are never saved on Zeno&apos;s servers. If a spoken
         reply mentions one, Google&apos;s text-to-speech reads that reply. Forget removes them, and Sign out clears
-        them from this browser.
+        them, and your Canvas token, from this browser.
       </p>
 
       <h2 className="mt-10 text-[22px] font-bold">Who processes it</h2>

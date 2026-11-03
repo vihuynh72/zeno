@@ -590,7 +590,7 @@ try {
   assert.match(body.messages[0].content, /Skip what does not help plan their days or keep them going: the devices and apps they use, newsletters and forums they read, product plans, subscriptions and renewals \(a renewal date is no deadline\), unless the mail shows a goal, deadline, routine or habit/);
   assert.match(body.messages[0].content, /never write a fact for a class, shift, meeting or other event it shows \(an exam or deadline date is still a fact\); at most one routines fact sums up the shape of their week/);
   assert.match(body.messages[0].content, /A health fact stays generic even when private: never name a condition, diagnosis or medicine, like 'Has a doctor check-in Nov 3\.' or 'Mornings feel foggy lately\.'/);
-  assert.match(body.messages[0].content, /private: true or false\. Mark it private when it is about their health \(a condition; care or treatment[^.]*\. When they focus best[^.]*\. Never keep, not even privately: passwords/);
+  assert.match(body.messages[0].content, /private: true or false\. Mark it private when it is about their health \(care or treatment[^.]*\. When they focus best[^.]*\. Never keep, not even privately: passwords/);
   assert.match(
     body.messages[1].content,
     /^The person: Maya Tran <maya@example.com>\. Today is Sunday, November 1\.\n\nAlready known:\n- Works library shifts[^\n]*\n\nRemoved by the person, never add again:\n- Has a doctor check-in[\s\S]*Calendar, past and next 30 days \(times in America\/Los_Angeles\):\n<<<\nBIO 121 Lab[\s\S]*Email 1 \(received\):\n<<<\nFrom: Ana Patel[\s\S]*\(sent by them\)/,

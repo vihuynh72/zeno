@@ -21,8 +21,7 @@ export function patternsIn(steps: StepRecord[], timeZone: string, kept: string[]
   const line = (text: string, add: number, keep: number) => (kept.includes(text) ? keep : add);
   const done = steps.filter((step) => step.status === "done");
 
-  // Time of day: 5 finished steps or more, 60% of them in one part of the day. Worded as src/lib/agent.ts focusPart
-  // reads it, so to-dos land in that part of the day now that setup never asks.
+  // Time of day: 5 finished steps or more, 60% of them in one part of the day.
   if (done.length >= 5) {
     const parts = new Map<string, number>();
     for (const step of done) {
@@ -96,8 +95,7 @@ export function reconcile<T extends { text: string }>(found: string[], saved: T[
 }
 
 // After a step is finished or skipped: patterns that stopped holding are removed, and a new pattern in the last
-// 30 days is saved as a "patterns" memory and returned, or null. One new pattern per call, so each one gets its
-// own Noted line.
+// 30 days is saved as a "patterns" memory and returned, or null. One new pattern per call.
 export async function learnFromSteps(email: string, timeZone: string): Promise<Memory | null> {
   const [steps, memories, removed] = await Promise.all([recentSteps(email), listMemories(email), forgottenMemories(email)]);
   const saved = memories.filter((memory) => memory.source === "pattern");

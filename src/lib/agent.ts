@@ -576,7 +576,7 @@ export const TOOLS = [
           private: {
             type: "boolean",
             description:
-              "true for health (a condition, or care for one, like a doctor, counselor or therapy appointment), sexual orientation or gender identity, religion, politics, immigration or visa status, or balances, debts or money owed.",
+              "true for health (care, like a doctor, counselor or therapy appointment, or how it affects them), sexual orientation or gender identity, religion, politics, immigration or visa status, or balances, debts or money owed.",
           },
         },
         required: ["text", "group", "private"],
@@ -863,11 +863,11 @@ export async function talk(
         return {
           ok: true,
           to: to || "empty: they add it in Gmail",
-          note: "Drafted, not sent and not in their Gmail yet: offer to open it there, like 'Want to open it in Gmail?', where they press Send. Never say you sent it.",
+          note: "Drafted, not sent and not in their Gmail yet. In one short line say who it's to and what it asks, like 'Here's a draft to Prof Patel asking for two more days.'; they open it in Gmail and press Send. Never say you sent it.",
         };
       }
       if (checked.name === "step" && checked.status === "doing" && planChanged) {
-        return { ok: false, note: "Not started: they see the plan first and tap Start. Don't say it started." };
+        return { ok: false, note: "Not started: they see its card first and tap Start. Don't say it started." };
       }
       if (checked.name === "set_goal" || checked.name === "update_steps") {
         const changed =

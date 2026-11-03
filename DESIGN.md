@@ -91,11 +91,15 @@ components:
     rounded: "{rounded.pill}"
     padding: "0 24px"
     height: "52px"
-  dock-knob:
-    backgroundColor: "{colors.card-stock}"
-    textColor: "{colors.ink}"
+  button-big:
+    backgroundColor: "{colors.ink}"
+    textColor: "{colors.card-stock}"
     rounded: "{rounded.pill}"
-    size: "56px"
+    height: "64px"
+    width: "100%"
+  link:
+    textColor: "{colors.ink-2}"
+    height: "44px"
   talk-button:
     backgroundColor: "{colors.ink}"
     textColor: "{colors.card-stock}"
@@ -135,7 +139,7 @@ components:
 
 Every step of the day is one ruled index card lying on a warm desk, with the next cards' edges peeking out underneath. Words sit on the card's pale blue rules exactly as handwriting would; one red margin line runs down the left. The whole interface is black and white first: near-black ink, white card stock, a warm off-white desk, and a single red reserved for the margin, the stamp, the pen and the voice.
 
-Density is deliberately low. One thing per screen, body text never under 18px, controls never under 52px tall, so older and low-vision people can use it at a laptop. Nothing looks like an AI chat: no bubbles, no avatars, no panels of side content. The one moving signature is the On Air dot ring: sixty small dots around the Talk button that light in margin red with whoever is speaking.
+Density is deliberately low. One thing and one big button per screen, body text never under 18px, tap targets never under 44px tall, so older and low-vision people can use it at a laptop. Nothing looks like an AI chat: no bubbles, no avatars, no panels of side content. The one moving signature is the On Air dot ring: sixty small dots around the Talk button that light in margin red with whoever is speaking.
 
 Dark theme is the same desk at night: a near-black desk, charcoal card stock, muted slate rules, and the same red, a little brighter. Light and dark follow the system.
 
@@ -143,7 +147,7 @@ Dark theme is the same desk at night: a near-black desk, charcoal card stock, mu
 - One 760px ruled card per step; text sits on the rules, not between them.
 - Black and white first; red only where paper would carry red.
 - One family (Atkinson Hyperlegible Next) with its Mono for every time, count and minute.
-- Pill buttons: black filled for the yes, outlined for the alternatives, grey-outlined for the quiet way out.
+- One big black pill per screen for the yes; every other action is a small muted text link under it.
 - Soft real paper shadow; no hard offsets, no glass.
 - The dot ring is the only voice indicator.
 
@@ -198,11 +202,11 @@ On the desk's Week, events from the person's other calendars tint the card in th
 
 ## Layout
 
-A single centered column. The top bar spans up to 1224px (Z mark and Zeno left; date, Mono time and Sound right). Below it the four-step progress row (Brief, Pick one thing, First step, Focus) uses 4px bars aligned to the card's 760px width, current step bold over an ink bar. The card sits centered at 760px max; answer pills wrap centered beneath it; the dock (Talk in its ring, then Type, Today, Memory) closes the column.
+A single centered column. The top bar spans up to 1224px: the Z mark and Zeno on the left, the streak and the account avatar on the right (its menu holds Sound, Canvas, Privacy and Sign out). There is no progress row. The card sits centered at 760px max; under it the screen's one big button (full card width, 64px, 22px bold) and its other actions as small muted links joined by a middle dot; the dock (the Talk ring over the links Type · Today · Memory) closes the column.
 
 Spacing follows an 8px grid (8, 16, 24, 32, 48, 64). The card pads 56px top, 64px right and 104px left so words clear the red margin at 64px.
 
-Responsive behavior: below 640px the card tightens (margin at 40px, left pad 56px, display 30/40), pills stack at 52px, only the current step name shows, and the done count moves to the top bar. A `short` variant (width at least 640px, height 820px or less) shrinks the card to three rows and the dock to 96px so the dock stays on the first screen of a laptop. Above 1000px tall the card shows five rows. Below 1120px wide the done pile beside the card hides.
+Responsive behavior: below 640px the card tightens (margin at 40px, left pad 56px, display 30/40). A `short` variant (width at least 640px, height 900px or less) shrinks the card to three rows so the dock stays on the first screen of a laptop. The sticky dock is 180px tall (212px where the ring is full size: 640px wide or more and over 900px tall), and the page's scroll padding keeps answers clear of it. Above 1000px tall the card shows five rows. Below 1120px wide the done pile beside the card hides.
 
 ## Elevation & Depth
 
@@ -219,7 +223,7 @@ Depth is real paper: soft, layered, ambient shadows on card stock over the desk,
 
 ## Shapes
 
-Cards are nearly square-cornered (4px), like cut card stock. Interactive controls are full pills (999px) or circles: pills, the 56px dock knobs, the 64px Talk button. The DONE stamp is a 4px double red border at 8px radius, rotated -8deg. The desk view has 8px corners; phone sheets round their top corners at 16px. The Z mark is an ink rounded square. The red margin line is 2px; rules are 1px.
+Cards are nearly square-cornered (4px), like cut card stock. Buttons are full pills (999px) or the 64px round Talk button; links are plain words. The DONE stamp is a 4px double red border at 8px radius, rotated -8deg. The desk view has 8px corners; phone sheets round their top corners at 16px. The Z mark is an ink rounded square. The red margin line is 2px; rules are 1px.
 
 ## Components
 
@@ -227,7 +231,9 @@ Cards are nearly square-cornered (4px), like cut card stock. Interactive control
 - **Shape:** full pill (999px), 2px border, 56px tall (52px small and on phones).
 - **Primary:** Ink fill, Card Stock text, 20px bold label. Hover mixes 18% card into the ink.
 - **Secondary:** Card Stock fill, 2px Ink outline, Ink text. Hover fills with Desk.
-- **Quiet:** transparent, Track outline, Ink text (only the border is quieter); for "Something else", "Not now" style exits.
+- **Quiet:** transparent, Track outline, Ink text (only the border is quieter); used in menus and sheets.
+- **The big button:** each screen's one Ink pill under the card, full card width, 64px tall, 22px bold ("Start · 5 min", "Done", "Keep going"). A booking offer that answers Zeno's line takes its place.
+- **Links:** every other action on a screen ("Something else", "Stuck? · Stop for now") is a small Pencil Grey word, 500 weight, a 44px tap target, underlined in Ink on hover and focus, joined by middle dots. A link that is the way that still works (Type when the mic is blocked) reads in Ink and bold.
 - **Press:** scales to 0.96 instantly, springs back over 0.12s (cubic-bezier(0.16, 1, 0.3, 1)). Hover only on real pointers.
 - **Disabled:** 50% opacity, no press.
 - **Focus:** 3px Ink outline at 4px offset, system-wide.
@@ -243,33 +249,26 @@ Cards are nearly square-cornered (4px), like cut card stock. Interactive control
 - **Focus:** the line being written on turns red (2px) instead of drawing an outline. In the caption variant under a step card, a 2px Rule Blue underline turns red.
 - **Listening:** a blinking 3px red pen sits after the words.
 
-### Roadmap Strip
-Steps after the current one fan out under the card as Card Stock strips with Edge shadow, each inset 16px further per depth, title at 20/32 and minutes in Mono.
-
 ### Dock (Navigation)
-- **Style:** a row of labeled circular controls at the foot of the column, sticky to the bottom of the viewport on the Desk ground so long content scrolls under it: Talk centered in the dot ring, then Type, Today, Memory as 56px outlined knobs with a 24px stroke icon. Labels always visible under each.
-- **States:** hover fills a knob with Desk; press scales to 0.96.
+- **Style:** sticky to the bottom of the viewport on the Desk ground, so long content scrolls under it (with a 16px fade): Talk centered in the dot ring, and under it the links Type · Today · Memory. First sign-in shows no dock until the first card.
+- **States:** links as above; Talk presses to 0.96.
 
 ### Voice Ring (signature)
 Sixty 1.9px dots on a 54px radius around the 64px ink Talk button, unlit in Track. Listening sweeps a lit arc (a sixth minimum, growing with level); thinking runs a short fading comet; speaking grows symmetrically from twelve o'clock with the voice level. Reduced motion shows one still arc per state. Mic blocked turns Talk to an outline with a slash.
 
 ### Sheets and Desk View
-- **Sheets** (Memory, setup lists): 440px right-side panels on Desk with a scrim, sliding in over 0.24s; bottom sheets with 16px top corners on phones. Content is mini cards: small ruled cards (20/32, margin at 24px, Edge shadow).
-- **Desk View** (Today | Week): up to 1120px over the scrim, starting at the card's top edge (the whole screen on phones and below 560px tall), 8px corners, Paper shadow, Track rim in dark. Two tabs at Headline size, the one showing over a 4px Ink bar like the four steps.
-- **Today:** plan strip on top (4px step bars: done in Ink with struck text, in progress in Margin Red and bold, upcoming in Track), then calendar (with Zeno's blocks marked by a 2px red line, and the rest of today's free time in Mono), Deadlines and inbox mini cards side by side (stacked below 1024px). The red margin doubles as the day's timeline, with a filled red dot for now and a hollow one for next.
-- **Week:** one white ruled card in place of seven: an hour per rule (64px), the hours in Mono written on the rules left of the one red margin line, a day per column (seven on laptops, three on tablets, one on phones, swiped with scroll snap or stepped with the arrows). All-day items are chips under the date (beside it on phones). Events are drawn on the wall clock as Google Calendar draws them: ones that start together share the width, a later one cascades over the right side of a longer one, one 20px indent per level, with a card-colored rim. Titles wrap between words and end in an ellipsis (one line in a narrow box); times are shown whole or not at all (the range, else the start). Today's date is an Ink circle; now is a red line with a red dot on today's column.
-- **Plan here:** tapping open time opens a small ruled card (its own 2px red margin) beside the tap: the date and time in Mono, the current step as the Ink pill with its title in full, a focus block as the outlined pill, Not now as quiet. A booked block shows at once in a dashed outline ("Booking…") until Google confirms; the status line (its own reserved space, so the toolbar never moves) says when and offers Undo.
-
-### Progress
-Four labeled 4px bars (Ink done or current, Track upcoming) for the guided flow; setup uses 12px dots in the same two colors.
+- **Sheets** (Memory, Canvas): 440px right-side panels on Desk with a scrim, sliding in over 0.24s; bottom sheets with 16px top corners on phones. Content is mini cards: small ruled cards (20/32, margin at 24px, Edge shadow). Memory is one ruled card per group with a fact per line; Canvas is the school address and token, then what is due.
+- **Desk View** (Today | Week): up to 1120px over the scrim, starting at the card's top edge (the whole screen on phones and below 560px tall), 8px corners, Paper shadow, Track rim in dark. Two tabs at Headline size, the one showing over a 4px Ink bar.
+- **Today:** plan strip on top (4px step bars: done in Ink with struck text, in progress in Margin Red and bold, upcoming in Track), then calendar (with Zeno's blocks marked by a 2px red line, and the rest of today's free time in Mono), Deadlines and inbox mini cards side by side (stacked below 1024px). The inbox holds only important mail, one line each (sender · subject, unread in bold), with a quiet "Open Gmail" link. The red margin doubles as the day's timeline, with a filled red dot for now and a hollow one for next.
+- **Week:** read-only, one white ruled card in place of seven: an hour per rule, the hours in Mono written on the rules left of the one red margin line, a day per column (seven on laptops, three on tablets, one on phones, swiped with scroll snap or stepped with the arrows). The rows are sized so the week's hours (at least 8 AM to 9 PM) fit the panel without scrolling, never under 28px an hour. All-day items are chips under the date (beside it on phones). Events are drawn on the wall clock as Google Calendar draws them: ones that start together share the width, a later one cascades over the right side of a longer one, one 20px indent per level, with a card-colored rim. Titles wrap between words into every line the box has and end in an ellipsis; times are shown whole or not at all (the range, else the start). A title cut short shows whole in a small ruled card beside it on hover or keyboard focus. Tapping an event opens it in Google Calendar; nothing is edited in Zeno. Today's date is an Ink circle; now is a red line with a red dot on today's column.
 
 ## Do's and Don'ts
 
 ### Do:
 - **Do** put every line of card text on a rule; size changes keep the rule spacing (64, 56, 48, 40, 32px).
-- **Do** keep one primary Ink pill per screen, with outlined and quiet pills as the alternatives.
+- **Do** keep one big Ink pill per screen, with every other action as a small muted link under it.
 - **Do** set times, minutes and counts in Atkinson Hyperlegible Mono with tabular numerals.
-- **Do** keep body text at 18px or larger and controls at 52px or taller.
+- **Do** keep body text at 18px or larger and tap targets at 44px or taller.
 - **Do** honor reduced motion: no rise, word pacing, stamp or ring animation; the leaving card simply fades.
 - **Do** build new surfaces (calendar, inbox, AI) as cards on this desk using the mini card and the Edge shadow.
 

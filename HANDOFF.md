@@ -1,9 +1,69 @@
 # Zeno handoff
 
-Last updated: 2026-11-01, 8:10 PM PT, by Claude (session 3, the follow-through build and the live test).
+Last updated: 2026-11-02, by Claude (session 4, the Nov 2 round).
 Read this first, then the Linear doc **"Zeno hackathon build plan (Nov 4)"** (project Zeno, team VI).
 
-## 0. Session 3 (2026-11-01): the follow-through build and the live test
+## 0. Session 4 (2026-11-02): the Nov 2 round
+
+Spec: `docs/PLAN-NOV2.md` (Vi's 16 answers after using production on Nov 2; it wins over `docs/PLAN-NOV.md`). Four
+tracks built it on `nov2/brain`, `nov2/memory-canvas`, `nov2/desk-ui` and `nov2/flow-ui`; they are merged, made to fit
+and checked on **`nov2/integrate`**, which is not on `main` yet. Music for deep work (decision 13) is on `nov2/music`.
+
+### What changed on nov2/integrate
+- **One card, one big button.** Every other action is a small link under it. Header: the Z mark, the streak and the
+  avatar (its menu: Sound, Canvas, Privacy, Sign out). Dock: Talk over Type · Today · Memory. No stage tracker and no
+  plan screen: Card [Start · N min] → Focus [Done]; Stuck? · Stop for now · Sources (or Draft it in Gmail) → Done
+  ("Nice. Next: …" [Keep going]; That's enough today) → Wrap ("Saved. I'll bring it back next time.").
+- **Calendar writes only when asked or for 60+ minutes.** Talk refuses smaller blocks; Stop for now offers one block
+  tomorrow only when the plan's open steps add up to an hour. Pasted notes only save memories. The Week is read-only,
+  fits the day and opens each event in Google Calendar (on Sunday it shows the coming week).
+- **No quiet lines.** Memories save silently; heads-ups are only spoken.
+- **Memory.** The card and any block use the step's saved title. Rewordings merge on save, the scan keeps no class or
+  shift facts, undated "To do:" memories expire after 14 days and clear when their plan finishes, and patterns read
+  "Works best in the morning." The Add box also takes pasted notes (a line break or over 200 characters).
+- **First sign-in asks nothing:** "Reading your calendar and email…", then one line of what it found, [Start my day]
+  and Paste notes · See what I learned.
+- **Mail.** The inbox shows only people and school, one line each, with "Open Gmail". Zeno drafts an email in the
+  person's Gmail compose window and never sends one.
+- **Canvas.** A personal access token kept only in the browser (`zeno.canvas.<account>`, cleared at sign out).
+  `POST /api/canvas` reads 14 days of unsubmitted work, saves the deadlines as memories (source "canvas") and returns
+  the 3 soonest instructions, which ride with the opening, talk and prep as `canvas` and are never saved.
+- **Health stays generic**, even in the browser vault: a condition's or medicine's name is never kept.
+
+### How it was verified
+- On `nov2/integrate`: typegen, tsc, eslint (src and scripts), build, 17 self-checks (new: `canvas.check.ts`,
+  `gmail.check.ts`) and listen-check; day-flow and week-grid also in LA and Tokyo time.
+- Brain's live smoke test against Muse (made-up data): one name per task, a draft to an inbox sender, no block unless
+  asked, and "write my essay" refused with an offer to plan it.
+- Not verified: anything in a browser (layout, phone width, dark mode, the fitted Week, the Canvas and Memory sheets),
+  Canvas with a real token, Gmail compose and event links, first sign-in live, and the memory bench.
+
+### Known issues
+- **Talk and Stop-for-now offers can sit right after another block** (no gap after it).
+- **Near-duplicate facts** whose date words differ ("Lab report 3, due Friday" and "Owes BIO lab report 3 due
+  November 6"). Rewordings with the same date words now merge.
+- **Old rows stay**: "To do:" memories saved before Nov 2 never expire, and class and shift facts already scanned stay
+  until removed or the demo reset.
+- **A fallback card can disagree on minutes**: the rule pick shows 5 minutes for a long step where the model pick shows
+  the saved minutes (the title always matches).
+- **Academic text naming a condition** (a nursing "Diabetes care plan") is kept nowhere, not even on the device.
+- **Canvas:** only `<school>.instructure.com` addresses; course names are Canvas's full names; a slow Canvas can pass
+  the route's 30 s; Chrome may offer to save the token as a password; Disconnect keeps the saved Canvas deadlines
+  until they pass or are forgotten in Memory.
+- **Week:** on a short window the 28px minimum row can leave about 15px of scroll.
+- From session 3, still open: the greeting uses the Google first name ("Hi De"); the mail filter is broad; reload
+  shows the saved line for 2.5-4 s; the Google access token is readable from `/api/auth/session`; scanned facts and
+  patterns stop saving at about 120 facts in the person's own words.
+
+### Next steps
+1. Fit `nov2/music`'s FocusMusic to its place in `day-view.tsx` (it sits in the answers' links row on every screen:
+   render nothing while `active` is false, and its own `·` before a `.link` "Music"), then merge it.
+2. A visual pass in `/preview` and the dev server, then merge `nov2/integrate` to `main`: production must be stable
+   by the morning of Nov 4.
+3. Vi: connect Canvas with the SJSU token, and try a Gmail draft and an event link.
+4. Reset the demo account (decision 12) and record the video before Nov 4, 6 PM PT.
+
+## 0a. Session 3 (2026-11-01): the follow-through build and the live test
 
 Spec: `docs/PLAN-NOV.md` (Vi's 30 answers and the Nov 1 privacy rule). Memory benchmark: `docs/MEMORY-BENCH.md`.
 Linear: VI-319, VI-321 and VI-315 Done; VI-320 and VI-322 In Progress until the daily re-scan, spoken heads-ups and
@@ -58,7 +118,7 @@ hands-free are checked live.
   listening (the mic stayed off at night).
 - Safari and iOS, dark mode in a live run, and 390x844 since the answers scroll fix.
 
-### Known issues
+### Known issues (as of Nov 1; section 0 has the current list)
 - **Talk and Stop-for-now offers ignore the to-do spacing**: they can sit right after another block (8:50 after an
   8:40 to 8:50 block).
 - **A talk or plan offer can book a to-do the import already booked.**
@@ -193,7 +253,8 @@ Zeno is a voice-first daily helper: it gives a short spoken brief from your cale
 
 ## 5. In flight
 
-Nothing. Everything through 341dd7a is merged into `main`. Workflow worktrees under `.claude/worktrees/` and old local branches (`feat/*`, `integrate/*`, `design/finish`, `fix/foundation`) can be deleted.
+`nov2/integrate` (the Nov 2 round, all four tracks) and `nov2/music` (focus music) wait to be merged into `main`;
+see section 0. Everything through 341dd7a is on `main`. Workflow worktrees under `.claude/worktrees/` and old local branches (`feat/*`, `integrate/*`, `design/finish`, `fix/foundation`) can be deleted.
 
 ## 6. Remaining work
 
@@ -204,6 +265,7 @@ See "Next steps" in section 0, the Linear issues VI-306 to VI-318, and `docs/SUB
 - Fresh checkout: `npm ci`, then `npx next typegen` (otherwise tsc fails on `LayoutProps`). If tsc complains about deleted routes, delete `.next/dev` (stale generated types).
 - Checks before any merge: `npx tsc --noEmit --incremental false`, `npx eslint src/`, `npx next build`, every `src/**/*.check.ts` (plain `node`), `node scripts/listen-check.mjs`.
 - Next 16 with `cacheComponents: true`: never export `runtime`, `dynamic`, `revalidate`, `fetchCache` or `dynamicParams` from a route; `maxDuration` is fine.
+- The React Compiler lint now checks `GuidedDay`: a function used above its declaration inside a `useEffectEvent` fails lint.
 - Voice locally: `npx vercel@65.7.0 dev --local` (plain `next dev` cannot upgrade WebSockets; Zeno then falls back to Web Speech).
 - Testing signed-in flows without touching Vi's account: run `next start` with `AUTH_TRUST_HOST=true`, mint an Auth.js session for `agent-test@zeno.local` with `@auth/core/jwt` `encode` (salt `authjs.session-token`, the app's AUTH_SECRET, never printed), use `http://127.0.0.1:<port>` (an old httpOnly cookie on `localhost` blocks it), and delete that user's rows afterwards.
 - Env var names (values in `.env.local` and Vercel, never in git): `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `META_MODEL_API_KEY`, `GOOGLE_TTS_API_KEY`, `DATABASE_URL`.

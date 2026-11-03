@@ -78,6 +78,7 @@ const TODAY: Today = {
   ],
   unreadEmail: 2,
   sources: { calendar: "ok", email: "ok", goals: "ok" },
+  mailUrl: "https://mail.google.com/mail/?authuser=sam%40example.com",
 };
 
 const MEMORIES: Memory[] = [
@@ -404,20 +405,11 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
 import { WEEK_STATES, withPlans } from "./week-samples";
 const DESK: Fixture = { line: "Good afternoon, Sam.", goal: roadmap("done", "doing", "todo", "todo") };
 STATES["desk-plans"] = { ...DESK, sheet: "today", today: withPlans(TODAY) };
-// After setup's batch booked (a deadline and two to-dos): today's to-dos join the list and leave Free.
+// A block booked from a talk offer: it joins today's list and leaves Free.
 STATES["desk-booked"] = {
   ...STATES["desk-plans"],
   bookings: {
-    import: {
-      key: "import",
-      label: "",
-      state: "booked",
-      blocks: [
-        { title: "Lab report", kind: "deadline", date: dayFrom(4), eventId: "e1" },
-        { title: "Buy lab goggles", kind: "todo", start: at(75), end: at(85), eventId: "e2" },
-        { title: "Read chapter 4", kind: "todo", start: at(160), end: at(190), eventId: "e3" },
-      ],
-    },
+    s3: { key: "s3", label: "", state: "booked", blocks: [{ title: "History essay draft", kind: "step", start: at(150), end: at(240), stepId: "s3", eventId: "e2" }] },
   },
 };
 for (const name of WEEK_STATES) STATES[name] = { ...DESK, sheet: "week" };

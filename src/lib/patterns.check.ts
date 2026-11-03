@@ -35,11 +35,6 @@ for (const [hour, minute, part] of [
 // The same instants on another clock: 10 PM in Los Angeles is 2 PM the next day in Tokyo.
 const tenPm = fiveDays.map((day) => done(la(day, 22)));
 assert.deepEqual(patternsIn(tenPm, "Asia/Tokyo"), ["Works best in the afternoon."], "Tokyo");
-// Setup no longer asks when they focus best (Vi, Nov 2), so to-dos go where agent.ts focusPart reads this pattern.
-const { focusPart } = await import("./agent.ts");
-const noticed = (text: string) => ({ id: "p", text, group: "patterns" as const, source: "pattern" as const, createdAt: "2026-11-01T10:00:00.000Z" });
-for (const part of ["morning", "afternoon", "evening"] as const) assert.equal(focusPart([noticed(`Works best in the ${part}.`)]), part);
-assert.equal(focusPart([noticed("Works best late at night.")]), null, "late at night is no preference");
 
 // Real length versus the estimate: 4 started steps with an estimate, by the median, rounded to the half.
 const took = (day: number, planned: number | null, real: number) =>

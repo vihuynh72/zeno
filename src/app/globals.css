@@ -983,7 +983,7 @@ button:active .tap {
   padding: 0;
 }
 /* The toolbar: the week and its arrows, and the status line in space of its own (beside them on a laptop, a row
-   below them otherwise), so a booking's line never moves the arrows under the pointer. */
+   below them otherwise). */
 .week-bar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1029,7 +1029,7 @@ button:active .tap {
   overflow-anchor: none;
   container-type: inline-size;
   scroll-snap-type: x mandatory;
-  /* Keyboard focus scrolls open time clear of the gutter and the sticky day heads (one row of chips). */
+  /* Keyboard focus scrolls an event clear of the gutter and the sticky day heads (one row of chips). */
   scroll-padding: 96px 0 0 var(--gutter);
   border-radius: 4px;
   background: var(--card);
@@ -1195,23 +1195,13 @@ button:active .tap {
 .week-event[data-past][data-zeno] {
   background: var(--card);
 }
-.week-event[data-status] {
-  opacity: 0.7;
-  outline: 2px dashed var(--ink-2);
-  outline-offset: -2px;
-}
-/* Titles wrap only between words and end in an ellipsis; a narrow box keeps them to one line. */
+/* Titles wrap only between words, into every line the box has, and end in an ellipsis. */
 .week-title {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: var(--lines);
   overflow: hidden;
   font-weight: 500;
-}
-.week-title[data-narrow] {
-  display: block;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 /* The label is picked to fit whole (the range, else the start), so a time is never cut. */
 .week-time {
@@ -1224,39 +1214,8 @@ button:active .tap {
   padding: inherit;
   text-align: left;
 }
-.week-event-tap:focus-visible,
-.week-gap:focus-visible {
+.week-event-tap:focus-visible {
   outline-offset: -3px;
-}
-
-/* Open time is a quiet button: a mouse sees where a half hour would land, keyboard focus says Plan here. */
-.week-open {
-  position: absolute;
-  inset-inline: 0;
-}
-.week-gap {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.week-ghost,
-.week-gap:focus-visible::after {
-  position: absolute;
-  inset-inline: 2px 6px;
-  padding: 2px 10px;
-  overflow: hidden;
-  border: 2px dashed var(--ink-2);
-  border-radius: 4px;
-  background: var(--card);
-  color: var(--ink);
-  white-space: nowrap;
-  pointer-events: none;
-}
-.week-gap:focus-visible::after {
-  content: "Plan here";
-  top: 4px;
 }
 
 /* Now is the red timeline mark, as on the Today card. */
@@ -1292,7 +1251,7 @@ button:active .tap {
   }
 }
 
-/* Plan here: a small ruled card over the grid. */
+/* A title cut short in its box, shown whole: a small ruled card beside it. */
 .week-pop {
   position: fixed;
   inset: auto;
@@ -1312,14 +1271,6 @@ button:active .tap {
   width: 2px;
   background: var(--red);
 }
-/* The step being booked reads in full: its title wraps inside the pill. */
-.week-choice {
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 24px;
-  text-align: left;
-}
-
 .still .week-skeleton {
   animation: none;
 }

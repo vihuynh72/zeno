@@ -19,7 +19,7 @@ export default function MemorySheet({
   onAdd(text: string): void;
   onRetry(): void;
 }) {
-  const box = useRef<HTMLInputElement>(null);
+  const box = useRef<HTMLTextAreaElement>(null);
   const facts: Fact[] = [
     ...device.map((fact) => ({ id: fact.id, text: fact.text, group: fact.group, device: true })),
     ...(Array.isArray(memories) ? memories.map((memory) => ({ id: memory.id, text: memory.text, group: memory.group, device: false })) : []),
@@ -27,7 +27,8 @@ export default function MemorySheet({
   const add = () => {
     const text = box.current?.value.trim();
     if (!box.current || !text) return box.current?.focus();
-    onAdd(text.slice(0, 200));
+    // A line is one memory; longer or multi-line text is read as pasted notes (guided-day.tsx addMemory).
+    onAdd(text);
     box.current.value = "";
   };
 
@@ -41,7 +42,21 @@ export default function MemorySheet({
           add();
         }}
       >
-        <input ref={box} maxLength={200} className="add min-w-0 flex-1" aria-label="Add something Zeno should remember" placeholder="Add something" />
+        {/* 8000 is POST /api/import's limit. Enter saves, as in the type box; Shift+Enter starts a new line. */}
+        <textarea
+          ref={box}
+          rows={1}
+          maxLength={8000}
+          className="add max-h-60 min-w-0 flex-1 resize-none py-2.5 field-sizing-content"
+          aria-label="Add something Zeno should remember"
+          placeholder="Add something or paste notes"
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              add();
+            }
+          }}
+        />
         <button type="submit" className="pill pill-small">
           Save
         </button>

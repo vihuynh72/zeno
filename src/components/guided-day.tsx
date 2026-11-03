@@ -953,11 +953,12 @@ export default function GuidedDay() {
   }
 
   // ---------- Canvas ----------
-  // The Canvas brief for a plan that is one of their assignments (the same title, any case), for the prep pack.
+  // The Canvas brief for a plan that is one of their assignments, for the prep pack: the plan's title holds the
+  // assignment's, any case ("Essay 2", or "HIST 110: Essay 2" as its deadline names it).
   function briefFor(plan: Goal | null): CanvasBrief | undefined {
     const mine = account();
-    const title = plan?.title.trim().toLowerCase();
-    return mine && title ? canvasBriefs(mine).find((brief) => brief.title.trim().toLowerCase() === title) : undefined;
+    const title = plan?.title.toLowerCase();
+    return mine && title ? canvasBriefs(mine).find((brief) => brief.title.trim() !== "" && title.includes(brief.title.trim().toLowerCase())) : undefined;
   }
 
   // Linked or unlinked in its sheet: the day (its deadlines) and the card's opening are read again.
@@ -1048,7 +1049,9 @@ export default function GuidedDay() {
       line={screen === "setup" ? setupLine : line}
       you={voice.phase === "listening" ? voice.partial : heard}
       goal={goal}
-      today={day && { events: day.events, emails: day.emails, unreadEmail: day.unreadEmail, sources: day.sources, free: day.free, deadlines: day.deadlines }}
+      today={
+        day && { events: day.events, emails: day.emails, unreadEmail: day.unreadEmail, sources: day.sources, free: day.free, deadlines: day.deadlines, mailUrl: day.mailUrl }
+      }
       memories={memories}
       sheet={sheet}
       typing={typing && screen !== "setup"}
@@ -1114,11 +1117,6 @@ export default function GuidedDay() {
           void signOut({ redirectTo: "/" });
         },
         canvasSynced: () => void canvasSynced(),
-        // A step booked or taken off in the Week: the goal says so, so nothing offers to book it twice.
-        // Through linkSteps, so the saved day gets the time too and a reload never offers it again.
-        booked({ event, stepId, undone }) {
-          if (stepId) linkSteps([{ title: event.title, kind: "step", start: event.start, stepId, eventId: event.id }], !undone);
-        },
       }}
     />
   );
