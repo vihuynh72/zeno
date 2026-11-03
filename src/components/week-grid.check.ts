@@ -8,7 +8,7 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { addDays, dateLabel, dayWord, freeGaps, instantAt, layoutDay, mondayOf, planFrom, planStart, timeRange, wallMinutes, weekLabel } =
+const { addDays, dateLabel, freeGaps, hourRange, instantAt, layoutDay, mondayOf, timeRange, wallMinutes, weekLabel, weekOf } =
   await import("./desk-rows.ts");
 
 const LA = "America/Los_Angeles";
@@ -22,6 +22,11 @@ const boxes = (placed: { event: { title: string }; top: number; bottom: number; 
 assert.equal(mondayOf("2026-11-01"), "2026-10-26"); // a Sunday belongs to the week before
 assert.equal(mondayOf("2026-11-02"), "2026-11-02");
 assert.equal(mondayOf("2027-01-02"), "2026-12-28");
+// The Week opens on this week, and from Sunday on the week ahead (the live test's Sunday showed the one ending).
+assert.equal(weekOf("2026-11-01"), "2026-11-02"); // Sunday
+assert.equal(weekOf("2026-11-02"), "2026-11-02"); // Monday
+assert.equal(weekOf("2026-11-07"), "2026-11-02"); // Saturday
+assert.equal(weekOf("2027-01-03"), "2027-01-04"); // a Sunday into the new year
 assert.equal(addDays("2028-02-28", 1), "2028-02-29");
 assert.equal(addDays("2026-11-02", -7), "2026-10-26");
 assert.equal(weekLabel("2026-11-02"), "Nov 2 – 8");
@@ -153,25 +158,17 @@ assert.deepEqual(freeGaps([{ top: 1300, bottom: 1440 }], 420, 1380), [{ top: 420
 assert.deepEqual(freeGaps([], 420, 1380), [{ top: 420, bottom: 1380 }]);
 assert.deepEqual(freeGaps([{ top: 0, bottom: 1440 }], 420, 1380), []);
 
-// Planning starts now (to the next 5 minutes) today, at 7 AM on later days, never in the past or past 30 days.
-assert.equal(planFrom("2026-11-01", "2026-11-02", 600), null);
-assert.equal(planFrom("2026-11-02", "2026-11-02", 601), 605);
-assert.equal(planFrom("2026-11-02", "2026-11-02", 300), 420);
-assert.equal(planFrom("2026-11-02", "2026-11-02", 1379), null);
-assert.equal(planFrom("2026-11-03", "2026-11-02", 1000), 420);
-assert.equal(planFrom(addDays("2026-11-02", 29), "2026-11-02", 0), 420);
-assert.equal(planFrom(addDays("2026-11-02", 30), "2026-11-02", 0), null);
-
-// A tap starts the block on the quarter hour before it, kept inside the gap.
-assert.equal(planStart({ top: 420, bottom: 540 }, 487, 30), 480);
-assert.equal(planStart({ top: 420, bottom: 540 }, 530, 30), 510);
-assert.equal(planStart({ top: 605, bottom: 700 }, 610, 30), 605);
-
-// The status line's day: today, tomorrow, a weekday this week, and the date past that.
-assert.equal(dayWord("2026-11-01", "2026-11-01"), "today");
-assert.equal(dayWord("2026-11-02", "2026-11-01"), "tomorrow");
-assert.equal(dayWord("2026-11-07", "2026-11-01"), "Saturday");
-assert.equal(dayWord("2026-11-11", "2026-11-01"), "Wednesday, Nov 11");
+// The hours shown: at least 8 AM to 9 PM, stretched to the week's earliest and latest events, in whole hours.
+assert.deepEqual(hourRange([]), { from: 8, to: 21 });
+assert.deepEqual(hourRange(placed), { from: 8, to: 21 }); // the busy Monday, 9 AM to 1:40 PM
+assert.deepEqual(hourRange([{ top: 450, bottom: 500 }, { top: 1270, bottom: 1320 }]), { from: 7, to: 22 }); // 7:30 AM, 9:10 to 10 PM
+// Across midnight: Sunday's 12 to 1 AM end of a movie opens the whole night, as Saturday's 10 PM start does.
+assert.deepEqual(hourRange(layoutDay([movie], "2026-11-08", LA)), { from: 0, to: 21 });
+assert.deepEqual(hourRange(layoutDay([movie], "2026-11-07", LA)), { from: 8, to: 24 });
+// A short event near the end keeps room for its drawn box, never past midnight.
+assert.deepEqual(hourRange([{ top: 1230, bottom: 1260 }]), { from: 8, to: 21 });
+assert.deepEqual(hourRange([{ top: 1230, bottom: 1260 }], 60), { from: 8, to: 22 });
+assert.deepEqual(hourRange([{ top: 1430, bottom: 1440 }], 60), { from: 8, to: 24 });
 
 assert.match(timeRange("2026-11-02T17:30:00Z", "2026-11-02T18:00:00Z", LA), /^9:30 – 10:00\sAM$/);
 assert.match(timeRange("2026-11-02T19:30:00Z", "2026-11-02T21:00:00Z", LA), /^11:30\sAM – 1:00\sPM$/);

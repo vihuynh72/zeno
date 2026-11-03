@@ -30,19 +30,11 @@ export function senderName(from: string) {
   return name || from.replace(/[<>]/g, "").trim();
 }
 
-const NAMED: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+// Links from the routes (Google's event pages, the Gmail inbox) open only as https pages, never as script URLs.
+export const httpsOnly = (url?: string | null) => (url?.startsWith("https://") ? url : undefined);
 
-// Gmail snippets arrive HTML-escaped ("I&#39;ll"), and React would show the entities as typed.
-export function unescapeHtml(text: string) {
-  return text.replace(
-    /&(?:(amp|lt|gt|quot|apos|nbsp)|#(\d{1,7})|#x([\da-f]{1,6}));/gi,
-    (entity, name: string | undefined, dec: string | undefined, hex: string | undefined) => {
-      if (name) return NAMED[name.toLowerCase()];
-      const code = dec ? Number(dec) : parseInt(hex ?? "", 16);
-      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity;
-    },
-  );
-}
+// "https://SJSU.instructure.com/courses/1" reads as sjsu.instructure.com.
+export const canvasHost = (base: string) => base.trim().replace(/^https?:\/\//i, "").split(/[/?#]/)[0].toLowerCase();
 
 // ---- The week grid (week-grid.check.ts covers these) ----
 // Grid positions are minutes on the zone's wall clock, 0 to 1440, as Google Calendar draws them: on the day clocks
@@ -57,6 +49,8 @@ export const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZon
 // Calendar-date math on YYYY-MM-DD; dates carry no zone, so UTC only keeps the arithmetic exact.
 export const addDays = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY).toISOString().slice(0, 10);
 export const mondayOf = (date: string) => addDays(date, -((new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7));
+// The week the Week opens on: this one, or from Sunday the one ahead.
+export const weekOf = (date: string) => mondayOf(addDays(date, 1));
 export const dateLabel = (date: string, options: Intl.DateTimeFormatOptions) =>
   new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { ...options, timeZone: "UTC" });
 
@@ -148,26 +142,12 @@ export function freeGaps(busy: Gap[], from: number, to: number, min = 15): Gap[]
   return gaps;
 }
 
-// Waking hours the grid offers to plan in, as wall minutes.
-export const PLAN_HOURS = { from: 7 * 60, to: 23 * 60 };
-
-// Where planning can start on `date`: never in the past, from now (to the next 5 minutes) today, and only within the
-// 30 days booking accepts. null when nothing on that day can be booked.
-export function planFrom(date: string, today: string, nowMinutes: number) {
-  if (date < today || date > addDays(today, 29)) return null;
-  const from = date === today ? Math.max(PLAN_HOURS.from, Math.ceil(nowMinutes / 5) * 5) : PLAN_HOURS.from;
-  return from < PLAN_HOURS.to ? from : null;
-}
-
-// A block of `minutes` tapped at `at` in a gap starts on the quarter hour at or before the tap, kept inside the gap.
-export const planStart = (gap: Gap, at: number, minutes: number) =>
-  Math.max(gap.top, Math.min(Math.floor(at / 15) * 15, gap.bottom - minutes));
-
-// How a booking's day reads: today, tomorrow, the weekday in the week ahead, and the date as well after that.
-export function dayWord(date: string, today: string) {
-  if (date === today) return "today";
-  if (date === addDays(today, 1)) return "tomorrow";
-  return dateLabel(date, date <= addDays(today, 6) ? { weekday: "long" } : { weekday: "long", month: "short", day: "numeric" });
+// The whole hours the week shows: from its earliest timed event to its latest, never less than 8 AM to 9 PM. Each
+// box (wall minutes) keeps `tail` minutes after its start, so a short event's drawn box ends inside the grid.
+export function hourRange(boxes: Gap[], tail = 0) {
+  const from = Math.min(8, ...boxes.map((box) => Math.floor(box.top / 60)));
+  const to = Math.max(21, ...boxes.map((box) => Math.ceil(Math.min(1440, Math.max(box.bottom, box.top + tail)) / 60)));
+  return { from, to };
 }
 
 // "2:30 – 4:00 PM", or "11:30 AM – 1:00 PM" across noon.
