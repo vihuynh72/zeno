@@ -60,6 +60,33 @@ function short(text: string, max: number): string {
   const cut = text.slice(0, max + 1).replace(/\s+\S*$/, "");
   return cut.length <= max ? cut : text.slice(0, max);
 }
+const ENDS = /^[\s:;,|–—-]+|[\s:;,|–—-]+$/g;
+// Plain words, cut at a word to max characters, with no separator left dangling at either end.
+const tidy = (text: string, max: number) => short(words(text).replace(ENDS, ""), max).replace(ENDS, "");
+
+// A course name holds a term, a section and a long name ("FA26: HIST-110 Sec 02 - US History Since 1865"); only the
+// code is shown ("HIST 110"), or the plain name when it has none.
+const TERM = /\b(?:(?:fa|sp|su|wi)(?:\d{4}|\d{2})|(?:fall|spring|summer|winter|autumn) ?'?(?:\d{4}|\d{2})|\d{4} ?(?:fall|spring|summer|winter|autumn|fa|sp|su|wi))\b/gi;
+const SECTION = /\b(?:sec(?:tion)?|sect)\.? ?\d+\w*|\(\d+\)/gi;
+// "HIST-110", "CHEM 1A", "CS146", and a department ending in a digit before a space ("BUS1 170").
+const CODE = /\b([A-Z]{2,5}(?:\d(?=[ _-]))?)[ _-]?(\d{1,4}[A-Z]{0,2})(?![A-Za-z\d])/;
+export function courseLabel(name: string): string {
+  const plain = name.replace(TERM, " ").replace(SECTION, " ").replace(/\(\s*\)|\[\s*\]/g, " ");
+  const code = CODE.exec(plain);
+  return code ? `${code[1]} ${code[2]}` : tidy(plain, 28) || tidy(name, 28);
+}
+
+// A proctoring note in a bracket or in a part after a separator goes ("Quiz 4 (Ch. 4) - Requires Respondus LockDown
+// Browser + Webcam" → "Quiz 4 (Ch. 4)"); the first part always stays, so "Lockdown Browser Practice Quiz" keeps its name.
+const TOOL = /respondus|lock[ -]?down browser|proctor|honorlock|examity/i;
+export function assignmentTitle(raw: string): string {
+  const title = words(raw)
+    .replace(/\s*[([][^)\]]*[)\]]/g, (group) => (TOOL.test(group) ? "" : group))
+    .split(/(?=\s[-–—|]+\s|:\s)/)
+    .filter((part, i) => i === 0 || !TOOL.test(part))
+    .join("");
+  return tidy(title, 80) || tidy(raw, 80);
+}
 
 const get = (url: string, token: string) =>
   fetch(url, { headers: { Authorization: `Bearer ${token}` }, redirect: "error", signal: AbortSignal.timeout(8000) });
@@ -98,14 +125,14 @@ export function htmlText(html: string): string {
 }
 
 function assignmentOf(item: PlannerItem, base: string): CanvasAssignment | null {
-  const title = words(item.plannable?.title);
+  const title = assignmentTitle(words(item.plannable?.title));
   const exam = item.plannable_type === "calendar_event" && item.context_type === "Course" && EXAM.test(title);
   const kind = KINDS.get(item.plannable_type ?? "") ?? (exam ? "exam" : null);
   if (!kind || !title || item.plannable_id == null) return null;
   const due = [item.plannable?.due_at, item.plannable_date].find((value) => typeof value === "string" && Number.isFinite(Date.parse(value)));
   return {
     id: `${item.plannable_type}-${item.plannable_id}`,
-    course: words(item.context_name),
+    course: courseLabel(words(item.context_name)),
     title,
     due: typeof due === "string" ? new Date(due).toISOString() : null,
     kind,
@@ -171,7 +198,7 @@ export function canvasDeadlines(assignments: CanvasAssignment[], timeZone: strin
     const due = Date.parse(item.due);
     if (due < now.getTime() || due > now.getTime() + 14 * DAY) return [];
     const date = localDate(timeZone, new Date(due));
-    const text = deadlineMemory({ title: short(item.course ? `${short(item.course, 40)}: ${item.title}` : item.title, 120), date });
+    const text = deadlineMemory({ title: item.course ? `${item.course}: ${item.title}` : item.title, date });
     return factVerdict(text) ? [] : [{ text, expiresOn: nextDate(date) }];
   });
 }
