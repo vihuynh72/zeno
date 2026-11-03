@@ -170,17 +170,43 @@ Fixed during the test (all on `main`):
   address (Zeno never guesses one).
 - **The cached card shows at once, its Start about 3 s later** (when the fresh day answers).
 - From session 3, still open: the greeting uses the Google first name ("Hi De"); the mail filter is broad; reload
-  shows the saved line for 2.5-4 s; the Google access token is readable from `/api/auth/session`; scanned facts and
-  patterns stop saving at about 120 facts in the person's own words.
+  shows the saved line for 2.5-4 s; scanned facts and patterns stop saving at about 120 facts in the person's own
+  words. (The access token is no longer in `/api/auth/session`: `withoutAccessToken` in the auth route strips it, with
+  `session-json.check.ts`.)
 
-### Next steps
-1. Merge `tidy/fix` (the tidy round, above, with its review fixes; it branches from `a93aae2`, and `main`'s later
-   `e716f09` merges clean), then look at the Canvas screen, Memory, Today and Focus on production with Canvas connected
-   (VI-324). The first page load's sync rewrites the old raw Canvas rows.
-2. The demo account was reset on Nov 2 at 9:25 PM PT (no Zeno rows, no Zeno calendar blocks, no device keys; Maya's 18
-   events and 8 emails kept). Reset again on the morning of Nov 4 if it is used before then (VI-326; the steps are in
-   section 0a "The demo account now"). Sound is off in that Chrome: turn it on in the account menu for the video.
-3. Record the video before Nov 4, 6 PM PT.
+### Product spec (SDLC Studio, drafts for Vi, merged Nov 3)
+`sdlc-studio/prd.md` (Vi's 40 answers from the night of Nov 2, which win over older plans), personas in
+`sdlc-studio/personas/` (Maya Torres is the demo persona), 16 epics in `sdlc-studio/epics/_index.md` (Nov 4: EP0001
+quiet focus, EP0002 voice, EP0004 demo readiness; EP0003 cheaper opening was moved to Later by the spec review, but it
+already shipped), the Nov 4 stories US0001-US0017, and the video plan `docs/DEMO-NOV4.md` (8 shots, the Nov 3 timeline,
+the 2 PM reset cut-off). Everything is Draft until Vi approves; "yes to the defaults" answers the open questions
+(PRD §11 group A: OQ-1 to OQ-8, OQ-19, OQ-20; DEMO's DQ-1 to DQ-5).
+
+**Spec vs built** (the stories were written before the Nov 4 sprint shipped; reconcile their status after Vi approves):
+- US0001 stopwatch, US0002 Focus silent, US0005 "Back." line, US0006 waits through a thinking pause, US0007 done
+  talking: built in `e0e7ac6`. Differences: Done talking is a tap on Talk (or anywhere) while words are heard, not a
+  "Done talking" link; whole sentences wait 3 s too (Meta's onset lag), questions and short replies 0.7 s.
+- US0003 (Muse writes a check-in minute per step into a new `steps.checkin` column): **not built**. The check-in is at
+  the step's planned minutes (written by Muse) times the person's learned pace.
+- US0004 the check-in line: built, but under the card in the caption slot; the revised story puts it on the card in
+  the goal line's place (OQ-19, Vi's call).
+- US0008/US0009 cheaper opening: built client-side instead (`openingSig`/`openingReusable` in `day-flow.ts`: reuse a
+  saved opening under 20 minutes old when the plan, Canvas list and timed events are unchanged), not as a server key.
+- US0010-US0013: being built (VI-353). US0013 announces a pattern learned before today (within 7 days) in the first
+  opening of a later day, so a day-1 pattern is said on day 2 (the story's own window would spend it on day 1).
+- US0014 (Vi: rename the demo account to Maya, a Prof. Patel email from a demo-only mailbox), US0015 release check and
+  freeze, US0016 reset at Vi's go by 2 PM Nov 3, US0017 live check before the Nov 9 final: not started.
+
+### Next steps (Nov 3)
+1. Vi, morning: approve the PRD and Nov 4 epics or say what to change; rename the demo Google account to Maya; sign out
+   of Zeno and in again (sign-out clears the device's Canvas link) and re-link Canvas with a **new** token (revoke the
+   one pasted in chat on Nov 2); the 2-minute voice test; read the tone samples and hear the Done sound (VI-353).
+2. Claude, at Vi's go and by 2 PM: the release check (US0015), then the demo reset (VI-326/US0016: the demo account's
+   rows with `demo-rows.mjs --wipe`, which also proves no other account changed; Zeno's calendar blocks; the `zeno*`
+   browser keys except `zeno.canvas.<account>` and `zeno:sound`). Then Vi records shot 3 right away by reloading Zeno
+   (not Sign out, which would clear Canvas), then shots 4-5.
+3. Vi, 2-10 PM: use Zeno for real on the demo account (5+ finished steps, most in one part of the day). Nov 4 morning,
+   no reset: shot 6 first, before anything else opens the demo account. Submit before 6 PM PT.
 
 ## 0a. Session 3 (2026-11-01): the follow-through build and the live test
 
