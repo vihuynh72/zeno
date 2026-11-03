@@ -258,8 +258,14 @@ assert.deepEqual(propose({ ref: "s4", title: "Draft the intro", minutes: 30, sta
   name: "propose",
   block: { title: "Draft the intro", kind: "step", start: "2026-11-02T18:30:00.000Z", end: "2026-11-02T19:00:00.000Z", stepId: "d" },
 });
-// One name per task (Vi, Nov 2): a step's block takes the step's saved title, whatever the model called it.
+// One name per task (Vi, Nov 2): a step's block takes the step's saved title, whatever the model called it, and a
+// block for the whole goal takes the goal's (live, Nov 2: "Work on lab report" beside "Finish BIO 101 lab report").
 assert.equal((propose({ ref: "s4", title: "Write the intro's first sentence", minutes: 30, start: "2026-11-02T10:30-08:00" }) as { block?: { title: string } }).block?.title, "Draft the intro");
+assert.deepEqual(propose({ ref: "goal", title: "Work on the essay", minutes: 60, start: "2026-11-03T10:00-08:00" }), {
+  name: "propose",
+  block: { title: goal.title, kind: "todo", start: "2026-11-03T18:00:00.000Z", end: "2026-11-03T19:00:00.000Z", stepId: null },
+});
+assert.match((propose({ ref: "goal", title: "Work", minutes: 60, start: "2026-11-03T10:00-08:00" }, null) as { error?: string }).error ?? "", /"goal" without one/);
 assert.deepEqual(propose({ title: "Email Prof Patel", minutes: 10, start: "2026-11-03T10:00:00-08:00" }), {
   name: "propose",
   block: { title: "Email Prof Patel", kind: "todo", start: "2026-11-03T18:00:00.000Z", end: "2026-11-03T18:10:00.000Z", stepId: null },

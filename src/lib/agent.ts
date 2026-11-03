@@ -613,7 +613,11 @@ export const TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          ref: { type: "string", description: "Ref of the step it is for, like s2: pass it whenever the block is for a step of the current goal, and the block takes the step's saved title." },
+          ref: {
+            type: "string",
+            description:
+              "Ref of the step it is for, like s2, or \"goal\" when it is for the current goal as a whole: pass it whenever the block is for the current goal or one of its steps, and the block takes the step's saved title (or the goal's), so the card, the plan and the calendar use one name.",
+          },
           title: { type: "string", description: "What the block is for, in a few words." },
           minutes: { type: "integer", minimum: 1, maximum: 240 },
           start: { type: "string", description: "Start time in the free slots' format with their offset, like 2026-11-02T09:30-08:00." },
@@ -747,14 +751,15 @@ export function checkCall(call: ToolCall, goal: Goal | null, refs: Refs, slots: 
       return memoryId ? { name: "forget", memoryId } : { error: `${args?.ref} is not a memory ref` };
     }
     case "propose_block": {
-      const step = args?.ref ? goal?.steps.find((item) => item.id === idOf(refs, args.ref) && (item.status === "todo" || item.status === "doing")) : undefined;
+      const whole = args?.ref === "goal" ? goal : null;
+      const step = args?.ref && !whole ? goal?.steps.find((item) => item.id === idOf(refs, args.ref) && (item.status === "todo" || item.status === "doing")) : undefined;
       const stepId = step?.id;
-      const title = step ? step.title : titleOf(args?.title);
+      const title = step ? step.title : whole ? whole.title : titleOf(args?.title);
       const raw = typeof args?.start === "string" && ISO_TIME.test(args.start) && Number.isFinite(Date.parse(args.start)) ? args.start : "";
       const own = raw && localIso(raw, timeZone).slice(16) === raw.replace(/Z$/, "+00:00").slice(-6);
       const start = own ? Date.parse(raw) : NaN;
       const end = isMinutes(args?.minutes) ? start + args.minutes * 60_000 : NaN;
-      if (args?.ref && !step) return { error: `${args.ref} is not an open step of the current goal` };
+      if (args?.ref && !step && !whole) return { error: `${args.ref} is not an open step of the current goal, or "goal" without one` };
       if (!title) return { error: "title must be 1 to 120 characters" };
       if (privateTitle([title])) return { error: PRIVATE_TITLE };
       if (!isMinutes(args?.minutes)) return { error: "minutes must be a whole number from 1 to 240" };

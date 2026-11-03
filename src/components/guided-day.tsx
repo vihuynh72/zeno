@@ -243,6 +243,7 @@ export default function GuidedDay() {
   const saves = useRef<Promise<unknown>[]>([]); // the first scan and pasted notes still being saved
   const starting = useRef<Promise<Goal | null> | null>(null); // a plan from the first card still being saved
   const booking = useRef(new Set<string>()); // booking chips with a request in flight, so a double tap books once
+  const bookedLine = useRef<string | null>(null); // the talk offer whose booking replaced Zeno's line
   const replied = useRef<string[]>([]); // the last talk turn's quick replies, which came with its booking offers
   const warned = useRef(new Set<string>()); // events already given a heads-up
   const cardAt = useRef(0); // when the card last changed, so the second tap of a double tap can't answer the next one
@@ -743,12 +744,16 @@ export default function GuidedDay() {
     });
   }
 
-  // Back to my day (or No thanks): the home card, nothing picked until the next opening.
-  function wrapDone() {
+  // Back to my day, No thanks, or done with a draft: the home card holds the saved place, with its Start, never a
+  // vague "Let's start" or no button at all (live, Nov 2); a finished plan gets a fresh pick, as Pick the next thing does.
+  function goHome(said = "Nice work today.") {
     setOfferKeys([]);
+    setDraft(null);
+    const card = stepCard(goal);
+    if (!card) return void refreshOpening();
     setOptions([]);
-    changePick(null);
-    setLine("Nice work today.");
+    changePick(card);
+    setLine(said);
     setScreen("ready");
   }
 
@@ -824,13 +829,16 @@ export default function GuidedDay() {
     // Only what Google confirmed counts as booked.
     setBookings((all) => ({ ...all, [key]: { ...entry, blocks: res.booked, state: "booked" } }));
     linkSteps(res.booked, true);
+    const said = res.booked[0].start && isTomorrow(res.booked[0].start, zone()) ? "Booked. Tomorrow's streak is planned." : "Booked. It's on your calendar.";
     if (latest.current.screen === "wrap") {
-      const said = res.booked[0].start && isTomorrow(res.booked[0].start, zone()) ? "Booked. Tomorrow's streak is planned." : "Booked. It's on your calendar.";
       setLine(said);
       speakLine(said);
     } else if (offerKeys.includes(key) && options === replied.current) {
-      // Booking a turn's offer answers its question, so the quick replies that came with it go (a newer question's stay).
+      // Booking a turn's offer answers its question, so the quick replies that came with it go (a newer question's
+      // stay), and so does the question itself.
       setOptions((shown) => (shown === options ? [] : shown));
+      setLine(said);
+      bookedLine.current = key;
     }
   }
 
@@ -850,6 +858,7 @@ export default function GuidedDay() {
     linkSteps(entry.blocks, false);
     // The offer is back, so the line no longer says Booked.
     if (latest.current.screen === "wrap") setLine(WRAP_LINE);
+    else if (bookedLine.current === key) setLine("Okay, it's off your calendar.");
   }
 
   // ---------- Focus check-ins and heads-ups ----------
@@ -1026,9 +1035,9 @@ export default function GuidedDay() {
       return [
         say("Open in Gmail", () => {
           window.open(draft.url, "_blank", "noopener,noreferrer");
-          setDraft(null);
+          goHome("Your draft is open in Gmail.");
         }),
-        say("Not now", () => setDraft(null)),
+        say("Not now", () => goHome("Okay, not now.")),
       ];
     }
     if (screen === "ready") {
@@ -1037,7 +1046,12 @@ export default function GuidedDay() {
       if (pick) return [say(`Start · ${pick.steps[0].minutes} min`, () => startPick(pick)), other];
       return options.length ? [...replies, other] : [say("Let's start", () => tap("Let's start."))];
     }
-    if (screen === "talk") return options.length || offers.some((one) => one.state !== "booked") ? [...replies, other] : [];
+    if (screen === "talk") {
+      if (options.length || offers.some((one) => one.state !== "booked")) return [...replies, other];
+      // A booked offer answered Zeno's question, so one way home (live, Nov 2: it was a dead end); a plain question
+      // still waits for Talk or Type.
+      return offers.length ? [say("Back to my day", () => goHome())] : [];
+    }
     if (screen === "focus" && step) {
       const done = say("Done", () => void finishStep(step));
       const stop = say("Stop for now", stopForNow);
@@ -1058,7 +1072,7 @@ export default function GuidedDay() {
       // While free time is asked for, nothing shows, so no button changes under a tap.
       const wrapOffer = offerKeys.length ? bookings[offerKeys[0]] : undefined;
       if (offerKeys.length && !wrapOffer) return [];
-      return [say(wrapOffer && wrapOffer.state !== "booked" ? "No thanks" : "Back to my day", wrapDone)];
+      return [say(wrapOffer && wrapOffer.state !== "booked" ? "No thanks" : "Back to my day", () => goHome())];
     }
     return [];
   }
