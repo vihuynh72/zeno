@@ -7,7 +7,7 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { CanvasError, canvasAssignments, canvasBase, canvasDeadlines, htmlText } = await import("./canvas.ts");
+const { CanvasError, assignmentTitle, canvasAssignments, canvasBase, canvasDeadlines, courseLabel, htmlText } = await import("./canvas.ts");
 
 // ---- The school's address: only https://<school>.instructure.com, since the server fetches it.
 const SJSU = "https://sjsu.instructure.com";
@@ -73,6 +73,70 @@ assert.equal(
   "Review on Zoom: [link] today. Write 1500 words on [link] or 4.1/4.2.",
 );
 
+// ---- Course labels (Vi, Nov 2: "It looks so messy"): the code, without the term, the section or the long name; a
+// name with no code stays the name, at most 28 characters at a word; never empty while the name has words.
+for (const [name, label] of [
+  ["FA26: HIST-110 Sec 02 - US History Since 1865", "HIST 110"],
+  ["FA26: BIO-101 Sec 04 - Intro Biology Lab", "BIO 101"],
+  ["FA26: CS-146 Sec 07 - Data Struct and Alg", "CS 146"],
+  ["SP27 - ENGR-100W Sec 03 - Technical Writing", "ENGR 100W"],
+  ["SU26 ART 12 (01)", "ART 12"],
+  ["WI27: MATH 30 Section 3", "MATH 30"],
+  ["Fall 2026 PHYS 2A Lecture", "PHYS 2A"],
+  ["2026FA-COMM-20-05", "COMM 20"],
+  ["CHEM 1A - General Chemistry (Fall 2026)", "CHEM 1A"],
+  ["MATH 19: Precalculus", "MATH 19"],
+  ["MATH 19 Fall 2026", "MATH 19"],
+  ["ENGL 1A-05 Composition", "ENGL 1A"],
+  ["CS146 Data Structures", "CS 146"],
+  ["BUS1 170 Sec 02 - Financial Accounting", "BUS1 170"],
+  ["Data Structures (CS 146-07)", "CS 146"],
+  ["HIST 110", "HIST 110"],
+  ["Intro to Psychology", "Intro to Psychology"],
+  ["Writing Center Workshops", "Writing Center Workshops"],
+  ["FA26: Intro to Psychology (Section 01)", "Intro to Psychology"],
+  ["Intro to Psychology (Fall 2026)", "Intro to Psychology"],
+  ["Second Year Seminar", "Second Year Seminar"],
+  ["US History Since 1865", "US History Since 1865"],
+  ["Introduction to Data Structures and Algorithms in Java (Section 01) Fall 2026", "Introduction to Data"],
+  ["SP27 - Writing Center Workshops - Peer Tutoring", "Writing Center Workshops"],
+  ["FA26", "FA26"],
+  ["Section 01", "Section 01"],
+  ["", ""],
+]) {
+  assert.equal(courseLabel(name), label, name);
+}
+
+// ---- Titles: proctoring and tool notes go with their separator, everything meaningful stays, at most 80 characters.
+for (const [raw, title] of [
+  ["Quiz 4 (Ch. 4) - Requires Respondus LockDown Browser + Webcam", "Quiz 4 (Ch. 4)"],
+  ["Midterm 1 (Requires LockDown Browser)", "Midterm 1"],
+  ["Exam 2 - LockDown Browser Required", "Exam 2"],
+  ["Quiz 3 [Respondus]", "Quiz 3"],
+  ["Quiz 3 - [Respondus]", "Quiz 3"],
+  ["Final Exam - Proctorio", "Final Exam"],
+  ["Quiz 2: Requires Respondus Lockdown Browser", "Quiz 2"],
+  ["Midterm Exam -- Honorlock", "Midterm Exam"],
+  ["Quiz 7 | Proctored with Honorlock", "Quiz 7"],
+  ["Quiz 5 - Requires Respondus LockDown Browser - Chapters 5-6", "Quiz 5 - Chapters 5-6"],
+  ["Reading Quiz 3 – Chapter 4 – LockDown Browser", "Reading Quiz 3 – Chapter 4"],
+  ["Homework 7 - Binary Search Trees", "Homework 7 - Binary Search Trees"],
+  ["Participation Points 10/28", "Participation Points 10/28"],
+  ["Project 2: Linked Lists", "Project 2: Linked Lists"],
+  ["Thesis Card #2", "Thesis Card #2"],
+  // Coursework about a lockdown or a webcam is no proctoring note, and a title that is only a note keeps its words.
+  ["Essay: Life in Lockdown", "Essay: Life in Lockdown"],
+  ["Lab 3 - Webcam Image Processing", "Lab 3 - Webcam Image Processing"],
+  ["Lockdown Browser Practice Quiz", "Lockdown Browser Practice Quiz"],
+  ["[Respondus]", "[Respondus]"],
+  ["  Quiz\n4  ", "Quiz 4"],
+  [`${"x".repeat(75)} abcd efgh`, `${"x".repeat(75)} abcd`],
+  ["y".repeat(90), "y".repeat(80)],
+  ["", ""],
+]) {
+  assert.equal(assignmentTitle(raw), title, raw);
+}
+
 // ---- The planner, with Canvas stubbed: what each request asked for, and what each URL answers.
 const TOKEN = "1234~AbCdEfGhIjKlMnOpQrStUvWxYz0123456789";
 const NOW = new Date("2026-11-02T18:00:00Z"); // Monday 10 AM in Los Angeles
@@ -91,9 +155,9 @@ const page = (n: number, host = SJSU) => `${host}/api/v1/planner/items?page=${n}
 const links = (next: string) => `<${page(1)}>; rel="current",<${next}>; rel="next",<${page(1)}>; rel="first"`;
 
 const course = (id: number, name: string) => ({ context_type: "Course", course_id: id, context_name: name });
-const CS = course(101, "CS 146 - Data Structures");
-const BIO = course(102, "BIO 121");
-const HIST = course(103, "HIST 110");
+const CS = course(101, "FA26: CS-146 Sec 07 - Data Struct and Alg");
+const BIO = course(102, "FA26: BIO-101 Sec 04 - Intro Biology Lab");
+const HIST = course(103, "FA26: HIST-110 Sec 02 - US History Since 1865");
 const MATH = course(104, "MATH 30");
 const open = { submitted: false, excused: false, missing: false };
 const work = (type: string, at: typeof CS, id: number, title: string, due: string | null, submissions: object | false = open, html_url = `/courses/${at.course_id}/assignments/${id}`) => ({
@@ -107,14 +171,14 @@ const work = (type: string, at: typeof CS, id: number, title: string, due: strin
 });
 const PAGE_1 = [
   work("assignment", CS, 11, "Project 2: Linked Lists", "2026-11-07T07:59:00Z"),
-  work("quiz", BIO, 21, "  Quiz\n4 ", "2026-11-04T17:00:00Z", open, `${SJSU}/courses/102/quizzes/21`),
+  work("quiz", BIO, 21, "  Quiz\n4 (Ch. 4) - Requires Respondus LockDown Browser + Webcam ", "2026-11-04T17:00:00Z", open, `${SJSU}/courses/102/quizzes/21`),
   // A discussion's due date can be only the planner date.
   { ...work("discussion_topic", HIST, 31, "Week 10 discussion", null, open, "/courses/103/discussion_topics/31"), plannable_date: "2026-11-05T06:59:00Z" },
   {
     ...BIO,
     plannable_id: "41",
     plannable_type: "calendar_event",
-    plannable: { id: 41, title: "Midterm 2", description: "<p>Chapters 5&ndash;8.</p>", start_at: "2026-11-10T17:00:00Z" },
+    plannable: { id: 41, title: "Midterm 2 (Requires LockDown Browser)", description: "<p>Chapters 5&ndash;8.</p>", start_at: "2026-11-10T17:00:00Z" },
     plannable_date: "2026-11-10T17:00:00Z",
     submissions: false,
     html_url: "/calendar?event_id=41&include_contexts=course_102",
@@ -171,26 +235,26 @@ try {
   assert.deepEqual(
     assignments.map((item) => [item.kind, item.course, item.title, item.due, item.submitted, item.url]),
     [
-      ["assignment", "CS 146 - Data Structures", "Lab 5", "2026-11-03T07:59:00.000Z", true, `${SJSU}/courses/101/assignments/12/submissions/9`],
+      ["assignment", "CS 146", "Lab 5", "2026-11-03T07:59:00.000Z", true, `${SJSU}/courses/101/assignments/12/submissions/9`],
       ["assignment", "HIST 110", "Reading response 3", "2026-11-03T20:00:00.000Z", true, `${SJSU}/courses/103/assignments/13`],
-      ["quiz", "BIO 121", "Quiz 4", "2026-11-04T17:00:00.000Z", false, `${SJSU}/courses/102/quizzes/21`],
+      ["quiz", "BIO 101", "Quiz 4 (Ch. 4)", "2026-11-04T17:00:00.000Z", false, `${SJSU}/courses/102/quizzes/21`],
       ["discussion", "HIST 110", "Week 10 discussion", "2026-11-05T06:59:00.000Z", false, `${SJSU}/courses/103/discussion_topics/31`],
-      ["assignment", "CS 146 - Data Structures", "Project 2: Linked Lists", "2026-11-07T07:59:00.000Z", false, `${SJSU}/courses/101/assignments/11`],
-      ["assignment", "CS 146 - Data Structures", "Lab 6", "2026-11-09T07:59:00.000Z", false, SJSU],
-      ["exam", "BIO 121", "Midterm 2", "2026-11-10T17:00:00.000Z", false, `${SJSU}/calendar?event_id=41&include_contexts=course_102`],
+      ["assignment", "CS 146", "Project 2: Linked Lists", "2026-11-07T07:59:00.000Z", false, `${SJSU}/courses/101/assignments/11`],
+      ["assignment", "CS 146", "Lab 6", "2026-11-09T07:59:00.000Z", false, SJSU],
+      ["exam", "BIO 101", "Midterm 2", "2026-11-10T17:00:00.000Z", false, `${SJSU}/calendar?event_id=41&include_contexts=course_102`],
       ["assignment", "HIST 110", "Reflection: my visa interview", "2026-11-11T07:59:00.000Z", false, `${SJSU}/courses/103/assignments/15`],
       ["assignment", "MATH 30", "Problem set 6", "2026-11-12T07:59:00.000Z", false, `${SJSU}/courses/104/assignments/61`],
       ["assignment", "MATH 30", "Problem set 7", "2026-11-14T07:59:00.000Z", false, `${SJSU}/courses/104/assignments/62`],
-      ["discussion", "CS 146 - Data Structures", "Group essay", "2026-11-20T07:59:00.000Z", false, `${SJSU}/courses/101/discussion_topics/16`],
-      ["assignment", "CS 146 - Data Structures", "Bonus reading", null, false, `${SJSU}/courses/101/assignments/17`],
+      ["discussion", "CS 146", "Group essay", "2026-11-20T07:59:00.000Z", false, `${SJSU}/courses/101/discussion_topics/16`],
+      ["assignment", "CS 146", "Bonus reading", null, false, `${SJSU}/courses/101/assignments/17`],
     ],
-    "soonest first; excused counts as handed in; a link off the school's Canvas becomes its home page",
+    "soonest first; clean course labels and titles; excused counts as handed in; a link off the school's Canvas becomes its home page",
   );
   assert.equal(new Set(assignments.map((item) => item.id)).size, assignments.length, "one id each");
   // The 3 soonest unsubmitted, each read from its own page; the rest wait for the next sync.
   const instructed = new Map(assignments.flatMap((item) => (item.instructions ? [[item.title, item.instructions]] : [])));
-  assert.deepEqual([...instructed.keys()], ["Quiz 4", "Week 10 discussion", "Project 2: Linked Lists"]);
-  assert.equal(instructed.get("Quiz 4"), "Covers enzymes & kinetics.", "a quiz's description");
+  assert.deepEqual([...instructed.keys()], ["Quiz 4 (Ch. 4)", "Week 10 discussion", "Project 2: Linked Lists"]);
+  assert.equal(instructed.get("Quiz 4 (Ch. 4)"), "Covers enzymes & kinetics.", "a quiz's description");
   assert.equal(instructed.get("Week 10 discussion"), "Post one question about the reading, then reply to two classmates.", "a discussion's message");
   const project = instructed.get("Project 2: Linked Lists") ?? "";
   assert.ok(project.startsWith("Project 2 Implement a doubly linked list. Implement") && project.length === 800, "an assignment's description, cut");
@@ -199,11 +263,11 @@ try {
   // ---- The deadlines a sync keeps: unsubmitted, due in the next 14 days, in the person's zone, never a private title.
   const deadlines = canvasDeadlines(assignments, LA, NOW);
   assert.deepEqual(deadlines, [
-    { text: "BIO 121: Quiz 4, due Wednesday, November 4.", expiresOn: "2026-11-05" },
+    { text: "BIO 101: Quiz 4 (Ch. 4), due Wednesday, November 4.", expiresOn: "2026-11-05" },
     { text: "HIST 110: Week 10 discussion, due Wednesday, November 4.", expiresOn: "2026-11-05" },
-    { text: "CS 146 - Data Structures: Project 2: Linked Lists, due Friday, November 6.", expiresOn: "2026-11-07" },
-    { text: "CS 146 - Data Structures: Lab 6, due Sunday, November 8.", expiresOn: "2026-11-09" },
-    { text: "BIO 121: Midterm 2, due Tuesday, November 10.", expiresOn: "2026-11-11" },
+    { text: "CS 146: Project 2: Linked Lists, due Friday, November 6.", expiresOn: "2026-11-07" },
+    { text: "CS 146: Lab 6, due Sunday, November 8.", expiresOn: "2026-11-09" },
+    { text: "BIO 101: Midterm 2, due Tuesday, November 10.", expiresOn: "2026-11-11" },
     { text: "MATH 30: Problem set 6, due Wednesday, November 11.", expiresOn: "2026-11-12" },
     { text: "MATH 30: Problem set 7, due Friday, November 13.", expiresOn: "2026-11-14" },
   ]);
@@ -212,26 +276,19 @@ try {
     [{ text: "HIST 110: Week 10 discussion, due Thursday, November 5.", expiresOn: "2026-11-06" }],
     "their own date",
   );
-  const long = canvasDeadlines(
-    [
-      {
-        ...assignments[2],
-        course: "Introduction to Data Structures and Algorithms in Java (Section 01) Fall 2026",
-        title: "Final project proposal: pick a data set, write a two-page plan and list the three questions you will answer",
-      },
-    ],
-    LA,
-    NOW,
-  );
-  assert.deepEqual(long, [
+  // The label and title are already short, so the deadline holds both whole (no course cut mid-word).
+  const longest = {
+    ...assignments[2],
+    course: courseLabel("Introduction to Data Structures and Algorithms in Java (Section 01) Fall 2026"),
+    title: assignmentTitle("Final project proposal: pick a data set, write a two-page plan and list the three questions you will answer"),
+  };
+  assert.deepEqual(canvasDeadlines([longest, { ...assignments[2], course: "" }], LA, NOW), [
     {
-      text: "Introduction to Data Structures and: Final project proposal: pick a data set, write a two-page plan and list the three, due Wednesday, November 4.",
+      text: "Introduction to Data: Final project proposal: pick a data set, write a two-page plan and list the, due Wednesday, November 4.",
       expiresOn: "2026-11-05",
     },
-  ], "kept short, cut at a word: the course to 40 characters, the whole title to 120");
-  const cut = (title: string) => canvasDeadlines([{ ...assignments[2], course: "", title }], LA, NOW)[0].text.replace(/, due .*$/, "");
-  assert.equal(cut(`${"x".repeat(115)} abcd efgh`), `${"x".repeat(115)} abcd`, "a word that ends at the limit stays");
-  assert.equal(cut("y".repeat(130)), "y".repeat(120), "one long word is cut where it crosses");
+    { text: "Quiz 4 (Ch. 4), due Wednesday, November 4.", expiresOn: "2026-11-05" },
+  ], "the whole label and title; with no course, the title alone");
 
   // ---- A next page on another host is never read; an exam's instructions come with it, and a failed read leaves none.
   calls.length = 0;
