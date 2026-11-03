@@ -62,7 +62,8 @@ export const cleanHeard = (raw: unknown): string[] => (Array.isArray(raw) ? raw.
 
 // What a later day's first opening names once: the newest pattern from the 7 days before today, not yet heard here.
 export function newPattern(memories: Memory[], heard: string[], timeZone: string, now = new Date()): Memory | null {
-  const today = dayBounds(timeZone, now).start.getTime();
+  // Their day starts at 5 AM, as for the greeting and rulePick: a pattern from 1 AM is last night's, named that morning.
+  const today = dayBounds(timeZone, new Date(now.getTime() - 5 * 3_600_000)).start.getTime() + 5 * 3_600_000;
   const fits = (memory: Memory) => {
     const at = Date.parse(memory.createdAt);
     return memory.source === "pattern" && !heard.includes(memory.id) && at < today && at >= today - 7 * 86_400_000;
@@ -167,11 +168,12 @@ export const REPLY_SCHEMA = {
   },
 };
 
-// Model output is untrusted: keep distinct, trimmed strings that fit, in order.
+// Model output is untrusted: keep distinct, trimmed strings that fit, in order. They are answers to tap, so never
+// questions (measured: the direct tone copied its "Start now?" into them).
 export function shortStrings(raw: unknown, max: number, maxChars: number): string[] {
   const seen = new Set<string>();
   return (Array.isArray(raw) ? raw : [])
-    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .map((item) => (typeof item === "string" ? item.trim().replace(/\s*\?+$/, "") : ""))
     .filter((item) => item && item.length <= maxChars && !seen.has(item.toLowerCase()) && seen.add(item.toLowerCase()))
     .slice(0, max);
 }
@@ -996,11 +998,11 @@ export async function talk(
     reply:
       reply?.say ??
       (actions.length > 0
-        ? "I made that change, but lost my words for a second. Want to keep going?"
+        ? "I made that change, but lost my words for a second. Keep going?"
         : proposal.length > 0
-          ? "I found a time for that. Want to book it?"
+          ? "I found a time for that. Book it?"
           : draft
-            ? "I wrote a draft. Want to open it in Gmail?"
+            ? "I wrote a draft. Open it in Gmail?"
             : "Sorry, I got tangled up there. Could you say that again?"),
     goal,
     actions,

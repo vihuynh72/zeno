@@ -29,7 +29,7 @@ import type {
 } from "@/lib/day";
 import { canvasBriefs, canvasList, readCanvas, syncCanvas } from "@/lib/canvas-store";
 import { listenAuto, type ListenHandlers } from "@/lib/listen";
-import { audioContext, playDone } from "@/lib/speak";
+import { audioContext, playDone, wakeAudio } from "@/lib/speak";
 import { formatTime, localDate } from "@/lib/tz";
 import { useVoice } from "@/lib/use-voice";
 import { addToVault, readVault, removeFromVault, vaultRemoved, vaultTexts, type VaultFact } from "@/lib/vault";
@@ -612,8 +612,10 @@ export default function GuidedDay() {
     const now = latest.current;
     const next = nextScreen(now.screen ?? "ready", res.actions ?? [], res.goal);
     const done = now.screen === "focus" && next === "checkin" ? openSteps(now.goal)[0] : undefined;
+    // A skip said in Focus leaves it this way too, so only a step really marked done gets the stamp, the sound and "Nice".
+    const status = done ? res.goal?.steps.find((one) => one.id === done.id)?.status : undefined;
     // After a Done, said or tapped, Zeno says what is next.
-    const said = next === "checkin" ? doneLine(res.goal) : res.reply;
+    const said = next === "checkin" ? doneLine(res.goal, status === "skipped") : res.reply;
     if (now.screen === "focus" && next === "focus") answered.current = said;
     if (next === "checkin") setCelebrate(Boolean(res.progress));
     // A step's timer and its sources end with its focus, so a new step never opens on the last one's search.
@@ -624,15 +626,16 @@ export default function GuidedDay() {
     // A plan made or changed here is the card now: its first step, ready to start.
     if (next === "ready") changePick(stepCard(res.goal));
     if (done) {
-      // Said "done" out loud: same stamp as the Done button, so the card and its answers wait for it too.
-      setStamping(true);
-      // Its sound only for a step really marked done: a spoken skip leaves Focus this way too.
-      if (!voice.muted && res.goal?.steps.some((one) => one.id === done.id && one.status === "done")) playDone();
+      // Said "done" out loud: same stamp and sound as the Done button, so the card and its answers wait for it too.
+      if (status === "done") {
+        setStamping(true);
+        if (!voice.muted) playDone();
+      }
       setBusy(true);
       setTimeout(() => {
         setBusy(false);
         changeGoal(res.goal);
-        fileAway(done, said);
+        fileAway(status === "done" ? done : null, said);
       }, 400);
     } else {
       changeGoal(res.goal);
@@ -648,8 +651,8 @@ export default function GuidedDay() {
     return spoken(said);
   }
 
-  // The finished card slides onto the pile while the next card rises with Zeno's line.
-  function fileAway(step: Step, nextLine: string) {
+  // The finished card slides onto the pile while the next card rises with Zeno's line; a skipped one (null) never does.
+  function fileAway(step: Step | null, nextLine: string) {
     setStamping(false);
     setLeaving(step);
     setLine(nextLine);
@@ -743,6 +746,7 @@ export default function GuidedDay() {
   }
 
   async function finishStep(step: Step) {
+    if (!voice.muted) wakeAudio();
     setStamping(true);
     setBusy(true);
     const real = await realStep(step);

@@ -12,23 +12,31 @@ fit and checked on `nov2/integrate`. `nov2/fix` added music for deep work (decis
 fixes from three reviews. **All of it is on `main` and in production** (Nov 2, 9:25 PM PT: `401c81c`), with the fixes
 from the live test below.
 
-### Before recording (Nov 3, branch `rec/build` from `7354108`; not merged)
+### Before recording (Nov 3, branch `rec/build` from `7354108`, review fixes on `rec/fix`; not merged)
 Vi's four "do it now" answers (PRD OQ-2 to OQ-5; stories US0010 to US0013 on `sdlc/backlog`):
 - **Reminders off**: Zeno's timed blocks and all-day "Due:" events carry `reminders: { useDefault: false, overrides: [] }`
-  (`eventFor`, `src/lib/calendar.ts`). Blocks booked before keep their 10-minute popup.
+  (`eventFor`, `src/lib/calendar.ts`). Blocks booked before keep their 10-minute popup. The app gives no heads-up for
+  Zeno's own blocks either (`soonEvent`, `src/components/day-flow.ts`); the person's own events still get one.
 - **Direct by default**: the persona lines of `ZENO_VOICE_PROMPT` (`src/lib/ai.ts`) push to the next step, name putting
   things off plainly, no "Want to...?" or cheerleading, blunt but never cruel; a reply that points to a next step ends
   in one short yes or no question so the chips stay ("Start now?"). A suggested time is said as open, never as held.
-  `RULES`, `NEVER_KEEP` and every tool line are unchanged. The opening's "soft question" is now "one short, direct
-  question".
+  A slip is not a failure (what's next, never what they lost); a stop or rest is taken in one line with where they
+  start next; a plan that won't fit gets a smaller cut offered, never made (`update_steps` deletes the steps it leaves
+  out). `RULES`, `NEVER_KEEP` and the tool lines are unchanged, except that remember keeps "any amount, date or time
+  they gave". The opening's "soft question" is now "one short, direct question", and the instant rule lines
+  (`src/lib/brief.ts`) and talk's fallbacks are direct too ("Next up for PHIL 134 paper: Outline claim 2. Start now?").
 - **Done sound**: with Sound on, a tapped or spoken Done (only a real done, never a skip or a failed save) plays two soft
-  sine notes made with Web Audio, about 210 ms (`playDone`, `src/lib/speak.ts`), with the DONE stamp. Without Web
-  Audio it stays silent and Done goes on.
+  sine notes made with Web Audio, about 210 ms (`playDone`, `src/lib/speak.ts`), with the DONE stamp, and only while
+  the audio context runs: the Done tap wakes it before the save (`wakeAudio`; Safari starts a context only inside a
+  tap, and the save's fetch ends the tap), so the sound never waits for a later tap or stacks. Without Web Audio it
+  stays silent and Done goes on. A skip said in Focus gets no stamp and no sound, and "Skipped. Next: …".
 - **Day 2 names what Zeno learned**: `POST /api/day/opening` takes `heard` (pattern ids this browser already heard, kept
   in `zeno:heard:<account>`, at most 20). The newest pattern memory made in the 7 days before the person's today and
   not heard gets one prompt line ("say it once at the start, in your own words, let it shape the pick") and comes back
   as `noticed: [id]`; the browser adds it to `heard` when that opening shows (`newPattern`/`cleanHeard` in
-  `src/lib/agent.ts`). A pattern learned today waits for tomorrow; after midnight already counts as tomorrow.
+  `src/lib/agent.ts`). The person's day starts at 5 AM, as for the greeting: a pattern learned today waits for
+  tomorrow, one learned at 12:20 AM is last night's and is named that morning, and an opening before 5 AM names
+  nothing learned that night.
 - **Verified**: typegen, tsc, eslint (src and scripts), build and every self-check, with new asserts (no reminders on
   both kinds of event; the sound's notes, length and level; the persona's wording; the pattern window, heard ids, the
   newest wins and UTC vs Los Angeles day starts; the heard list). Real Muse lines on made-up data, old prompt vs new,
@@ -41,13 +49,30 @@ Vi's four "do it now" answers (PRD OQ-2 to OQ-5; stories US0010 to US0013 on `sd
   shift row; run 2 the remember + set_goal turn), and both missed one import fact (import has no persona). The update
   turn alone, six times each through `talk()`, forgot and saved 6 of 6 on the old prompt and 6 of 6 on the new. Not
   tried in a browser: the sound by ear, the heard list in local storage, a booked event in Google Calendar.
-- **For the video**: turn Sound on for the Done sound. Shot 6 needs a pattern from Nov 3 in Memory; the first opening on
-  Nov 4 in that Chrome uses it up, so to take it again delete the `zeno:heard:…` key in DevTools > Application > Local
-  Storage (keep `zeno.canvas.…`) and reload.
-- **Revert one item**: reminders: put back `overrides: [{ method: "popup", minutes: 10 }]` on timed blocks in `eventFor`.
-  Tone: restore the six persona lines and "one soft question" from `git show 7354108:src/lib/ai.ts` and
-  `7354108:src/lib/agent.ts`. Sound: delete the two `playDone()` calls in `src/components/guided-day.tsx`. Day 2: make
-  `newPattern` in `src/lib/agent.ts` return `null`. Each needs its asserts adjusted.
+- **Review fixes (`rec/fix`)**: the 5 AM day start, the Safari-safe Done sound, the spoken skip, no in-app heads-up for
+  Zeno's blocks, direct rule lines, and four prompt clauses (a slip, a stop, a smaller cut offered, and remember keeps
+  "any amount, date or time they gave"). Found while checking: the direct prompt's "Start now?" got copied into tap
+  chips (about 1 reply in 9, 0 on main), so a chip loses a trailing "?" (`shortStrings`, `src/lib/agent.ts`).
+  Verified: typegen, tsc, eslint (src and scripts), build and every self-check, with asserts that fail on the old code
+  (a 12:20 AM pattern named that morning, an 11:40 PM one kept quiet at 12:10 AM, a suspended context playing nothing). The samples file above was re-run on the final prompt (12 moments,
+  with a stop and a plan that won't fit): no slip is called a loss, a stop is taken in one line, and a plan that won't
+  fit was never cut (rec/build cut it in 1 of 3 runs, main in 1 of 1). A/Bs of 6 runs: the bench's remember + set_goal
+  turn main 4, rec/build 4, rec/fix 5 (the plan was saved every time; each miss kept "brain is mush" private, as on
+  main); the "$2,000 on my credit card" fact kept its amount main 6, rec/fix 4 before the remember clause and 6 after;
+  the update turn in the bench's own state main 5, rec/fix 5. Memory bench runs 3 and 4 (before and after that
+  clause): overall 90.6 and 86.1, privacy 96.4 and 100.0, no leaks or false claims, rows deleted. Their misses were the
+  kept-private turn (both), a reworded bio lab duplicate (run 3) and the update (run 4). So US0011 AC5 (within 2 points
+  of 96.1, a single Nov 2 run) is still unmet (88.6, 98.6, 90.6, 86.1); two same-day runs on `main` would show whether
+  that bar was one lucky run.
+- **For the video**: turn Sound on for the Done sound. Shot 6 needs a pattern from Nov 3 in Memory; the first opening
+  after 5 AM on Nov 4 in that Chrome uses it up (one before 5 AM doesn't), so to take it again delete the
+  `zeno:heard:…` key in DevTools > Application > Local Storage (keep `zeno.canvas.…`) and reload.
+- **Revert one item**: reminders: put back `overrides: [{ method: "popup", minutes: 10 }]` on timed blocks in `eventFor`
+  (and drop `!event.zeno` in `soonEvent` for the in-app heads-up). Tone: restore the persona lines and "one soft
+  question" from `git show 7354108:src/lib/ai.ts` and `7354108:src/lib/agent.ts`, and the rule lines from
+  `7354108:src/lib/brief.ts`. Sound: delete the two `playDone()` calls and the `wakeAudio()` call in
+  `src/components/guided-day.tsx`. Day 2: make `newPattern` in `src/lib/agent.ts` return `null`. Each needs its asserts
+  adjusted.
 
 ### Nov 4 sprint (on `main` and in production since Nov 3, 1:15 AM PT: `e0e7ac6`)
 From Vi's answers on the night of Nov 2 (product brief sections 2 and 8): "I don't want any alarm… It's annoying",

@@ -60,6 +60,9 @@ assert.equal(stepCard(goal(step("1", "done"))), null);
 assert.equal(doneLine(goal(step("1", "done"), step("2", "todo", { minutes: 15 }))), "Nice. Next: Step 2, 15 min");
 assert.equal(doneLine(goal(step("1", "done"), step("2", "todo", { minutes: null }))), "Nice. Next: Step 2");
 assert.equal(doneLine(goal(step("1", "done"))), "Nice work. That was the last step.");
+// A skip is never praised as a Done.
+assert.equal(doneLine(goal(step("1", "skipped"), step("2", "todo", { minutes: 15 })), true), "Skipped. Next: Step 2, 15 min");
+assert.equal(doneLine(goal(step("1", "skipped")), true), "Skipped. That was the last step.");
 // An email to write gets "Draft it in Gmail".
 for (const title of [
   "Email Prof Patel about an extension", "E-mail the TA", "write to the registrar", "Reply to Dana", "Message the study group",
@@ -274,16 +277,17 @@ assert.equal(slotLabel("2026-11-02T17:30:00.000Z", "2026-11-02T17:40:00.000Z", L
 assert.equal(slotLabel("2026-11-03T19:55:00.000Z", "2026-11-03T20:05:00.000Z", LA, now), "tomorrow 11:55 AM–12:05 PM");
 assert.equal(slotLabel("2026-11-05T17:30:00.000Z", "2026-11-05T17:40:00.000Z", LA, now), "Thu 9:30–9:40 AM");
 
-// Warnings: a timed event starting within 10 minutes, never one already on or all day.
+// Warnings: a timed event starting within 10 minutes, never one already on, all day or booked by Zeno.
 const at = (minutes: number) => new Date(now.getTime() + minutes * 60_000).toISOString();
 const events = [
   { title: "Birthday", start: "2026-11-02", end: "2026-11-03", allDay: true },
   { title: "Standup", start: at(-5), end: at(10), allDay: false },
+  { title: "CS 146 exam prep", start: at(5), end: at(60), allDay: false, zeno: true },
   { title: "Bio lab", start: at(9), end: at(60), allDay: false },
 ];
 assert.equal(soonEvent(events, now.getTime())?.title, "Bio lab");
-assert.equal(soonEvent(events.slice(0, 2), now.getTime()), null);
-assert.equal(soonEvent([{ ...events[2], start: at(11) }], now.getTime()), null);
+assert.equal(soonEvent(events.slice(0, 3), now.getTime()), null);
+assert.equal(soonEvent([{ ...events[3], start: at(11) }], now.getTime()), null);
 
 // The streak row's words.
 const progress = (over: Partial<Progress>): Progress => ({

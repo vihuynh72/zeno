@@ -45,12 +45,21 @@ export function audioContext() {
   return context;
 }
 
+// Call in the Done tap before any await: Safari starts a context that never ran only inside a tap, and a fetch ends it.
+export function wakeAudio() {
+  try {
+    audioContext().resume().catch(() => {});
+  } catch {
+    // No Web Audio: nothing to wake.
+  }
+}
+
 // The DONE stamp's small sound (Vi): two soft sine notes a fifth apart, about 210 ms, made here so no file loads.
 export function playDone() {
   try {
     const ctx = audioContext();
-    // Done always follows a tap, so the browser lets a context still suspended since page load run now.
-    ctx.resume().catch(() => {});
+    // Notes on a stopped clock would wait for the next tap and stack, so a context that isn't running stays silent.
+    if (ctx.state !== "running") return;
     [660, 880].forEach((frequency, i) => {
       const start = ctx.currentTime + i * 0.09;
       const note = ctx.createOscillator();
