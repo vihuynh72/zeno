@@ -25,7 +25,7 @@ registerHooks({
 });
 const {
   ASKS_FOR_BLOCK, checkCall, checkPick, checkPlan, cleanCanvas, cleanHeard, cleanHistory, draftUrl, extractNotes, goalText, isDate, keepNotes,
-  newPattern, notesFrom, openingPrompt, parseOpening, parseReply, roundSlots, slotsText, systemPrompt, talk, TOOLS,
+  newPattern, notesFrom, openingPrompt, parseOpening, parseReply, roundSlots, slotsText, systemPrompt, talk, TOOLS, withoutRefs,
 } = await import("./agent.ts");
 const { rulePick, ruleOpening, ruleOptions, senderName } = await import("./brief.ts");
 const { dayToText, knownDeadlines } = await import("./context.ts");
@@ -516,6 +516,12 @@ assert.deepEqual(parseReply('{"say":"Start now?","options":["Start now?","Start 
 for (const bad of [null, "", "I'll add that to your plan.", '{"say":"  "}', '{"options":[]}', "null", "[1]"]) {
   assert.equal(parseReply(bad), null, String(bad));
 }
+// A ref said out loud (live: "s2 is open") becomes what it points at; unknown refs and other words stay as they are.
+const refsSaid = new Map([["b", "s2"], ["c", "s3"], ["mem-1", "m1"], ["gone", "s5"]]);
+assert.equal(withoutRefs("s2 is open. Start now?", goal, refsSaid), "Write a thesis is open. Start now?");
+assert.equal(withoutRefs("Per m1, start s3 at four.", goal, refsSaid), "Per that, start Outline three points at four.");
+assert.equal(withoutRefs("Drop s5.", goal, refsSaid), "Drop that step.");
+assert.equal(withoutRefs("s99, s2x and CS 146 stay.", goal, refsSaid), "s99, s2x and CS 146 stay.");
 
 // Imported notes: grouped facts, to-dos and future deadlines that pass the checks; not JSON is an error.
 const facts = Array.from({ length: 9 }, (_, i) => ({ text: `Fact ${i}.`, group: "interests" }));
@@ -974,6 +980,12 @@ replies.push(tools(call("start_step", { ref: "s3" })), say("Go for it."));
 turn = await talk(talkContext, null, [], "Starting the outline");
 assert.deepEqual(calls, ["changeStepStatus c doing"]);
 assert.deepEqual(turn.actions, [{ type: "step-started", label: "Outline three points" }]);
+
+// Live on Nov 3 the model said the ref after start_step ("s2 is open"): the person hears the step's title instead.
+reset();
+replies.push(tools(call("start_step", { ref: "s3" })), say("s3 is open. Start now?"));
+turn = await talk(talkContext, null, [], "Let's do my next step now.");
+assert.equal(turn.reply, "Outline three points is open. Start now?");
 
 // remember reports a save only when addMemory returned one; a duplicate claims nothing.
 reset();

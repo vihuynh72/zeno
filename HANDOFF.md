@@ -1,7 +1,7 @@
 # Zeno handoff
 
-Last updated: 2026-11-03, by Claude (session 4: the Nov 2 round, the tidy round and the Nov 4 sprint, all on `main`
-and live-tested on production).
+Last updated: 2026-11-03, by Claude (session 4: the Nov 2 round, the tidy round, the Nov 4 sprint and the
+pre-recording build, all on `main` and live-tested on production).
 Read this first, then the Linear doc **"Zeno hackathon build plan (Nov 4)"** (project Zeno, team VI).
 
 ## 0. Session 4 (2026-11-02): the Nov 2 round
@@ -12,7 +12,7 @@ fit and checked on `nov2/integrate`. `nov2/fix` added music for deep work (decis
 fixes from three reviews. **All of it is on `main` and in production** (Nov 2, 9:25 PM PT: `401c81c`), with the fixes
 from the live test below.
 
-### Before recording (Nov 3, branch `rec/build` from `7354108`, review fixes on `rec/fix`; not merged)
+### Before recording (on `main` and in production since Nov 3, 3:25 AM PT: `32cef15`; live-tested below)
 Vi's four "do it now" answers (PRD OQ-2 to OQ-5; stories US0010 to US0013 on `sdlc/backlog`):
 - **Reminders off**: Zeno's timed blocks and all-day "Due:" events carry `reminders: { useDefault: false, overrides: [] }`
   (`eventFor`, `src/lib/calendar.ts`). Blocks booked before keep their 10-minute popup. The app gives no heads-up for
@@ -40,8 +40,7 @@ Vi's four "do it now" answers (PRD OQ-2 to OQ-5; stories US0010 to US0013 on `sd
 - **Verified**: typegen, tsc, eslint (src and scripts), build and every self-check, with new asserts (no reminders on
   both kinds of event; the sound's notes, length and level; the persona's wording; the pattern window, heard ids, the
   newest wins and UTC vs Los Angeles day starts; the heard list). Real Muse lines on made-up data, old prompt vs new,
-  ten moments: `/private/tmp/claude-501/-Users-vihuynh--superset-projects-zeno/8e7b8375-f54c-4c12-82ec-e4f4bc614514/scratchpad/tone-samples.md`
-  (every day-2 run named the pattern first). On a local build as a throwaway @zeno.local user (rows deleted), the real
+  ten moments (twelve after the review): `docs/TONE-SAMPLES-NOV3.md` (every day-2 run named the pattern first). On a local build as a throwaway @zeno.local user (rows deleted), the real
   route named yesterday's pattern with its id ("You do your best work before noon, so start with Outline claim 2."),
   then, with that id heard, did not; junk `heard` was ignored and a pattern learned today waited. Memory bench, two
   runs on that build (Nov 2: overall 96.1, privacy 96.9): overall 88.6 and 98.6, privacy 96.9 and 100.0, no leaks, no
@@ -64,6 +63,21 @@ Vi's four "do it now" answers (PRD OQ-2 to OQ-5; stories US0010 to US0013 on `sd
   kept-private turn (both), a reworded bio lab duplicate (run 3) and the update (run 4). So US0011 AC5 (within 2 points
   of 96.1, a single Nov 2 run) is still unmet (88.6, 98.6, 90.6, 86.1); two same-day runs on `main` would show whether
   that bar was one lucky run.
+- **Live test on production** (Nov 3, 3:20-3:45 AM PT, demo account, every audio output stubbed silent, no mic):
+  the late-night opening "De, you're still up. Let's wind down and line up tomorrow. Set up tomorrow?"; a typed
+  "Set aside 30 minutes tomorrow at 10 AM" got "Ten is taken. Ten fifty is open for thirty. Book it?" (the block
+  offered was 10:50-11:20, chips without "?"), and tapping Book made an event that Google Calendar shows with no
+  notification line, where a class event that day shows "30 minutes before"; Undo removed it (DELETE 200, gone from
+  Google Calendar). With Sound on, a tapped Done scheduled both notes after the save (PATCH 200) and a "Done" chip
+  (the spoken path) played it too; Sound is back off. Day 2, with a test pattern dated Nov 1 added to the demo
+  account: the app's opening sent `heard: []`, got `noticed: [id]`, said "You do better before noon, so let's set
+  up morning." and stored `zeno:heard`; the next opening sent that id, got no `noticed` and no pattern line. The test
+  row was deleted and the key cleared. A talk turn with a booking took 10.2 s (two model rounds). Left on the demo
+  account until the reset: the "PHIL-134 Thesis Card #2" plan is finished (two steps marked done by this test).
+- **Found live and fixed**: after `start_step` the model said a ref aloud ("s2 is open. Write one claim about the
+  argument in one sentence. Ready to time ten?") despite the "never say refs" rule. `withoutRefs` (`src/lib/agent.ts`)
+  now turns a step ref into its saved title and a memory ref into "that" in talk replies and openings; asserts in
+  `agent.check.ts`, one through `talk()` that fails without it.
 - **For the video**: turn Sound on for the Done sound. Shot 6 needs a pattern from Nov 3 in Memory; the first opening
   after 5 AM on Nov 4 in that Chrome uses it up (one before 5 AM doesn't), so to take it again delete the
   `zeno:heard:…` key in DevTools > Application > Local Storage (keep `zeno.canvas.…`) and reload.
@@ -254,15 +268,19 @@ the 2 PM reset cut-off). Everything is Draft until Vi approves; "yes to the defa
   the goal line's place (OQ-19, Vi's call).
 - US0008/US0009 cheaper opening: built client-side instead (`openingSig`/`openingReusable` in `day-flow.ts`: reuse a
   saved opening under 20 minutes old when the plan, Canvas list and timed events are unchanged), not as a server key.
-- US0010-US0013: being built (VI-353). US0013 announces a pattern learned before today (within 7 days) in the first
-  opening of a later day, so a day-1 pattern is said on day 2 (the story's own window would spend it on day 1).
+- US0010-US0013: built and live-tested (`32cef15`, VI-353, section 0 "Before recording"); Vi still approves the tone
+  (`docs/TONE-SAMPLES-NOV3.md`, US0011 AC4) and the sound (US0012 AC5). US0011 AC5 (memory bench within 2 points of
+  96.1) is unmet: 88.6, 98.6, 90.6, 86.1, with misses that A/B the same on the old prompt. US0013 announces a pattern
+  learned before the person's today (which starts at 5 AM) and within 7 days, in the first opening of a later day, so a
+  day-1 pattern is said on day 2 (the story's own window would spend it on day 1).
 - US0014 (Vi: rename the demo account to Maya, a Prof. Patel email from a demo-only mailbox), US0015 release check and
   freeze, US0016 reset at Vi's go by 2 PM Nov 3, US0017 live check before the Nov 9 final: not started.
 
 ### Next steps (Nov 3)
 1. Vi, morning: approve the PRD and Nov 4 epics or say what to change; rename the demo Google account to Maya; sign out
    of Zeno and in again (sign-out clears the device's Canvas link) and re-link Canvas with a **new** token (revoke the
-   one pasted in chat on Nov 2); the 2-minute voice test; read the tone samples and hear the Done sound (VI-353).
+   one pasted in chat on Nov 2); the 2-minute voice test; read `docs/TONE-SAMPLES-NOV3.md` and hear the Done sound
+   (VI-353: the demo plan is finished, so ask Zeno for a small plan, Start it and tap Done with Sound on).
 2. Claude, at Vi's go and by 2 PM: the release check (US0015), then the demo reset (VI-326/US0016: the demo account's
    rows with `demo-rows.mjs --wipe`, which also proves no other account changed; Zeno's calendar blocks; the `zeno*`
    browser keys except `zeno.canvas.<account>` and `zeno:sound`). Then Vi records shot 3 right away by reloading Zeno

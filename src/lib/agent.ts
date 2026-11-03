@@ -191,6 +191,16 @@ export function parseReply(text: string | null): { say: string; options: string[
   return say ? { say, options: say.includes("?") ? shortStrings(data?.options, 3, 48) : [] } : null;
 }
 
+// Refs are tool handles, yet the model still says one now and then ("s2 is open", measured live on Nov 3): a step's
+// ref becomes its saved title and a memory's "that", so the person never hears one.
+export function withoutRefs(say: string, goal: Goal | null, refs: Refs): string {
+  return say.replace(/\b[sm]\d{1,3}\b/g, (ref) => {
+    const id = idOf(refs, ref);
+    if (!id) return ref;
+    return ref[0] === "s" ? (goal?.steps.find((step) => step.id === id)?.title ?? "that step") : "that";
+  });
+}
+
 const titleOf = (value: unknown) =>
   typeof value === "string" && value.trim() && value.trim().length <= 120 ? value.trim() : null;
 
@@ -995,15 +1005,15 @@ export async function talk(
     console.error("Talk stopped after saving a change:", error instanceof Error ? error.message.slice(0, 120) : "unknown");
   }
   return {
-    reply:
-      reply?.say ??
-      (actions.length > 0
+    reply: reply
+      ? withoutRefs(reply.say, goal, refs)
+      : actions.length > 0
         ? "I made that change, but lost my words for a second. Keep going?"
         : proposal.length > 0
           ? "I found a time for that. Book it?"
           : draft
             ? "I wrote a draft. Open it in Gmail?"
-            : "Sorry, I got tangled up there. Could you say that again?"),
+            : "Sorry, I got tangled up there. Could you say that again?",
     goal,
     actions,
     options: reply?.options ?? [],

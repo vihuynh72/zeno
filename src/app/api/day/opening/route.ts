@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { cleanCanvas, cleanHeard, newPattern, OPENING_SCHEMA, openingPrompt, parseOpening, systemPrompt, type Refs } from "@/lib/agent";
+import { cleanCanvas, cleanHeard, newPattern, OPENING_SCHEMA, openingPrompt, parseOpening, systemPrompt, type Refs, withoutRefs } from "@/lib/agent";
 import { aiConfigured, askModel } from "@/lib/ai";
 import { ruleOpening, ruleOptions, rulePick } from "@/lib/brief";
 import { loadUserContext } from "@/lib/context";
@@ -70,7 +70,7 @@ async function opening(privateFacts: string[], canvas: CanvasBrief[], heard: str
     if (!reply.pick && rulePick(context)) return rule();
     // Measured live: the model can ask a question and still offer nothing to tap.
     const options = reply.options.length > 0 ? reply.options : ruleOptions(context);
-    return NextResponse.json({ state: "ok", opening: reply.say, options, pick: reply.pick, ...(pattern && { noticed: [pattern.id] }) } satisfies OpeningResponse);
+    return NextResponse.json({ state: "ok", opening: withoutRefs(reply.say, context.goal, refs), options, pick: reply.pick, ...(pattern && { noticed: [pattern.id] }) } satisfies OpeningResponse);
   } catch (error) {
     // Never log the reply itself: it quotes the person's calendar and email.
     console.error("Opening model call failed:", error instanceof Error ? error.message.slice(0, 120) : "unknown");
