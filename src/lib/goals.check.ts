@@ -8,12 +8,32 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { changeStepStatus, currentGoal, finishedDays, recentSteps, replaceRemainingSteps, savePrep, setGoal, setStepStatus, stepTitles } =
-  await import("./goals.ts");
+const {
+  activateGoal, changeStepStatus, currentGoal, finishedDays, finishedYesterday, openGoals, orderGoals, recentSteps, replaceRemainingSteps, savePrep,
+  setGoal, setStepStatus, stepTitles,
+} = await import("./goals.ts");
 const { getSql } = await import("./db.ts");
 const { localDate } = await import("./tz.ts");
 
-const email = `goals-check-${crypto.randomUUID()}@example.invalid`;
+// The home's goal options (Vi, Nov 3): the current plan first, then by due date with undated ones last, then the most
+// recently updated; at most 5.
+const open = (id: string, due: string | null, updatedAt: number, current = false) => ({ goal: { id, title: id, due, steps: [] }, current, updatedAt });
+assert.deepEqual(
+  orderGoals([
+    open("undated-old", null, 1),
+    open("fri", "2026-11-06", 1),
+    open("undated-new", null, 5),
+    open("current", "2026-12-01", 0, true),
+    open("thu", "2026-11-05", 1),
+    open("thu-newer", "2026-11-05", 9),
+    open("sat", "2026-11-07", 1),
+  ]).map((goal) => goal.id),
+  ["current", "thu-newer", "thu", "fri", "sat"],
+);
+assert.deepEqual(orderGoals([open("old", null, 1), open("new", null, 2)]).map((goal) => goal.id), ["new", "old"]);
+assert.deepEqual(orderGoals([]), []);
+
+const email = `goals-check-${crypto.randomUUID()}@zeno.local`;
 try {
   const essay = await setGoal(email, "History essay", [
     { title: "Reread the prompt", minutes: 10 },
@@ -33,7 +53,7 @@ try {
   // Sources stay on their step, for its owner only, until the step is renamed.
   const todo = extended.steps[1];
   const sources = [{ title: "Limits practice", url: "https://example.com/limits", why: "Five short problems with answers" }];
-  assert.equal(await stepTitles("someone-else@example.invalid", todo.id), null, "another person's step is not found");
+  assert.equal(await stepTitles("someone-else@zeno.local", todo.id), null, "another person's step is not found");
   assert.deepEqual(await stepTitles(email, todo.id), { goal: "Quiz prep", step: "Try five practice limits" });
   await savePrep(email, todo.id, sources);
   assert.deepEqual((await currentGoal(email))?.steps[1].prep, sources, "the latest sources come back with the goal");
@@ -431,6 +451,43 @@ try {
   console.log = realLog;
   await sql`DELETE FROM memories WHERE user_email = ${scanEmail}`;
   await sql`DELETE FROM user_state WHERE user_email = ${scanEmail}`;
+}
+
+// Open plans and switching between them (Vi, Nov 3): every active or paused plan with a step left, the current one
+// first; opening one makes it current and pauses the old one, never a done plan or another person's.
+const switchEmail = `goals-switch-check-${crypto.randomUUID()}@zeno.local`;
+try {
+  const essay = await setGoal(switchEmail, "HIST 15 essay", [{ title: "Read the prompt", minutes: 5 }, { title: "Outline claim 1", minutes: 15 }], "2026-12-04");
+  const lab = await setGoal(switchEmail, "BIO 20 lab report", [{ title: "Open the lab manual", minutes: 5 }], "2026-12-01");
+  const quiz = await setGoal(switchEmail, "CS 146 quiz prep", [{ title: "List the topics", minutes: 5 }]);
+  const note = await setGoal(switchEmail, "Email the TA", [{ title: "Write two lines", minutes: 5 }]);
+  // Its last step done finishes it, and the plan paused last (the quiz) comes back as the current one.
+  await setStepStatus(switchEmail, note.steps[0].id, "done");
+  const titles = async () => (await openGoals(switchEmail)).map((goal) => goal.title);
+  assert.deepEqual(await titles(), ["CS 146 quiz prep", "BIO 20 lab report", "HIST 15 essay"], "the current plan, then by due date; a done one is not open");
+  assert.deepEqual((await openGoals(switchEmail))[2].steps.map((step) => step.title), ["Read the prompt", "Outline claim 1"], "each with its steps");
+
+  assert.equal((await activateGoal(switchEmail, essay.id))?.id, essay.id);
+  assert.equal((await currentGoal(switchEmail))?.id, essay.id, "the opened plan is current");
+  assert.deepEqual(await titles(), ["HIST 15 essay", "BIO 20 lab report", "CS 146 quiz prep"], "the old one is paused, not lost");
+  for (const [label, who, id] of [
+    ["a done plan", switchEmail, note.id],
+    ["another person's", `someone-else-${crypto.randomUUID()}@zeno.local`, lab.id],
+    ["an unknown one", switchEmail, crypto.randomUUID()],
+  ]) {
+    assert.equal(await activateGoal(who, id), null, label);
+  }
+  assert.equal((await currentGoal(switchEmail))?.id, essay.id, "none of them paused the current one");
+  assert.deepEqual((await activateGoal(switchEmail, essay.id))?.steps.map((step) => step.status), ["todo", "todo"], "opening the current one keeps it");
+
+  // Yesterday's finished steps, on the person's clock: not today's.
+  await setStepStatus(switchEmail, essay.steps[0].id, "done");
+  const noon = dayBounds(zone, new Date(dayBounds(zone).start.getTime() - 1)).start.getTime() + 12 * 3_600_000;
+  await sql`UPDATE steps SET done_at = ${new Date(noon).toISOString()} WHERE id = ${essay.steps[0].id}`;
+  await setStepStatus(switchEmail, quiz.steps[0].id, "done");
+  assert.deepEqual(await finishedYesterday(switchEmail, zone), ["Read the prompt"]);
+} finally {
+  await sql`DELETE FROM goals WHERE user_email = ${switchEmail}`;
 }
 
 console.log("goals self-check passed");

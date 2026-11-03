@@ -21,6 +21,8 @@ type GmailMessage = {
   id?: string;
   snippet?: string;
   labelIds?: string[];
+  // Milliseconds since the epoch, as a string.
+  internalDate?: string;
   payload?: GmailPart & {
     headers?: Array<{ name?: string; value?: string }>;
   };
@@ -51,6 +53,17 @@ async function gmailFetch(accessToken: string, path: string) {
     throw new GmailError(response.status, await response.text());
   }
   return response.json();
+}
+
+// "Ana Lopez <Ana@school.edu>" and "ana@school.edu" are both ana@school.edu.
+export const addressOf = (from: string) => (/<([^<>]+)>/.exec(from)?.[1] ?? from).trim().toLowerCase();
+
+// Mail that asks the person something (Vi, Nov 3: asking mail comes first): a "?" or a request's words in the subject or
+// snippet, never in mail they sent. Links are left out, so a link's "?" asks nothing.
+const ASKING = /\b(can you|could you|would you|will you|please|let me know|are you|do you|rsvp|confirm|reply|available|when can)\b/i;
+export function asks(subject: string, snippet: string, fromSelf: boolean): boolean {
+  const text = `${subject}\n${snippet}`.replace(/https?:\/\/\S+|www\.\S+/gi, " ");
+  return !fromSelf && (text.includes("?") || ASKING.test(text));
 }
 
 // Gmail's Promotions, Social, Updates and Forums tabs, and no-reply senders: mail nobody answers.
@@ -90,6 +103,25 @@ export async function getRecentEmail(accessToken: string): Promise<EmailSummary[
       ];
     })
     .slice(0, 6);
+}
+
+// One email read in full for the Desk (GET /api/mail/[id]) with the person's own token: cleaned and capped at 6,000
+// characters in memory, and never stored, logged or sent to the model. Gmail's 404 throws as a GmailError with status 404.
+export async function readMessage(
+  accessToken: string,
+  id: string,
+): Promise<{ from: string; address: string; subject: string; date: string; text: string }> {
+  const message = (await gmailFetch(accessToken, `messages/${encodeURIComponent(id)}?format=full`)) as GmailMessage;
+  const from = header(message, "From");
+  const plain = partText(message.payload, "text/plain");
+  const at = Number(message.internalDate) || Date.parse(header(message, "Date"));
+  return {
+    from,
+    address: addressOf(from),
+    subject: header(message, "Subject") || "(no subject)",
+    date: new Date(Number.isFinite(at) ? at : Date.now()).toISOString(),
+    text: cleanBody(plain ?? partText(message.payload, "text/html") ?? message.snippet ?? "", plain === null, 6000),
+  };
 }
 
 // One email for the profile scan: read and cleaned in memory, never stored.
@@ -187,8 +219,8 @@ const SIGN_OFF =
   /^(best|thanks|thank you|thanks so much|many thanks|cheers|regards|best regards|kind regards|warm regards|warmly|sincerely|all the best|take care)[ \t]*[,.!]?[ \t]*$/gim;
 const GREETING = /^(hi|hey|hello|dear|good (morning|afternoon|evening))\b[^\n]*$/i;
 
-// The new words of one email, at most 1,500 characters: no quoted replies, signatures, markup, links or long numbers.
-export function cleanBody(raw: string, html = false): string {
+// The new words of one email, at most `max` characters: no quoted replies, signatures, markup, links or long numbers.
+export function cleanBody(raw: string, html = false, max = 1500): string {
   let text = (html ? htmlToText(raw) : raw).replace(/\r\n?/g, "\n");
   for (const marker of [...QUOTE_START, ...SIGNATURE_START]) {
     const found = marker.exec(text);
@@ -216,5 +248,5 @@ export function cleanBody(raw: string, html = false): string {
     .replace(/ *\n */g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return [...clean].slice(0, 1500).join("");
+  return [...clean].slice(0, max).join("");
 }

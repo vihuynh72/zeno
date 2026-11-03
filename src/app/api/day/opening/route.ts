@@ -1,32 +1,32 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { cleanCanvas, cleanHeard, newPattern, OPENING_SCHEMA, openingPrompt, parseOpening, systemPrompt, type Refs, withoutRefs } from "@/lib/agent";
+import { cleanHeard, newPattern, OPENING_SCHEMA, openingPrompt, parseOpening, systemPrompt, type Refs, withoutRefs } from "@/lib/agent";
 import { aiConfigured, askModel } from "@/lib/ai";
-import { ruleOpening, ruleOptions, rulePick } from "@/lib/brief";
+import { ruleOpening, ruleOptions } from "@/lib/brief";
 import { loadUserContext } from "@/lib/context";
-import type { CanvasBrief, OpeningResponse } from "@/lib/day";
+import type { OpeningResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
-import { stepsFinishedBetween } from "@/lib/goals";
-import { dayBounds, localDate, timeZoneFrom } from "@/lib/tz";
+import { finishedYesterday } from "@/lib/goals";
+import { timeZoneFrom } from "@/lib/tz";
 import { cleanPrivate } from "@/lib/vault";
 
 export const maxDuration = 30;
 
-// The model-written opening, options and first-card pick in one call; the screens show the rule line until it
-// lands. When the model fails, the rule line and rule pick answer instead, so the first card always has one thing.
-// POST sends the device's private facts and Canvas briefs in the body (never the URL; never saved or logged), and the
-// pattern ids its openings already named; GET is the same without them.
+// The model-written line under the home's greeting, and its options, in one call; the home shows the rule line until it
+// lands, and the rule line answers when the model fails. The home lists the goals to pick (Vi, Nov 3), so pick is always
+// null. POST sends the device's private facts in the body (never the URL; never saved or logged) and the pattern ids its
+// openings already named; GET is the same without them. A Canvas list in the body is ignored: the line plans nothing.
 export async function GET() {
-  return opening([], []);
+  return opening([]);
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as { private?: unknown; canvas?: unknown; heard?: unknown } | null;
-  return opening(cleanPrivate(body?.private), cleanCanvas(body?.canvas), cleanHeard(body?.heard));
+  const body = (await request.json().catch(() => null)) as { private?: unknown; heard?: unknown } | null;
+  return opening(cleanPrivate(body?.private), cleanHeard(body?.heard));
 }
 
-async function opening(privateFacts: string[], canvas: CanvasBrief[], heard: string[] = []) {
+async function opening(privateFacts: string[], heard: string[] = []) {
   const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ state: "signed-out" } satisfies OpeningResponse, { status: 401 });
@@ -35,23 +35,14 @@ async function opening(privateFacts: string[], canvas: CanvasBrief[], heard: str
   const email = session.user.email;
   const firstName = session.user.name?.trim().split(/\s+/)[0] || null;
   const timeZone = timeZoneFrom((await cookies()).get("tz")?.value);
-  const today = dayBounds(timeZone);
-  // The last instant before today's midnight falls on the person's yesterday, DST included.
-  const yesterday = dayBounds(timeZone, new Date(today.start.getTime() - 1));
-  const [loaded, finished] = await Promise.all([
+  const [context, finished] = await Promise.all([
     loadUserContext(email, session, timeZone),
-    databaseConfigured() ? stepsFinishedBetween(email, yesterday.start, yesterday.end).catch(() => []) : [],
+    databaseConfigured() ? finishedYesterday(email, timeZone).catch(() => []) : [],
   ]);
-  const context = { ...loaded, canvas };
   // Only the model's opening names it, so only that answer says it was noticed.
   const pattern = newPattern(context.memories, heard, timeZone);
   const rule = () =>
-    NextResponse.json({
-      state: "ok",
-      opening: ruleOpening(context, firstName),
-      options: ruleOptions(context),
-      pick: rulePick(context),
-    } satisfies OpeningResponse);
+    NextResponse.json({ state: "ok", opening: ruleOpening(context, finished), options: ruleOptions(context), pick: null } satisfies OpeningResponse);
   if (!aiConfigured()) return rule();
 
   try {
@@ -59,18 +50,15 @@ async function opening(privateFacts: string[], canvas: CanvasBrief[], heard: str
     const text = await askModel(
       [
         { role: "system", content: systemPrompt(firstName, context.memories, refs, privateFacts) },
-        { role: "user", content: openingPrompt(context, firstName, finished, refs, new Date(), pattern?.text) },
+        { role: "user", content: openingPrompt(context, finished, refs, new Date(), pattern?.text) },
       ],
       // Measured live on three days: low averaged 3.5 s to minimal's 2.9 s, for no better lines.
       { effort: "minimal", maxTokens: 2048, schema: OPENING_SCHEMA },
     );
-    const reply = parseOpening(text, context.goal, refs, localDate(timeZone));
-    if (!reply) throw new Error("Opening reply did not match the schema");
-    // A pick that fails the checks gets the rule card and the rule line that names it, never words about something else.
-    if (!reply.pick && rulePick(context)) return rule();
-    // Measured live: the model can ask a question and still offer nothing to tap.
+    const reply = parseOpening(text, firstName);
+    if (!reply) throw new Error("Opening reply was not JSON, was only a question, or greeted them");
     const options = reply.options.length > 0 ? reply.options : ruleOptions(context);
-    return NextResponse.json({ state: "ok", opening: withoutRefs(reply.say, context.goal, refs), options, pick: reply.pick, ...(pattern && { noticed: [pattern.id] }) } satisfies OpeningResponse);
+    return NextResponse.json({ state: "ok", opening: withoutRefs(reply.say, context.goal, refs), options, pick: null, ...(pattern && { noticed: [pattern.id] }) } satisfies OpeningResponse);
   } catch (error) {
     // Never log the reply itself: it quotes the person's calendar and email.
     console.error("Opening model call failed:", error instanceof Error ? error.message.slice(0, 120) : "unknown");
