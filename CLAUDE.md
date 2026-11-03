@@ -7,6 +7,7 @@ Start with HANDOFF.md (current state, in-flight branches, next steps), then the 
 - Next 16 + `cacheComponents`: no `runtime`/`dynamic`/`revalidate`/`fetchCache`/`dynamicParams` exports in route files.
 - Dates and times: the server runs in UTC; use `src/lib/tz.ts`.
 - Product spec (SDLC Studio): `sdlc-studio/prd.md` holds Vi's Nov 3 answers, which win over older plans (draft until Vi approves); personas in `sdlc-studio/personas/`; the demo plan in `docs/DEMO-NOV4.md`.
+- Backlog (SDLC Studio, drafts until Vi approves each epic): `sdlc-studio/epics/_index.md` has the Nov 4 epics, then the Later ones in order with the why; Nov 4 stories in `sdlc-studio/stories/` name the files they touch and how each is verified.
 - Muse: always set `reasoning_effort`; never send personal data to `*-contributor` models; never speak a tool-call preamble as a result.
 - Voice locally needs `npx vercel@65.7.0 dev --local`.
 - Secrets stay in `.env.local` / Vercel. Never print or commit them.
