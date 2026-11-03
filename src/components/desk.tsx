@@ -1,10 +1,10 @@
 "use client";
 
 import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { DayEvent, Deadline, Goal, SourceState, Step, WeekEvent } from "@/lib/day";
+import type { DayEvent, Deadline, Goal, SourceState, Step } from "@/lib/day";
 import type { Today } from "@/components/day-view";
-import { browserZone, freeGaps, markEvents, senderName, timeRange, unescapeHtml } from "@/components/desk-rows";
-import WeekGrid, { type Booked } from "@/components/week-grid";
+import { browserZone, freeGaps, httpsOnly, markEvents, senderName, timeRange } from "@/components/desk-rows";
+import WeekGrid from "@/components/week-grid";
 import { formatTime, localDate } from "@/lib/tz";
 
 const STATUS: Record<Step["status"], string> = { done: "Done", doing: "Doing", todo: "To do", skipped: "Skipped" };
@@ -33,17 +33,21 @@ const time = (event: DayEvent) => (event.allDay ? "All day" : formatTime(event.s
 type DeskTab = "today" | "week";
 const TABS: Record<DeskTab, string> = { today: "Today", week: "Week" };
 
-// tab is the view it opens on; the person switches between Today and Week inside. onBooked hears the Week's bookings;
-// booked is what the card booked since the day loaded, which Today shows like the Week's.
+// The day's Gmail link (DayResponse.mailUrl), for the inbox's "Open Gmail".
+type DeskToday = Today & { mailUrl?: string };
+
+// tab is the view it opens on; the person switches between Today and Week inside. booked is what the card booked since
+// the day loaded, which Today shows. Nothing here writes to the calendar.
 type DeskProps = {
   open: boolean;
   tab?: DeskTab;
-  today: Today | null;
+  today: DeskToday | null;
   goal: Goal | null;
   booked?: DayEvent[];
   onClose(): void;
   onSignIn(): void;
-  onBooked?(change: Booked): void;
+  // Unused since the Week went read-only; day-view.tsx may still pass it.
+  onBooked?: unknown;
 };
 
 // Only the backdrop: a click on the dialog's own scrollbar lands inside its box.
@@ -54,15 +58,9 @@ function onBackdrop(event: MouseEvent<HTMLDialogElement>) {
 }
 
 // Today's calendar and inbox in one wide view, unfolded from the card: the seed of the workstation.
-export default function Desk({ open, onClose, onBooked, booked: byCard = [], ...rest }: DeskProps) {
+export default function Desk({ open, onClose, ...rest }: DeskProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const downOnBackdrop = useRef(false);
-  // Blocks the Week booked since the day loaded, kept while the desk closes, so Today shows them and not their time as free.
-  const [booked, setBooked] = useState<WeekEvent[]>([]);
-  function onWeekBooked(change: Booked) {
-    setBooked((all) => (change.undone ? all.filter((event) => event.id !== change.event.id) : [...all, change.event]));
-    onBooked?.(change);
-  }
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
@@ -93,7 +91,7 @@ export default function Desk({ open, onClose, onBooked, booked: byCard = [], ...
         if (downOnBackdrop.current && onBackdrop(event)) event.currentTarget.close();
       }}
     >
-      {open && <DeskBody {...rest} booked={[...byCard, ...booked]} onBooked={onWeekBooked} />}
+      {open && <DeskBody {...rest} />}
     </dialog>
   );
 }
@@ -120,9 +118,7 @@ function unfold(dialog: HTMLDialogElement, from: DOMRect | undefined) {
   dialog.firstElementChild?.animate([{ opacity: 0.4 }, { opacity: 1 }], { duration: 120, easing: "ease-out" });
 }
 
-type DeskBodyProps = Omit<DeskProps, "open" | "onClose" | "onBooked"> & { booked: DayEvent[]; onBooked(change: Booked): void };
-
-function DeskBody({ tab: opensOn = "today", today, goal, onSignIn, booked, onBooked }: DeskBodyProps) {
+function DeskBody({ tab: opensOn = "today", today, goal, onSignIn, booked = [] }: Omit<DeskProps, "open" | "onClose">) {
   // Wall clock to the minute; 0 on the server, so nothing is marked before the browser knows the time.
   const now = useSyncExternalStore(everyHalfMinute, () => Math.floor(Date.now() / 60_000) * 60_000, () => 0);
   const [tab, setTab] = useState(opensOn);
@@ -176,7 +172,7 @@ function DeskBody({ tab: opensOn = "today", today, goal, onSignIn, booked, onBoo
 
       {tab === "week" ? (
         <div id="desk-week" role="tabpanel" aria-labelledby="desk-tab-week" className="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4 sm:px-8 sm:pb-8">
-          <WeekGrid goal={goal} now={now} onSignIn={onSignIn} onBooked={onBooked} />
+          <WeekGrid now={now} onSignIn={onSignIn} />
         </div>
       ) : (
         <div id="desk-today" role="tabpanel" aria-labelledby="desk-tab-today" className="flex flex-col gap-6 px-4 pb-8 sm:px-8">
@@ -324,8 +320,10 @@ function Deadlines({ deadlines }: { deadlines: Deadline[] }) {
   );
 }
 
-function Inbox({ today }: { today: Today }) {
+// Only important mail reaches the desk: one line each, sender and subject, unread in bold.
+function Inbox({ today }: { today: DeskToday }) {
   const { email } = today.sources;
+  const gmail = httpsOnly(today.mailUrl);
   return (
     <section className="mini">
       <div className="flex items-baseline justify-between gap-4">
@@ -336,27 +334,37 @@ function Inbox({ today }: { today: Today }) {
           </p>
         )}
       </div>
-      <ul className="lines mt-2">
-        {email !== "ok" ? (
-          <li className="text-ink-2">{SOURCE_NOTE[email]("inbox")}</li>
-        ) : today.emails.length === 0 ? (
-          <li className="text-ink-2">Nothing in your inbox.</li>
-        ) : (
-          today.emails.slice(0, 8).map((mail, i) => (
-            <li key={`${i}:${mail.from}:${mail.subject}`}>
-              <p className={`truncate max-sm:line-clamp-2 max-sm:whitespace-normal ${mail.unread ? "font-bold" : ""}`}>
+      <div className="lines mt-2">
+        <ul>
+          {email !== "ok" ? (
+            <li className="text-ink-2">{SOURCE_NOTE[email]("inbox")}</li>
+          ) : today.emails.length === 0 ? (
+            <li className="text-ink-2">Nothing important in your inbox.</li>
+          ) : (
+            today.emails.slice(0, 6).map((mail, i) => (
+              <li
+                key={`${i}:${mail.from}:${mail.subject}`}
+                className={`truncate max-sm:line-clamp-2 max-sm:whitespace-normal ${mail.unread ? "font-bold" : ""}`}
+              >
                 {mail.unread && <span className="sr-only">Unread: </span>}
                 {senderName(mail.from)}
                 <span className="px-2 font-normal text-ink-2" aria-hidden="true">
                   ·
                 </span>
                 {mail.subject}
-              </p>
-              {mail.snippet && <p className="truncate text-ink-2">{unescapeHtml(mail.snippet)}</p>}
-            </li>
-          ))
+              </li>
+            ))
+          )}
+        </ul>
+        {gmail && (
+          <p>
+            <a href={gmail} target="_blank" rel="noopener noreferrer" className="text-ink-2 underline underline-offset-4">
+              Open Gmail
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
+          </p>
         )}
-      </ul>
+      </div>
     </section>
   );
 }

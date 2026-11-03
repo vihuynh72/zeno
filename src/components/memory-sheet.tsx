@@ -57,16 +57,17 @@ export default function MemorySheet({
         </div>
       ) : facts.length === 0 ? (
         <p className="mini">
-          <span className="lines block">Nothing yet. When you tell Zeno how you like to work, it&apos;ll remember it here.</span>
+          <span className="lines block">Nothing yet. As you use Zeno, what it learns shows up here.</span>
         </p>
       ) : (
+        // One ruled card per group, a fact per line, like Today's cards.
         groupFacts(facts).map((entry) => (
-          <section key={entry.group} aria-label={entry.name} className="flex flex-col gap-2">
+          <section key={entry.group} aria-label={entry.name} className="mini">
             <h3 className="text-[20px] leading-8 font-bold">{entry.name}</h3>
-            <ul className="flex flex-col gap-2">
+            <ul className="lines mt-2">
               {entry.facts.map((fact) => (
-                <li key={fact.id} className="mini flex items-start gap-2">
-                  <p className="lines min-w-0 flex-1">
+                <li key={fact.id} className="flex items-start gap-2">
+                  <p className="min-w-0 flex-1 wrap-break-word">
                     {fact.text}
                     {fact.device && <span className="block text-[18px] text-ink-2">Only on this device</span>}
                   </p>

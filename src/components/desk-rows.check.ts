@@ -8,7 +8,7 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { bookedEvents, markEvents, senderName, unescapeHtml } = await import("./desk-rows.ts");
+const { bookedEvents, canvasHost, httpsOnly, markEvents, senderName } = await import("./desk-rows.ts");
 
 const event = (title: string, start: string, end: string, allDay = false): DayEvent => ({ title, start, end, allDay });
 const day = [
@@ -55,9 +55,16 @@ assert.equal(senderName("dana@school.edu"), "dana@school.edu");
 assert.equal(senderName("<dana@school.edu>"), "dana@school.edu");
 assert.equal(senderName("Unknown sender"), "Unknown sender");
 
-assert.equal(unescapeHtml("I&#39;ll send it &amp; call &quot;soon&quot;"), `I'll send it & call "soon"`);
-assert.equal(unescapeHtml("&lt;3 &#x1F44B; &AMP;"), "<3 \u{1F44B} &");
-// Unknown names, prototype keys and out-of-range code points are left as written.
-assert.equal(unescapeHtml("&constructor; &#0; &#99999999; &#x;"), "&constructor; &#0; &#99999999; &#x;");
+// Event and Gmail links open only as https pages; anything else (a script URL, plain http, nothing) is no link.
+assert.equal(httpsOnly("https://www.google.com/calendar/event?eid=abc"), "https://www.google.com/calendar/event?eid=abc");
+assert.equal(httpsOnly("https://mail.google.com/mail/?authuser=maya@school.edu"), "https://mail.google.com/mail/?authuser=maya@school.edu");
+for (const bad of ["javascript:alert(1)", " https://x.com", "http://www.google.com/calendar", "", null, undefined]) {
+  assert.equal(httpsOnly(bad), undefined, String(bad));
+}
+
+// The Canvas sheet names the school's host, however the address was typed.
+assert.equal(canvasHost("sjsu.instructure.com"), "sjsu.instructure.com");
+assert.equal(canvasHost("  https://SJSU.instructure.com/courses/123?x=1 "), "sjsu.instructure.com");
+assert.equal(canvasHost("http://canvas.school.edu/"), "canvas.school.edu");
 
 console.log("desk-rows self-check passed");
