@@ -13,7 +13,8 @@ fixes from three reviews. **All of it is on `main` and in production** (Nov 2, 9
 from the live test below.
 
 ### Before recording (on `main` and in production since Nov 3, 3:25 AM PT: `32cef15`; live-tested below)
-Vi's four "do it now" answers (PRD OQ-2 to OQ-5; stories US0010 to US0013 on `sdlc/backlog`):
+Four things Vi decided in the Nov 2 brief, built now because that is the PRD default for OQ-2 to OQ-5 (Vi has not
+confirmed the timing yet: keep or revert each; stories US0010 to US0013 in `sdlc-studio/stories/`):
 - **Reminders off**: Zeno's timed blocks and all-day "Due:" events carry `reminders: { useDefault: false, overrides: [] }`
   (`eventFor`, `src/lib/calendar.ts`). Blocks booked before keep their 10-minute popup. The app gives no heads-up for
   Zeno's own blocks either (`soonEvent`, `src/components/day-flow.ts`); the person's own events still get one.
@@ -277,6 +278,9 @@ the 2 PM reset cut-off). Everything is Draft until Vi approves; "yes to the defa
   freeze, US0016 reset at Vi's go by 2 PM Nov 3, US0017 live check before the Nov 9 final: not started.
 
 ### Next steps (Nov 3)
+Every open decision with its default, Vi's checklist and the risks are on one page, private to Vi:
+https://app.superset.sh/page/zeno-nov-3-brief-gf2zpp (source `.claude/pages/zeno-nov3-brief.html` in the main checkout,
+not in git; republish that path to version it).
 1. Vi, morning: approve the PRD and Nov 4 epics or say what to change; rename the demo Google account to Maya; sign out
    of Zeno and in again (sign-out clears the device's Canvas link) and re-link Canvas with a **new** token (revoke the
    one pasted in chat on Nov 2); the 2-minute voice test; read `docs/TONE-SAMPLES-NOV3.md` and hear the Done sound
