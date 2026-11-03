@@ -196,7 +196,8 @@ Four cards, in this order:
 - **Privacy:**
   - An email's text passes through the server in memory only. It is never stored, logged, saved in the browser or
     sent to the model.
-  - Canvas instructions reach the model only in `/api/goal/plan`, as `/api/prep` already does.
+  - Canvas instructions reach the model in `/api/goal/plan` and `/api/prep`, and in Talk as before (the opening no
+  longer gets them).
   - Plan and step titles go through `privateTitle`.
 - **One current plan.** Opening a plan makes it the current one; the others are paused, not lost. Talk, Focus and the
   check-in keep working on the current plan.

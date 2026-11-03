@@ -5,7 +5,7 @@ import { checkPlanRequest, planDeadline, rulePlan } from "@/lib/agent";
 import { aiConfigured } from "@/lib/ai";
 import type { GoalResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
-import { setGoal } from "@/lib/goals";
+import { activateGoal, openGoals, setGoal, titleKey } from "@/lib/goals";
 import { localDate, timeZoneFrom } from "@/lib/tz";
 
 // One model call, then the save.
@@ -36,7 +36,12 @@ export async function POST(request: Request) {
       })
     : null;
   try {
-    const goal = await setGoal(session.user.email, plan.title, steps ?? rulePlan(plan.title), plan.due);
+    const email = session.user.email;
+    // A second tap, or two at once, while this plan was being made: the plan already saved opens, never a copy.
+    const twin = (await openGoals(email)).find((goal) => titleKey(goal.title) === titleKey(plan.title));
+    const goal = twin
+      ? ((await activateGoal(email, twin.id)) ?? twin)
+      : await setGoal(email, plan.title, steps ?? rulePlan(plan.title), plan.due);
     return NextResponse.json({ state: "ok", goal } satisfies GoalResponse);
   } catch (error) {
     console.error("Plan save failed:", error instanceof Error ? error.message.slice(0, 120) : "unknown");

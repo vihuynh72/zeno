@@ -447,6 +447,12 @@ assert.deepEqual(
   parseOpening(JSON.stringify({ say: "You got Outline claim 2 done yesterday. You're free until PHIL 134 at 1:30. Start now?", options: ["Keep going", "Plan tomorrow?"] }), "Maya"),
   { say: "You got Outline claim 2 done yesterday. You're free until PHIL 134 at 1:30.", options: ["Keep going", "Plan tomorrow"] },
 );
+for (const pattern of ["Evening is when you get the most done, so the big step waits for tonight.", "Afternoon is your strongest stretch.", "Morning's your best time for the hard step."]) {
+  assert.equal(parseOpening(JSON.stringify({ say: pattern, options: [] }), "Maya")?.say, pattern, "a day-2 pattern line is kept");
+}
+for (const greets of ["Morning. You're free until 1:30.", "Evening! Two steps yesterday."]) {
+  assert.equal(parseOpening(JSON.stringify({ say: greets, options: [] }), null), null, greets);
+}
 for (const greets of ["Morning, Maya. You're free until 1:30.", "Good afternoon. You're free until 1:30.", "Maya, you're on a 3-day streak.", "Hey, you're free until 1:30.", "Evening Maya, you're on a roll."]) {
   assert.equal(parseOpening(JSON.stringify({ say: greets, options: [] }), "Maya"), null, greets);
 }

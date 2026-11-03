@@ -1,6 +1,7 @@
 # Zeno: the Nov 4 demo video
 
 **Status:** Draft, awaiting Vi's approval. Once approved, it replaces the shot list in `docs/SUBMISSION.md`.
+**Nov 3 update:** shots 3 and 4 now show the goal-first day (`docs/PLAN-NOV3.md`), and recording moved to Nov 4 (see "Recording plan").
 **Due:** Nov 4, 6:00 PM PT. **Length:** 3:00. **Account:** the demo account dotcainha@gmail.com only, never Vi's own.
 **Spec:** `sdlc-studio/prd.md` (feature ids like A3 and open questions like OQ-2 point there).
 
@@ -48,9 +49,10 @@ Shots 7-8 cover how it's built (Meta AI use is 25% of judging) and the close.
 
 - **On screen:** the take starts signed out (only Zeno's session cookie deleted, so Canvas stays linked; see "Before
   every take") → Sign in with Google → "Reading your calendar and email…" (cut the wait) → "I read your calendar and
-  email and learned N things, including N deadlines." [Start my day] → the wall from shot 2 folds into one card. The
-  first card after a reset is the first step of a new plan, about 5 minutes, for example "Reread the PHIL 134 prompt ·
-  5 min · PHIL 134 paper · due Fri" with [Start · 5 min].
+  email and learned N things, including N deadlines." [Start my day] → the home: "Hey Maya." and Zeno's line, then
+  "What are we working on?" with up to 3 goals: Canvas deadlines she hasn't started ("not started · due Fri") and the
+  Prof. Patel email that asks her something ("Answer Prof. Patel · 2 min"). The wall from shot 2 folds into three
+  choices she picks from.
 - **Say:** "Zeno is for brains that know what to do but can't start, ADHD brains included. It reads your calendar, your
   email and Canvas, and turns all of it into one card: the next small step."
 - **App must do:** the first sign-in scan, its one line, and a first card with Start, picked from real deadlines
@@ -59,11 +61,14 @@ Shots 7-8 cover how it's built (Meta AI use is 25% of judging) and the close.
 
 ### 4. 0:50-1:30 · Moment 2: focus with Zeno (it stays with you)
 
-- **On screen:** tap Start on the 5-minute first step → a stopwatch counting up from 0:00 with "of 5 min" in grey →
+- **On screen:** tap a goal (the PHIL 134 paper) → "Breaking it into steps…" (about 4 s, cut it) → its desk: the goal
+  bar, "Next: <first step> · 5 min", every step, and "On your desk" with the assignment's own words from Canvas → tap
+  Start → a stopwatch counting up from 0:00 with "of 5 min" in grey →
   Music: lo-fi → at about 0:20 cut to Google Docs, typing → back to Zeno's tab after 70 to 90 seconds: the card reads
   "Back. 1 min on 'Reread the PHIL 134 prompt'." → stay on Zeno's tab: at the step's check-in minute (minute 4 by
   default; Muse picks it for each step) the card's soft line reads "Still with it? Keep going." → Done → the DONE stamp
-  → "Nice. Next: <next step>, N min" [Keep going] and the streak row.
+  → the goal bar fills a segment → "Nice. Next: <next step>, N min. You have 1 h 25 min until <event>." [Keep going]
+  and the streak row.
 - **Say:** "Tap Start. No alarm, no pings. Zeno just stays with you. Wander off, come back, and it knows where you
   were. Done, and the next step is already waiting."
 - **App must do:**
@@ -159,10 +164,13 @@ reset has a fixed time.
 | 2 PM, the cut-off | The reset, whether or not every item shipped (or as soon as the release check passes, if that is sooner). Shot 3 right after; shots 4 and 5 if their items are live | US0016 |
 | 2 PM to 10 PM | Use Zeno for real on the demo account: 5 or more finished steps, most in one part of the day (afternoon is noon to 5 PM, evening 5 PM to 10 PM). Do not seed fake history | - |
 
-### Nov 4
+### Nov 4 (updated Nov 3: the goal-first day ships the night of Nov 3)
 
-1. **Morning, no reset:** record shot 6 first, before anything else opens the demo account. Then any of shots 4 and 5
-   not yet recorded.
+1. **Morning, no reset:** record shot 6 first, before anything else opens the demo account.
+2. **Then the reset** (Claude, at Vi's go), so shot 3 shows a first sign-in on the new home.
+3. Shots 3, 4 and 5 on the new flow. The Prof. Patel email must arrive before shot 3 and ask a question (for example
+   "Does Wednesday at 2 or Thursday at 11 work for you?"): mail the person sent never counts as asking, so Maya's
+   self-sent emails never show as a goal.
 2. Shots 1, 2, 7 and 8 are made in the edit. Upload, check the link in a private window, and submit before 6 PM PT.
 
 **If a Nov 4 item lands late:** reset and record shot 3 at the cut-off anyway (it needs none of them); the item ships

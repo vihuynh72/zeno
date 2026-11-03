@@ -351,8 +351,12 @@ export function parseOpening(text: string | null, firstName: string | null): { s
   }
   const sentences = (typeof data?.say === "string" ? data.say : "").match(/[^.!?]+[.!?]*/g) ?? [];
   const say = sentences.filter((sentence) => !sentence.trim().endsWith("?")).join("").trim();
-  const name = firstName ? `|${firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}` : "";
-  const greets = new RegExp(`^(good (morning|afternoon|evening|day)|hey|hi|hello|morning|afternoon|evening|still up${name})\\b`, "i");
+  const escaped = firstName ? firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : "";
+  const name = escaped ? `|${escaped}` : "";
+  // A bare time of day greets only with punctuation or the name after it ("Evening, Maya."): "Evening is when you get the
+  // most done" is a day-2 pattern line (US0013, found in review Nov 3), never a greeting.
+  const daypart = `(morning|afternoon|evening)(?=\\s*[,.!]${escaped ? `|\\s+${escaped}\\b` : ""})`;
+  const greets = new RegExp(`^(good (morning|afternoon|evening|day)|hey|hi|hello|still up${name})\\b|^${daypart}`, "i");
   return say && !greets.test(say) ? { say, options: shortStrings(data?.options, 3, 48) } : null;
 }
 

@@ -79,6 +79,17 @@ export function orderGoals(open: OpenGoal[]): Goal[] {
 }
 
 // Every active or paused plan with a todo or doing step, with its steps, in orderGoals' order.
+// A plan title as two screens compare it: lowercase, every run of other characters one space (as day-flow's sameTitle).
+export const titleKey = (title: string) => title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
+// Plans finished before their due date (today or later, on the person's clock): their deadline is done, so the home, the
+// Desk and the Week stop offering it as "not started" (found in review, Nov 3).
+export async function doneTitles(email: string, today: string): Promise<string[]> {
+  await ensureSchema();
+  const rows = await getSql()`SELECT title FROM goals WHERE user_email = ${email} AND status = 'done' AND due >= ${today}`;
+  return rows.map((row) => String(row.title));
+}
+
 export async function openGoals(email: string): Promise<Goal[]> {
   await ensureSchema();
   const rows = await getSql()`

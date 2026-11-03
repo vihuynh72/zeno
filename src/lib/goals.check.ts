@@ -9,8 +9,8 @@ registerHooks({
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
 const {
-  activateGoal, changeStepStatus, currentGoal, finishedDays, finishedYesterday, openGoals, orderGoals, recentSteps, replaceRemainingSteps, savePrep,
-  setGoal, setStepStatus, stepTitles,
+  activateGoal, changeStepStatus, currentGoal, doneTitles, finishedDays, finishedYesterday, openGoals, orderGoals, recentSteps, replaceRemainingSteps, savePrep,
+  setGoal, setStepStatus, stepTitles, titleKey,
 } = await import("./goals.ts");
 const { getSql } = await import("./db.ts");
 const { localDate } = await import("./tz.ts");
@@ -492,6 +492,14 @@ try {
   await sql`UPDATE steps SET done_at = ${new Date(noon).toISOString()} WHERE id = ${essay.steps[0].id}`;
   await setStepStatus(switchEmail, quiz.steps[0].id, "done");
   assert.deepEqual(await finishedYesterday(switchEmail, zone), ["Read the prompt"]);
+
+  // A plan finished before its due date hides that deadline (the home, the Desk and the Week match by titleKey).
+  assert.equal(titleKey("PHIL 134: Essay 2!"), "phil 134 essay 2");
+  const early = await setGoal(switchEmail, "PHIL 134: Essay 2", [{ title: "Read the prompt", minutes: 5 }], "2099-12-31");
+  assert.deepEqual(await doneTitles(switchEmail, "2026-11-03"), [], "an open plan is not done");
+  await changeStepStatus(switchEmail, early.steps[0].id, "done");
+  assert.deepEqual(await doneTitles(switchEmail, "2026-11-03"), ["PHIL 134: Essay 2"], "its last step finished it");
+  assert.deepEqual(await doneTitles(switchEmail, "2100-01-01"), [], "past its due date it is not listed");
 } finally {
   await sql`DELETE FROM goals WHERE user_email = ${switchEmail}`;
 }

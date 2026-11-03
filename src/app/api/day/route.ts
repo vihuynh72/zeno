@@ -6,11 +6,11 @@ import { loadUserContext, scrub } from "@/lib/context";
 import type { DayResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
 import { addressOf, asks } from "@/lib/gmail";
-import { finishedYesterday, hasAnyGoal, openGoals, recentSteps } from "@/lib/goals";
+import { doneTitles, finishedYesterday, hasAnyGoal, openGoals, recentSteps, titleKey } from "@/lib/goals";
 import { paceOf } from "@/lib/patterns";
 import { sensitiveEmail } from "@/lib/profile";
 import { accountKey } from "@/lib/session-json";
-import { timeZoneFrom } from "@/lib/tz";
+import { timeZoneFrom, localDate } from "@/lib/tz";
 
 export const maxDuration = 30;
 
@@ -24,7 +24,7 @@ export async function GET() {
   const email = session.user.email;
   const firstName = session.user.name?.trim().split(/\s+/)[0] || null;
   const timeZone = timeZoneFrom((await cookies()).get("tz")?.value);
-  const [context, anyGoal, steps, goals, finished] = await Promise.all([
+  const [context, anyGoal, steps, goals, finished, done] = await Promise.all([
     loadUserContext(email, session, timeZone),
     // A failed read counts as having goals, so an error never restarts the first-time setup.
     databaseConfigured() ? hasAnyGoal(email).catch(() => true) : true,
@@ -33,7 +33,9 @@ export async function GET() {
     // A failed read leaves goals out, so the screens fall back to the current goal, as for a day saved before Nov 3.
     databaseConfigured() ? openGoals(email).catch(() => undefined) : [],
     databaseConfigured() ? finishedYesterday(email, timeZone).catch(() => []) : [],
+    databaseConfigured() ? doneTitles(email, localDate(timeZone)).catch(() => []) : [],
   ]);
+  const finishedKeys = new Set(done.map(titleKey));
 
   return NextResponse.json({
     state: "ok",
@@ -48,7 +50,7 @@ export async function GET() {
     sources: { calendar: context.calendarState, email: context.emailState, goals: context.tasksState },
     events: context.events.map(({ title, start, end, allDay, zeno }) => ({ title, start, end, allDay, zeno })),
     free: context.free,
-    deadlines: context.deadlines,
+    deadlines: context.deadlines.filter((deadline) => !finishedKeys.has(titleKey(deadline.title))),
     calendarWrite: context.calendarWrite,
     // The day is kept in the browser, and codes are kept nowhere: code and bank mail shows that it came, not what it says,
     // and never asks. Mail the person sent never asks either.

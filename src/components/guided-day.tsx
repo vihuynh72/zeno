@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { signIn, signOut } from "next-auth/react";
 import type {
   ActivateRequest,
@@ -313,6 +313,7 @@ export default function GuidedDay() {
   const nextOpening = useRef<Promise<OpeningResponse | { state: "error" }> | null>(null);
   const saves = useRef<Promise<unknown>[]>([]); // the first scan and pasted notes still being saved
   const opened = useRef(0); // the latest desk asked for: a slower answer for an earlier one never moves the screen
+  const making = useRef(new Set<string>()); // deadlines and emails whose plan is being made: a second tap waits for it
   const wrapLine = useRef(WRAP_LINE); // the line after Stop for now, with today's steps
   const booking = useRef(new Set<string>()); // booking chips with a request in flight, so a double tap books once
   const bookedLine = useRef<string | null>(null); // the talk offer whose booking replaced Zeno's line
@@ -413,8 +414,12 @@ export default function GuidedDay() {
 
   // A plan saved new after she moved on is the server's current one, so it is here too, unless she opened another desk.
   function takeNew(next: Goal) {
-    if (latest.current.view === "desk") takeGoal(next);
-    else changeGoal(next);
+    if (latest.current.view !== "desk") return changeGoal(next);
+    takeGoal(next);
+    // Saving it made it the server's current plan, so the desk on screen is made current again: Talk, Start and Done
+    // always act on the plan she sees (found in review, Nov 3).
+    const shown = latest.current.goal;
+    if (shown && shown.id !== next.id) void post<GoalResponse>("/api/goal/activate", { id: shown.id } satisfies ActivateRequest);
   }
 
   function changeProgress(next: Progress) {
@@ -917,6 +922,9 @@ export default function GuidedDay() {
 
   // A plan's desk shows at once from the day's plans; it becomes the current plan (the old one is paused, not lost).
   async function openPlan(target: Goal) {
+    // Back to the plan she is working on (its Desk row, deadline or email): Focus and its stopwatch keep going.
+    const { goal: now, screen: on } = latest.current;
+    if (target.id === now?.id && (on === "focus" || on === "checkin")) return;
     const ticket = openDesk();
     const before = latest.current.goal;
     setPlanning(null);
@@ -940,12 +948,16 @@ export default function GuidedDay() {
   async function planDeadline(deadline: Deadline) {
     const covered = openPlans(latest.current.goal, latest.current.goals).find((plan) => sameTitle(plan.title, deadline.title));
     if (covered) return openPlan(covered);
+    const key = `deadline:${deadline.title.toLowerCase()}`;
+    if (making.current.has(key)) return;
+    making.current.add(key);
     const ticket = openDesk();
     const mine = account();
     const canvas = mine ? canvasFor({ id: "", title: deadline.title, steps: [] }, canvasBriefs(mine)) : undefined;
     const due = deadline.date >= localDate(zone()) ? deadline.date : null;
     setPlanning({ title: deadline.title, due, line: "Breaking it into steps…" });
     const res = await post<GoalResponse>("/api/goal/plan", { title: deadline.title, due, ...(canvas ? { canvas } : {}) } satisfies PlanRequest);
+    making.current.delete(key);
     if (res.state === "signed-out") return showSignedOut();
     if (ticket !== opened.current) {
       if (res.state === "ok") takeNew(res.goal);
@@ -963,11 +975,15 @@ export default function GuidedDay() {
     const known = Object.entries(mailGoals).find(([, id]) => id === email.id)?.[0];
     const plan = known ? openPlans(latest.current.goal, latest.current.goals).find((one) => one.id === known) : undefined;
     if (plan) return openPlan(plan);
+    const key = `mail:${email.id ?? email.subject}`;
+    if (making.current.has(key)) return;
+    making.current.add(key);
     const ticket = openDesk();
     const words = mailPlan(email);
     setPlanning({ title: words.title, due: null, line: "Getting it ready…" });
     let res = await post<GoalResponse>("/api/goal", words);
     if (res.state === "bad-request") res = await post<GoalResponse>("/api/goal", mailPlan(null));
+    making.current.delete(key);
     if (res.state === "signed-out") return showSignedOut();
     const mine = account();
     if (res.state === "ok" && email.id && mine) {
@@ -1198,6 +1214,13 @@ export default function GuidedDay() {
     setLine(day?.opening ?? "");
     setOptions(quickReplies(day?.options));
     setWantOpening((n) => n + 1);
+    // The scan saved what it found (its deadlines too) after /api/day answered, so the home reads the day again, Canvas
+    // first when it is linked here; else the first home lists no deadlines until a reload (found in review, Nov 3).
+    const mine = account();
+    if (!mine) return;
+    void (readCanvas(mine) ? syncCanvas(mine) : Promise.resolve(null))
+      .then(() => getJson<DayResponse>("/api/day"))
+      .then((again) => takeDay(again));
   }
 
   // ---------- Memory ----------
@@ -1303,7 +1326,7 @@ export default function GuidedDay() {
   const step = openSteps(goal)[0];
   // The desk's materials read this device's Canvas list only once /api/day said whose it is.
   const mine = daySet?.account;
-  const brief = onDesk && mine ? canvasFor(goal, canvasBriefs(mine)) : undefined;
+  const brief = useMemo(() => (onDesk && mine ? canvasFor(goal, canvasBriefs(mine)) : undefined), [onDesk, mine, goal]);
   const assignment = onDesk && mine ? canvasFor(goal, canvasList(mine) ?? []) : undefined;
   const mailId = goal ? mailGoals[goal.id] : undefined;
   const gmail = httpsOnly(day?.mailUrl);

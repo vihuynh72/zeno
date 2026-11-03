@@ -1,10 +1,56 @@
 # Zeno handoff
 
-Last updated: 2026-11-03, by Claude (session 4: the Nov 2 round, the tidy round, the Nov 4 sprint and the
-pre-recording build, all on `main` and live-tested on production).
+Last updated: 2026-11-03 afternoon, by Claude (session 4: the Nov 3 round, a goal-first day; before it the Nov 2 round,
+the tidy round, the Nov 4 sprint and the pre-recording build, all live-tested on production).
 Read this first, then the Linear doc **"Zeno hackathon build plan (Nov 4)"** (project Zeno, team VI).
 
-## 0. Session 4 (2026-11-02): the Nov 2 round
+## 0. The Nov 3 round: a goal-first day (branch `nov3/goal-first`, Linear VI-357)
+
+Vi used production on Nov 3 and found the flow weak:
+- greeted "with a freaking app right away"
+- no visible goal and no workstation
+- an inbox you can't read or act on
+- Week looking like Today
+- an odd "Type" link
+
+Claude drew one student's day screen by screen. The storyboard is private to Vi:
+https://app.superset.sh/page/zeno-storyboard-rzwf8n (source `.claude/pages/zeno-storyboard.html` in the main checkout,
+not in git). Claude then interviewed Vi with 8 questions. **Spec: `docs/PLAN-NOV3.md`** (it wins over PLAN-NOV2).
+
+- **Home:** the greeting (shown and spoken) and Zeno's line: yesterday's win and the free time until the next event.
+  Then "What are we working on?" with up to 3 goals: open plans, deadlines due within 7 days with no plan, and the
+  newest email that asks her something. She picks the goal; Zeno picks the step.
+- **The goal's desk:**
+  - "← All goals", then the goal bar.
+  - "Next: <step>" and [Start · N min], with the links Something smaller · Another step.
+  - Every step.
+  - "On your desk": the Canvas prompt, where she stopped, the email for a mail goal, and Find sources.
+  - Focus and Done happen on the desk. Done fills the bar and shows "over halfway" past the middle.
+  - Stuck? offers Make it smaller · Switch goal, and asks nothing.
+- **Desk** (header link):
+  - Today: Goals, Mail ("Asks you" first, then the rest; every email opens in full in place, and Reply makes it a
+    2-minute goal), Deadlines, and today's calendar.
+  - Week: goals across the week (what's due, steps left, about how long, free time), with the calendar grid one tap
+    away.
+- **Dock:** Talk plus a keyboard button. Memory is in the account menu.
+- **Server:**
+  - `GET /api/day` adds `goals` (open plans) and, for each email, `id`, `address` and `asks`.
+  - New routes: `POST /api/goal/activate`, `POST /api/goal/plan` (one Muse call, minimal effort, with a rule plan as
+    fallback) and `GET /api/mail/[id]` (the full text, in memory only, `no-store`).
+  - The opening never greets, picks or asks; `pick` is always null.
+- **Built by:** the contract `e73d4ab`, then three tracks in parallel (`nov3/server`, `nov3/flow-ui`, `nov3/desk-ui`),
+  merged on `nov3/goal-first`. All checks passed after the merge: typegen, tsc, eslint, build, and every check script
+  (UTC, Los Angeles and Tokyo). The new screens were looked at in `/preview` in light and dark.
+- **Behavior changes to know:**
+  - "Stop for now", "Switch goal", the mark and "← All goals" put a running step back to todo.
+  - A step started under 3 hours ago reopens in Focus on load (a shortcut, tunable).
+  - Opening a plan pauses the old current plan (never loses it).
+- **For the recording:** see `docs/DEMO-NOV4.md` (updated).
+  1. Shot 6 first on Nov 4, then the reset, then shots 3 to 5.
+  2. Mail the person sent never counts as asking. The Prof. Patel email (DQ-2) must come from the demo-only mailbox
+     and ask a question, or no email shows on the home.
+
+## 0z. Session 4 (2026-11-02): the Nov 2 round
 
 Spec: `docs/PLAN-NOV2.md` (Vi's 16 answers after using production on Nov 2; it wins over `docs/PLAN-NOV.md`). Four
 tracks built it on `nov2/brain`, `nov2/memory-canvas`, `nov2/desk-ui` and `nov2/flow-ui`; they were merged, made to
