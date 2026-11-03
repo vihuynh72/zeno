@@ -6,6 +6,7 @@ type ListenError = "blocked" | "unsupported" | "network" | "no-speech";
 export type ListenHandlers = {
   onSpeechStart?: () => void;
   onPartial?: (text: string) => void;
+  onSpeechEnd?: () => void;
   onFinal: (text: string) => void;
   onError?: (reason: ListenError) => void;
 };
@@ -75,8 +76,11 @@ export async function listenWeb(
     };
     recognition.onend = () => {
       if (mine !== turn) return;
-      end();
-      if (!failed) handlers.onFinal(text.trim());
+      const said = text.trim();
+      // After words the person may go on after a pause, so a new recognition listens until useVoice pauses or stops.
+      if (said && !failed) begin();
+      else end();
+      if (!failed) handlers.onFinal(said);
     };
     recognition.start();
 

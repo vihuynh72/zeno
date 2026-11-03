@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { listenWeb, type ListenHandlers } from "./listen";
 import { playbackLevel, speakText, stopSpeaking, unlockAudio } from "./speak";
+import { soundsFinished } from "./turn";
 
 export type VoicePhase = "idle" | "listening" | "thinking" | "speaking";
 export type VoiceError = "blocked" | "unsupported" | "network" | null;
@@ -11,6 +12,9 @@ type UserTurn = (text: string, how: "voice" | "typed") => Promise<string | null>
 type ListenAfter = (said: string) => boolean;
 
 const LISTEN_LIMIT_MS = 30_000;
+// How long a pause after the last words ends the turn: short when they sound finished, long when they trail off.
+const FINISHED_WAIT_MS = 700;
+const UNFINISHED_WAIT_MS = 2_200;
 const subscribeNever = () => () => {};
 
 // Sound on or off is remembered per browser, so muting at night outlasts a reload; blocked storage means sound on.
@@ -38,7 +42,7 @@ function say(text: string) {
 }
 
 // Half duplex: the mic is released before Zeno speaks and opened again only after.
-// onSilence: a listen ended without hearing anything (no speech, an empty result, or the time limit).
+// onSilence: a listen ended without hearing anything (no speech, an empty result, or the time limit with no words).
 export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAfter; onSilence?: () => void }, adapter?: { listen?: Listen }) {
   const listen = adapter?.listen ?? listenWeb;
   const [phase, setPhase] = useState<VoicePhase>("idle");
@@ -62,7 +66,11 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
     let quietSet: boolean | null = null; // muted this visit; until then, the saved choice
     const quiet = () => quietSet ?? soundOff();
     let session: Awaited<ReturnType<Listen>> | null = null;
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined; // the listen limit
+    let wait: ReturnType<typeof setTimeout> | undefined; // the pause after the last words that ends the turn
+    let heard = ""; // the turn's final words so far, across the pauses in it
+    let live = ""; // words still being said
+    const said = () => `${heard} ${live}`.trim();
 
     function go(next: VoicePhase) {
       current = next;
@@ -73,6 +81,8 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
     function halt() {
       gen++;
       clearTimeout(timer);
+      clearTimeout(wait);
+      heard = live = "";
       session?.stop();
       session = null;
       stopSpeaking();
@@ -88,26 +98,55 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
       latest.current.onSilence?.();
     }
 
+    // Everything heard goes as one turn, then the session pauses as between any two turns.
+    function send() {
+      const text = said();
+      clearTimeout(timer);
+      clearTimeout(wait);
+      heard = live = "";
+      if (!text) return silent();
+      session?.pause();
+      void turn(text, "voice");
+    }
+
+    function waitForMore() {
+      clearTimeout(wait);
+      wait = setTimeout(send, soundsFinished(said()) ? FINISHED_WAIT_MS : UNFINISHED_WAIT_MS);
+    }
+
     async function listenNow() {
       const mine = gen;
       go("listening");
       setError(null);
-      timer = setTimeout(silent, LISTEN_LIMIT_MS);
+      timer = setTimeout(send, LISTEN_LIMIT_MS);
       // Between turns the session is only paused, so an adapter can keep its connection open.
       if (session) return session.resume();
+      const listening = () => mine === gen && current === "listening";
+      // New speech holds the turn open until its final, which waits again.
       const handlers: ListenHandlers = {
+        onSpeechStart() {
+          if (listening()) clearTimeout(wait);
+        },
         onPartial(text) {
-          if (mine === gen && current === "listening") setPartial(text);
+          if (!listening()) return;
+          clearTimeout(wait);
+          live = text.trim();
+          setPartial(said());
+        },
+        // Speech with no words gets no final, so its end starts the wait again.
+        onSpeechEnd() {
+          if (listening() && heard) waitForMore();
         },
         onFinal(text) {
-          if (mine !== gen || current !== "listening") return;
-          clearTimeout(timer);
-          session?.pause();
-          if (text.trim()) void turn(text.trim(), "voice");
-          else silent();
+          if (!listening()) return;
+          heard = `${heard} ${text.trim()}`.trim();
+          live = "";
+          if (!heard) return silent();
+          setPartial(heard);
+          waitForMore();
         },
         onError(reason) {
-          if (mine !== gen || current !== "listening") return;
+          if (!listening()) return;
           if (reason === "no-speech") return silent();
           stop();
           setError(reason);
@@ -115,7 +154,7 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
       };
       try {
         const opened = await latest.current.listen(handlers, { levelRef });
-        if (mine === gen && current === "listening") session = opened;
+        if (listening()) session = opened;
         else opened.stop();
       } catch {
         if (mine !== gen) return;
@@ -160,6 +199,12 @@ export function useVoice(options: { onUserTurn: UserTurn; listenAfter?: ListenAf
       start,
       interrupt: start,
       stop,
+      // Done talking: what was heard goes at once; false when nothing was, so the caller stops instead.
+      finish() {
+        if (current !== "listening" || !said()) return false;
+        send();
+        return true;
+      },
       async speak(text: string) {
         halt();
         unlockAudio();
