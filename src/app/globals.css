@@ -309,9 +309,11 @@ body {
 }
 
 /* Minutes ride at the right end of a step's first line, on the same rule. */
+/* Nudged down onto the title's baseline; the negative bottom margin keeps the float one line tall, so the goal line
+   under the title never wraps around it (live, Nov 2: "15 min" broke "Finish BIO 101 lab / report"). */
 .mins {
   float: right;
-  margin: calc((var(--fs) - 24px) * var(--k)) 0 0 16px;
+  margin: calc((var(--fs) - 24px) * var(--k)) 0 calc((var(--fs) - 24px) * var(--k) * -1) 16px;
   font-family: var(--font-atkinson-mono);
   font-size: 24px;
   line-height: var(--lh);

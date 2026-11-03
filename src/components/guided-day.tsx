@@ -749,6 +749,7 @@ export default function GuidedDay() {
   function goHome(said = "Nice work today.") {
     setOfferKeys([]);
     setDraft(null);
+    setTyping(false);
     const card = stepCard(goal);
     if (!card) return void refreshOpening();
     setOptions([]);
@@ -1047,7 +1048,9 @@ export default function GuidedDay() {
       return options.length ? [...replies, other] : [say("Let's start", () => tap("Let's start."))];
     }
     if (screen === "talk") {
-      if (options.length || offers.some((one) => one.state !== "booked")) return [...replies, other];
+      // An offer with no replies left beside it (they went with a booking that was then undone) still has a way home.
+      if (options.length) return [...replies, other];
+      if (offers.some((one) => one.state !== "booked")) return [say("No thanks", () => goHome()), other];
       // A booked offer answered Zeno's question, so one way home (live, Nov 2: it was a dead end); a plain question
       // still waits for Talk or Type.
       return offers.length ? [say("Back to my day", () => goHome())] : [];
