@@ -8,7 +8,7 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { bookedEvents, canvasHost, httpsOnly, markEvents, senderName } = await import("./desk-rows.ts");
+const { bookedEvents, canvasHost, dueDays, httpsOnly, markEvents, senderName } = await import("./desk-rows.ts");
 
 const event = (title: string, start: string, end: string, allDay = false): DayEvent => ({ title, start, end, allDay });
 const day = [
@@ -66,5 +66,33 @@ for (const bad of ["javascript:alert(1)", " https://x.com", "http://www.google.c
 assert.equal(canvasHost("sjsu.instructure.com"), "sjsu.instructure.com");
 assert.equal(canvasHost("  https://SJSU.instructure.com/courses/123?x=1 "), "sjsu.instructure.com");
 assert.equal(canvasHost("http://canvas.school.edu/"), "canvas.school.edu");
+
+// The Canvas sheet groups work by the day it is due on the person's clock. Monday Nov 2, noon in Los Angeles: 11:59 PM
+// tonight is already Tuesday in UTC but still Today; work due last night is gone; a week out shows its date.
+const work = (id: string, due: string | null) => ({ id, due });
+const monday = Date.parse("2026-11-02T20:00:00Z");
+const list = [
+  work("hw22", "2026-11-10T07:59:00Z"),
+  work("journal", "2026-11-03T07:59:00Z"),
+  work("quiz11", "2026-11-05T18:15:00Z"),
+  work("reading", null),
+  work("thesis", "2026-11-07T07:59:00Z"),
+  work("late-lab", "2026-11-02T07:59:00Z"),
+  work("participation", "2026-11-03T18:00:00Z"),
+  work("sunday", "2026-11-09T07:00:00Z"),
+  work("this-morning", "2026-11-02T17:00:00Z"),
+];
+const days = (zone: string, items = list) => dueDays(items, zone, monday).map(({ day, items }) => [day, items.map((item) => item.id)]);
+assert.deepEqual(days("America/Los_Angeles"), [
+  ["Today", ["this-morning", "journal"]],
+  ["Tomorrow", ["participation"]],
+  ["Thursday", ["quiz11"]],
+  ["Friday", ["thesis"]],
+  ["Sunday", ["sunday"]],
+  ["Mon, Nov 9", ["hw22"]],
+  ["No due date", ["reading"]],
+]);
+assert.deepEqual(days("UTC", [work("journal", "2026-11-03T07:59:00Z")]), [["Tomorrow", ["journal"]]]);
+assert.deepEqual(days("America/Los_Angeles", []), []);
 
 console.log("desk-rows self-check passed");

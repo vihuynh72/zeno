@@ -27,11 +27,15 @@ export default function Privacy() {
       <h2 className="mt-10 text-[22px] font-bold">What Zeno keeps</h2>
       <ul className="mt-3 list-disc pl-6">
         <li>Your goals and steps, and short facts Zeno remembers about you (like your classes, how you like to work, or a Canvas due date).</li>
-        <li>You can see every remembered fact in Memory and delete any of them, any time.</li>
+        <li>
+          You can see every remembered fact in Memory and delete any of them, any time. Canvas due dates are listed on
+          Zeno&apos;s Canvas screen instead.
+        </li>
         <li>
           Zeno&apos;s servers do not save your emails, calendar events or Canvas instructions. Zeno reads them when it needs
-          them. This browser keeps today&apos;s calendar, so Zeno opens fast, and the instructions of your next few Canvas
-          assignments until you disconnect Canvas. Sign out clears both.
+          them. This browser keeps today&apos;s calendar, so Zeno opens fast. Until you disconnect Canvas, it also keeps the
+          last list of your Canvas assignments (course, title and due date) for the Canvas screen, and the instructions of
+          the next few. Sign out clears all of it.
         </li>
         <li>In what it remembers about you, Zeno is built never to keep passwords, sign-in codes, verification links or the names of health conditions or medicines, not even on your device.</li>
       </ul>
@@ -64,7 +68,8 @@ export default function Privacy() {
 
       <h2 className="mt-10 text-[22px] font-bold">Deleting your data</h2>
       <p className="mt-3">
-        Delete any memory in Zeno&apos;s Memory screen. To delete everything Zeno keeps about you, email{" "}
+        Delete any memory in Zeno&apos;s Memory screen. Disconnecting Canvas also deletes the Canvas due dates Zeno saved.
+        To delete everything Zeno keeps about you, email{" "}
         <a className="underline" href="mailto:vihuynh27.work@gmail.com">vihuynh27.work@gmail.com</a> and it will be
         removed within 7 days. You can also remove Zeno&apos;s access at{" "}
         <a className="underline" href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.

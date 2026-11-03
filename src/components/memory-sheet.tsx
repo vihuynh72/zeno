@@ -5,24 +5,33 @@ import type { Memory } from "@/lib/day";
 import type { VaultFact } from "@/lib/vault";
 import { groupFacts, type Fact } from "@/components/day-flow";
 
+// A stand-in fact, so Projects & deadlines shows even when Canvas deadlines are all it holds.
+const CANVAS = "canvas";
+
 // What Zeno remembers, grouped, with this device's private facts in their groups. Forget is a quiet × per row.
+// Canvas deadlines are summed up in one line at the end of Projects & deadlines; onCanvas opens the sheet that lists them.
 export default function MemorySheet({
   memories,
   device,
   onForget,
   onAdd,
   onRetry,
+  onCanvas,
 }: {
   memories: Memory[] | "loading" | "error";
   device: VaultFact[];
   onForget(fact: Fact): void;
   onAdd(text: string): Promise<boolean>;
   onRetry(): void;
+  onCanvas?: () => void;
 }) {
   const box = useRef<HTMLTextAreaElement>(null);
+  const saved = Array.isArray(memories) ? memories : [];
+  const fromCanvas = saved.filter((memory) => memory.source === "canvas").length;
   const facts: Fact[] = [
     ...device.map((fact) => ({ id: fact.id, text: fact.text, group: fact.group, device: true })),
-    ...(Array.isArray(memories) ? memories.map((memory) => ({ id: memory.id, text: memory.text, group: memory.group, device: false })) : []),
+    ...saved.filter((memory) => memory.source !== "canvas").map((memory) => ({ id: memory.id, text: memory.text, group: memory.group, device: false })),
+    ...(fromCanvas > 0 ? [{ id: CANVAS, text: "", group: "projects" as const, device: false }] : []),
   ];
   const add = () => {
     const text = box.current?.value.trim();
@@ -83,7 +92,7 @@ export default function MemorySheet({
           <section key={entry.group} aria-label={entry.name} className="mini">
             <h3 className="text-[20px] leading-8 font-bold">{entry.name}</h3>
             <ul className="lines mt-2">
-              {entry.facts.map((fact) => (
+              {entry.facts.filter((fact) => fact.id !== CANVAS).map((fact) => (
                 <li key={fact.id} className="flex items-start gap-2">
                   <p className="min-w-0 flex-1 wrap-break-word">
                     {fact.text}
@@ -96,6 +105,20 @@ export default function MemorySheet({
                   </button>
                 </li>
               ))}
+              {entry.group === "projects" && fromCanvas > 0 && (
+                <li className="text-ink-2">
+                  {entry.facts.length > 1 ? "Plus " : ""}
+                  {fromCanvas} {fromCanvas === 1 ? "assignment" : "assignments"} from Canvas
+                  {onCanvas && (
+                    <>
+                      <span aria-hidden="true"> · </span>
+                      <button type="button" onClick={onCanvas} className="underline underline-offset-4">
+                        See them
+                      </button>
+                    </>
+                  )}
+                </li>
+              )}
             </ul>
           </section>
         ))
