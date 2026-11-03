@@ -363,7 +363,8 @@ export async function extractFacts({ name, email, timeZone, known, removed, even
       { role: "system", content: profilePrompt(max) },
       { role: "user", content },
     ],
-    { effort: "minimal", maxTokens: 3072, schema: factSchema(max) },
+    // Up to 20 facts take ~13 s to write (live, Nov 2: two 12 s tries timed out), so a try gets 30 s inside the route's 60.
+    { effort: "minimal", maxTokens: 3072, schema: factSchema(max), tryMs: 30_000, totalMs: 45_000 },
   );
   return factsFrom(text, [...known, ...removed], max);
 }

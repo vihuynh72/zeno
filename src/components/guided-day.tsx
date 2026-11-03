@@ -331,16 +331,18 @@ export default function GuidedDay() {
     setScreen("signed-out");
   }
 
-  // No questions (Vi, Nov 2): the card says Zeno is reading calendar and email while the profile scan runs (4-10 s),
+  // No questions (Vi, Nov 2): the card says Zeno is reading calendar and email while the profile scan runs (about 15 s),
   // then one line says what it learned.
   function startScan(mine: string) {
-    writeLocal(scannedKey(mine), localDate(zone()));
     setScanning(true);
-    // A slow scan stops holding the card after 20 s; what it learns still saves, and the line catches up.
-    setTimeout(() => setScanning(false), 20_000);
+    // The server gives the model up to 45 s (a first scan writes for ~15 s); past 50 s the card stops waiting, what it
+    // learns still saves, and the line catches up.
+    setTimeout(() => setScanning(false), 50_000);
     const scan = post<ProfileResponse>("/api/profile/scan", { first: true, private: vaultTexts(mine), removed: vaultRemoved(mine) }).then((res) => {
       setScanning(false);
       if (res.state === "signed-out") return showSignedOut();
+      // Like the daily scan: a failed one is tried again on the next open today.
+      if (res.state === "ok" || res.state === "no-access") writeLocal(scannedKey(mine), localDate(zone()));
       if (res.state === "ok") setLearned([...(res.learned ?? []), ...keep(res.private)]);
     });
     saves.current.push(scan);

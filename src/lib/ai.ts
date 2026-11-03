@@ -24,6 +24,8 @@ type AskOptions = {
   tryMs?: number;
   // false once a tool already ran this turn: a late failure then ends the turn with what was saved.
   retry?: boolean;
+  // askModel's one deadline for every try (25 s, for routes with maxDuration 30).
+  totalMs?: number;
 };
 
 // fetch throws TypeError when the network fails, and the per-try timer aborts with TimeoutError.
@@ -120,8 +122,8 @@ export async function askWithTools(
 }
 
 export async function askModel(messages: ChatMessage[], options: AskOptions): Promise<string> {
-  // One deadline for the call and its retries, so routes still answer inside maxDuration 30.
-  const reply = await askWithTools(messages, options, AbortSignal.timeout(25000));
+  // One deadline for the call and its retries, so routes still answer inside their maxDuration.
+  const reply = await askWithTools(messages, options, AbortSignal.timeout(options.totalMs ?? 25000));
   if (!reply.content) throw new Error("Model returned tool calls instead of text");
   return reply.content;
 }
