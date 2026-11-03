@@ -196,8 +196,13 @@ export default function DayView(props: DayViewProps) {
     if (!pills) return;
     const { top, bottom } = pills.getBoundingClientRect();
     const dockTop = document.querySelector(".dock")?.getBoundingClientRect().top ?? innerHeight;
-    if (top < innerHeight && bottom > dockTop - 16) {
-      pills.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    // On a goal's desk the scroll stops where the goal strip would leave the top, so a Done shows its bar fill (live,
+    // Nov 3: Done scrolled the bar off a 1440x900 laptop); the links may then sit in the dock's fade.
+    const strip = document.querySelector<HTMLElement>('main section[aria-label="Goal"]');
+    const room = strip ? Math.max(0, strip.getBoundingClientRect().top - 8) : Infinity;
+    const need = Math.min(bottom - (dockTop - 16), room);
+    if (top < innerHeight && need > 0) {
+      window.scrollBy({ top: need, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     }
   }, [answersKey]);
 

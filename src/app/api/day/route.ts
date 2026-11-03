@@ -57,7 +57,7 @@ export async function GET() {
     emails: context.emails.map(({ id, from, subject, snippet, unread }) => {
       const address = addressOf(from);
       return sensitiveEmail({ from, subject, snippet })
-        ? { id, from, address, subject: scrub(subject), snippet: "", unread, asks: false }
+        ? { from, address, subject: scrub(subject), snippet: "", unread, asks: false } // no id: it never opens in Zeno
         : { id, from, address, subject, snippet, unread, asks: asks(subject, snippet, address === email.toLowerCase()) };
     }),
     unreadEmail: context.emails.filter((item) => item.unread).length,
