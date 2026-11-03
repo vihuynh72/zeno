@@ -102,7 +102,7 @@ export function ruleOptions(context: UserContext, now = new Date()): string[] {
   if (localHour(context.timeZone, now) < 5) return ["Set up tomorrow"];
   const step = nextStep(context.goal);
   // A tapped option goes to the model, which never sees private mail (dayToText).
-  const email = context.emails.find((item) => item.unread && item.personal && !sensitiveEmail(item));
+  const email = context.emails.find((item) => item.unread && !sensitiveEmail(item));
   const event = context.events.find(
     (item) => !item.allDay && new Date(item.start).getTime() > now.getTime() && !ROUTINE.test(item.title),
   );

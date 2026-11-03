@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { extractNotes, keepNotes } from "@/lib/agent";
 import { aiConfigured } from "@/lib/ai";
-import { calendarWriteFor, freeSlots, withoutKnownDeadlines } from "@/lib/calendar";
 import type { ImportResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
 import { listMemories } from "@/lib/goals";
@@ -12,11 +11,9 @@ import { timeZoneFrom } from "@/lib/tz";
 export const maxDuration = 30;
 
 // Body { text }: pasted notes, 1 to 8000 characters. Facts, deadlines and to-dos become grouped memories (keepNotes
-// saves them one at a time, so addMemory's dedupe and group caps see each save); when Zeno may write to its calendar,
-// the deadlines their calendars don't already show that day and the to-dos placeTodos fits in free time in the next
-// 5 days also come back as a proposal to book (nothing is written to the calendar here). Without write access (no
-// access, or a sign-in from before it) the proposal is empty.
-// Private facts, to-dos and deadlines come back in `private` for the device: never a memory, never a proposal.
+// saves them one at a time, so addMemory's dedupe and group caps see each save). Nothing goes on the calendar (Vi,
+// Nov 2: no small to-dos or Due: days there), so the proposal is always empty.
+// Private facts, to-dos and deadlines come back in `private` for the device: never a memory.
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.email) {
@@ -33,20 +30,10 @@ export async function POST(request: Request) {
 
   const email = session.user.email;
   const timeZone = timeZoneFrom((await cookies()).get("tz")?.value);
-  // A proposal booking would refuse (needs-permission) is no proposal.
-  const accessToken = calendarWriteFor(session) === "ok" ? session.accessToken : undefined;
   try {
-    // Free time loads while the model reads; a failed read still proposes the deadlines.
-    const [notes, slots] = await Promise.all([
-      extractNotes(text, timeZone),
-      accessToken ? freeSlots(accessToken, timeZone, { minutes: 5, days: 5 }).catch(() => []) : null,
-    ]);
-    const proposal = await keepNotes(email, notes, slots, timeZone);
-    const [memories, fresh] = await Promise.all([
-      listMemories(email),
-      accessToken ? withoutKnownDeadlines(accessToken, timeZone, proposal) : proposal,
-    ]);
-    return NextResponse.json({ state: "ok", memories, proposal: fresh, private: notes.private } satisfies ImportResponse);
+    const notes = await extractNotes(text, timeZone);
+    await keepNotes(email, notes);
+    return NextResponse.json({ state: "ok", memories: await listMemories(email), proposal: [], private: notes.private } satisfies ImportResponse);
   } catch (error) {
     // Never log the model reply: it quotes the person's notes.
     console.error("Import failed:", error instanceof Error ? error.message.slice(0, 120) : "unknown");

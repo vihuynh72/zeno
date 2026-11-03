@@ -47,6 +47,7 @@ export async function GET() {
       sensitiveEmail({ from, subject, snippet }) ? { from, subject: scrub(subject), snippet: "", unread } : { from, subject, snippet, unread },
     ),
     unreadEmail: context.emails.filter((item) => item.unread).length,
+    mailUrl: `https://mail.google.com/mail/?authuser=${encodeURIComponent(email)}`,
     isNew: context.tasksState === "ok" && context.memories.length === 0 && !anyGoal,
     streak: context.progress.streak,
     progress: context.progress,
