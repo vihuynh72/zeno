@@ -1,7 +1,7 @@
 // Memory bench: does Zeno store, group, retrieve, update and forget what a person tells it, and keep private facts
 // only on the device? Talks to a running server as fake users bench-<runid>-<n>@zeno.local, scores the stored rows,
 // the returned private facts and the replies with keyword matchers (no LLM judge), then deletes this run's rows.
-// About 55 Muse calls per run.
+// About 57 Muse calls per run.
 // Run: node --env-file=.env.local scripts/memory-bench.mjs [--base http://127.0.0.1:3210] [--runs 1] [--keep] [--json path]
 // See docs/MEMORY-BENCH.md.
 import assert from "node:assert/strict";
@@ -97,6 +97,14 @@ const PRIVATE = [
     seed: "Is paying off $2,000 on a credit card before summer.",
     use: { ask: "How much do I still owe on my credit card?", expect: [["2,000", "2000", "two thousand", "2k", "$2"]] },
   },
+  // Health stays generic even on the device (Vi, Nov 2): kept as a doctor check-in, never naming the condition said.
+  {
+    id: "doctor-checkin",
+    say: "My ADHD check-in with Dr. Lee is November 23 at 10, so keep that morning clear.",
+    match: [["doctor", "dr.", "check-in", "checkin", "appointment"]],
+    seed: "Has a doctor check-in on November 23 at 10 AM.",
+    use: { ask: "When is my doctor check-in?", expect: [["23", "twenty-third", "twenty third"]] },
+  },
   // The backstop (src/lib/profile.ts factVerdict) sees none of these three, so they score the model's own marking.
   {
     id: "dialysis",
@@ -120,9 +128,15 @@ const PRIVATE = [
     use: { ask: "How much do I owe my roommate?", expect: [["300", "three hundred"]] },
   },
 ];
-// Never kept anywhere, not even on the device: said in the same conversation, and the medicine names said earlier.
+// Never kept anywhere, not even on the device: said in the same conversation, the medicine names said earlier, and
+// a condition's name (Vi, Nov 2), like the ADHD said with the check-in or a diabetes the import's insulin implies.
 const NEVER_TALK = { id: "sign-in-code", say: "My Canvas sign-in code is 482913, can you hold on to it for me?", match: [["482913"]] };
-const NEVER_NAMES = [NEVER_TALK, { id: "medicine-name", match: [["lexapro", "escitalopram"]] }, { id: "insulin", match: [["insulin"]] }];
+const NEVER_NAMES = [
+  NEVER_TALK,
+  { id: "medicine-name", match: [["lexapro", "escitalopram"]] },
+  { id: "insulin", match: [["insulin"]] },
+  { id: "condition-name", match: [["adhd", "diabet"]] },
+];
 
 const RESTATE = { say: "Oh btw, I have bio lab every Wednesday at 2, can't miss it.", fact: "bio-lab" }; // case 5
 // Case 5b: the same fact in other words, which text normalization alone cannot catch.

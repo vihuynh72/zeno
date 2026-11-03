@@ -23,20 +23,24 @@ Object.assign(globalThis, {
 const { addToVault, cleanPrivate, clearVault, readVault, removeFromVault, vaultRemoved, vaultTexts, VAULT_MAX } = await import("./vault.ts");
 
 const A = "acct-a";
+const checkIn = "Has a doctor check-in on November 3.";
+// The fact the vault held on Nov 2 names a condition, which is kept nowhere, not even here (Vi, Nov 2).
+const named = "Attends ADHD check-in with Dr. Lee on November 3.";
 const added = addToVault(A, [
-  { text: "Has ADHD and does best with short steps.", group: "about" },
-  { text: "has adhd, and does best with SHORT steps", group: "about" },
+  { text: checkIn, group: "about" },
+  { text: "has a doctor check-in, on NOVEMBER 3", group: "about" },
   { text: "Prays at noon on weekdays.", group: "routines" },
   { text: "", group: "about" },
   { text: "Bad group", group: "nope" as never },
+  { text: named, group: "about" },
 ]);
-assert.deepEqual(added.map((fact) => fact.text), ["Has ADHD and does best with short steps.", "Prays at noon on weekdays."], "dedupe, empty and bad groups");
+assert.deepEqual(added.map((fact) => fact.text), [checkIn, "Prays at noon on weekdays."], "dedupe, empty, bad groups and a named condition");
 assert.equal(readVault("acct-b").length, 0, "per account");
-assert.deepEqual(vaultTexts(A), ["Has ADHD and does best with short steps.", "Prays at noon on weekdays."]);
+assert.deepEqual(vaultTexts(A), [checkIn, "Prays at noon on weekdays."]);
 assert.equal(addToVault(A, [{ text: "Prays at noon on weekdays!", group: "routines" }]).length, 0, "already kept");
 
 removeFromVault(A, added[1].id);
-assert.deepEqual(vaultTexts(A), ["Has ADHD and does best with short steps."], "removed");
+assert.deepEqual(vaultTexts(A), [checkIn], "removed");
 assert.equal(addToVault(A, [{ text: "prays at noon on weekdays", group: "routines" }]).length, 0, "removed stays removed");
 assert.equal(addToVault(A, [{ text: "Prays at noon on weekdays, every week.", group: "routines" }]).length, 0, "even reworded, as a daily scan rewords it");
 assert.equal(addToVault(A, [{ text: "Prays at 1 PM on weekdays.", group: "routines" }]).length, 1, "another time is another fact");
@@ -48,8 +52,14 @@ assert.equal(readVault(A)[0].text, "Fact number 0.", "newest batch first");
 
 store.set("zeno.vault.acct-c", "{not json");
 assert.deepEqual(readVault("acct-c"), [], "corrupt storage reads as empty");
-store.set("zeno.vault.acct-c", JSON.stringify({ facts: [{ id: 1, text: "x" }, { id: "ok", text: "Kept.", createdAt: "2026-11-01", group: "about" }], removed: [3] }));
-assert.deepEqual(vaultTexts("acct-c"), ["Kept."], "invalid entries are dropped");
+store.set(
+  "zeno.vault.acct-c",
+  JSON.stringify({
+    facts: [{ id: 1, text: "x" }, { id: "ok", text: "Kept.", createdAt: "2026-11-01", group: "about" }, { id: "nov2", text: named, createdAt: "2026-11-02", group: "about" }],
+    removed: [3],
+  }),
+);
+assert.deepEqual(vaultTexts("acct-c"), ["Kept."], "invalid entries, and a condition kept before the rule, are dropped");
 
 clearVault(A);
 assert.equal(readVault(A).length, 0, "sign out clears");

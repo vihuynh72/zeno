@@ -22,7 +22,7 @@ assert.deepEqual(patternsIn([], LA), [], "no steps, no patterns");
 // Time of day: 5 finished steps or more, 60% in one part of the day.
 const nights = [la(10, 23, 30), la(11, 0, 30), la(12, 1)];
 assert.deepEqual(patternsIn([...nights, la(13, 22)].map((time) => done(time)), LA), [], "4 finished steps are too few");
-assert.deepEqual(patternsIn([...nights, la(13, 14), la(14, 15)].map((time) => done(time)), LA), ["You finish most steps late at night."], "3 of 5");
+assert.deepEqual(patternsIn([...nights, la(13, 14), la(14, 15)].map((time) => done(time)), LA), ["Works best late at night."], "3 of 5");
 assert.deepEqual(patternsIn([la(10, 23), la(11, 1), la(12, 14), la(13, 15), la(14, 9)].map((time) => done(time)), LA), [], "2 of 5");
 assert.deepEqual(patternsIn([...nights, la(13, 23), la(14, 23)].map((time) => skipped(time)), LA), [], "skipped steps don't count");
 for (const [hour, minute, part] of [
@@ -30,11 +30,16 @@ for (const [hour, minute, part] of [
   [11, 59, "in the morning"], [12, 0, "in the afternoon"], [16, 59, "in the afternoon"], [17, 0, "in the evening"],
 ] as const) {
   const steps = fiveDays.map((day) => done(la(day, hour, minute)));
-  assert.deepEqual(patternsIn(steps, LA), [`You finish most steps ${part}.`], `${hour}:${minute}`);
+  assert.deepEqual(patternsIn(steps, LA), [`Works best ${part}.`], `${hour}:${minute}`);
 }
 // The same instants on another clock: 10 PM in Los Angeles is 2 PM the next day in Tokyo.
 const tenPm = fiveDays.map((day) => done(la(day, 22)));
-assert.deepEqual(patternsIn(tenPm, "Asia/Tokyo"), ["You finish most steps in the afternoon."], "Tokyo");
+assert.deepEqual(patternsIn(tenPm, "Asia/Tokyo"), ["Works best in the afternoon."], "Tokyo");
+// Setup no longer asks when they focus best (Vi, Nov 2), so to-dos go where agent.ts focusPart reads this pattern.
+const { focusPart } = await import("./agent.ts");
+const noticed = (text: string) => ({ id: "p", text, group: "patterns" as const, source: "pattern" as const, createdAt: "2026-11-01T10:00:00.000Z" });
+for (const part of ["morning", "afternoon", "evening"] as const) assert.equal(focusPart([noticed(`Works best in the ${part}.`)]), part);
+assert.equal(focusPart([noticed("Works best late at night.")]), null, "late at night is no preference");
 
 // Real length versus the estimate: 4 started steps with an estimate, by the median, rounded to the half.
 const took = (day: number, planned: number | null, real: number) =>
@@ -82,7 +87,7 @@ const longDone = (count: number) => Array.from({ length: count }, (_, index) => 
 assert.deepEqual(patternsIn([...longSkips, ...longDone(3)], LA), ["You often skip steps of 30 minutes or more."], "3 of 6 skipped");
 assert.deepEqual(patternsIn([...longSkips, ...longDone(4)], LA), [], "3 of 7 is not often");
 const mornings = Array.from({ length: 37 }, (_, index) => done(la(10 + (index % 5), 9, index), 30));
-assert.deepEqual(patternsIn([...mornings, ...longSkips], LA), ["You finish most steps in the morning."], "3 skips among 40");
+assert.deepEqual(patternsIn([...mornings, ...longSkips], LA), ["Works best in the morning."], "3 skips among 40");
 
 // Tiny starts: 3 finished steps or more of 10 minutes or less, finished more often than longer ones.
 const tiny = [done(la(10, 9), 5), done(la(11, 9), 10), done(la(12, 9), 5)];
@@ -101,7 +106,7 @@ const all = patternsIn(
   LA,
 );
 assert.deepEqual(all, [
-  "You finish most steps late at night.",
+  "Works best late at night.",
   "Steps take you about 2x as long as you plan.",
   "You often skip steps of 30 minutes or more.",
   "Steps of 10 minutes or less work best for you.",
@@ -109,7 +114,7 @@ assert.deepEqual(all, [
 // Every pattern has its own kind, and a changed pattern keeps the kind of the one it replaces.
 assert.equal(new Set(all.map(kindOf)).size, 4, "four kinds");
 assert.ok(all.every((text) => kindOf(text) !== null), "every pattern has a kind");
-assert.equal(kindOf("You finish most steps in the morning."), kindOf(all[0]), "a new time of day replaces the old one");
+assert.equal(kindOf("Works best in the morning."), kindOf(all[0]), "a new time of day replaces the old one");
 assert.equal(kindOf("Steps take you less time than you plan."), kindOf(all[1]), "faster replaces slower");
 assert.equal(kindOf("Maya has bio lab on Tuesdays."), null, "other memories are never replaced");
 
@@ -119,7 +124,7 @@ assert.ok(alreadySaid(times(2), [{ text: times(1.5) }]) && alreadySaid(times(1.5
 assert.ok(alreadySaid("Steps take you 3x as long as you plan, or more.", [{ text: times(2.5) }]), "2.5x to 3x is noise too");
 assert.ok(!alreadySaid(times(2.5), [{ text: times(1.5) }]), "a whole 1x is news");
 assert.ok(!alreadySaid("Steps take you less time than you plan.", [{ text: times(1.5) }]), "faster replaces slower");
-assert.ok(!alreadySaid(all[0], [{ text: "You finish most steps in the morning." }]), "a new time of day replaces the old one");
+assert.ok(!alreadySaid(all[0], [{ text: "Works best in the morning." }]), "a new time of day replaces the old one");
 assert.ok(alreadySaid(all[0], [{ text: all[0] }]), "the same sentence");
 // A median that wobbles around 1.75 (17 and 18 minutes for 10-minute steps), one step at a time, as learnFromSteps sees it.
 let said: { text: string }[] = [];
@@ -137,7 +142,7 @@ assert.equal(rewrites, 1, "said once, then kept");
 // reconcile: a saved pattern that no longer holds is removed (Vi, 2026-11-01), a changed one is replaced, and one
 // the person removed (Undo or Forget) is never saved again, even a wobble away.
 const night = all[0];
-const morning = "You finish most steps in the morning.";
+const morning = "Works best in the morning.";
 const skips = all[2];
 const rows = (...texts: string[]) => texts.map((text, index) => ({ id: `p${index}`, text }));
 assert.deepEqual(reconcile([night, skips], rows(night, skips), []), { stale: [], fresh: [] }, "still holds and already said");
@@ -156,7 +161,7 @@ assert.deepEqual(reconcile([night], [], ["Has bio lab on Tuesdays."]).fresh, [ni
 const halves = "MMMAAA".split("").map((part, index) => done(la(10 + index, part === "M" ? 9 : 15)));
 assert.deepEqual(patternsIn(halves, LA), [], "half the steps is not most of them");
 assert.deepEqual(patternsIn(halves, LA, [morning]), [morning], "but keeps the morning once it was said");
-assert.deepEqual(patternsIn([...halves, ...[16, 17].map((day) => done(la(day, 15)))], LA, [morning]), ["You finish most steps in the afternoon."], "3 of 8 drops it for the afternoon");
+assert.deepEqual(patternsIn([...halves, ...[16, 17].map((day) => done(la(day, 15)))], LA, [morning]), ["Works best in the afternoon."], "3 of 8 drops it for the afternoon");
 assert.deepEqual(patternsIn([...longSkips, ...longDone(4)], LA, [all[2]]), [all[2]], "3 of 7 long skips keeps it");
 assert.deepEqual(patternsIn([...tiny, done(la(13, 9), 20)], LA, [all[3]]), [all[3]], "an even finish rate keeps tiny starts");
 const slowish = [10, 11, 12, 13].map((day) => took(day, 10, 13));

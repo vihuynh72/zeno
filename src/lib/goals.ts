@@ -3,6 +3,7 @@ import { ensureSchema, getSql } from "@/lib/db";
 // profile.ts imports this file too; neither uses the other until a call, so the cycle is safe.
 import { factVerdict } from "@/lib/profile";
 import { formatDate } from "@/lib/tz";
+import { sameFact } from "@/lib/vault";
 
 // A step for a new or edited roadmap; `id` keeps an existing todo step.
 export type NewStep = { id?: string; title: string; minutes: number | null };
@@ -178,6 +179,11 @@ export async function changeStepStatus(
     goalQuery(email, goalId),
   ]);
   const goal = goalFrom(results[results.length - 1]);
+  // Its last step done finishes the pasted to-do it came from.
+  if (goal && status === "done" && goal.steps.every((one) => one.status === "done" || one.status === "skipped")) {
+    const todos = await sql`SELECT id, text FROM memories WHERE user_email = ${email} AND text LIKE 'To do: %'`;
+    await dropMemories(email, todos.filter((row) => sameFact(String(row.text), todoMemory(goal.title))).map((row) => String(row.id)));
+  }
   return goal && { goal, before: step.status as StepStatus };
 }
 
@@ -208,7 +214,7 @@ export async function savePrep(email: string, stepId: string, sources: PrepSourc
   await getSql()`UPDATE steps SET prep = ${JSON.stringify(sources)}::jsonb WHERE id = ${stepId} AND user_email = ${email}`;
 }
 
-const SOURCES: readonly MemorySource[] = ["you", "calendar", "email", "pattern"];
+const SOURCES: readonly MemorySource[] = ["you", "calendar", "email", "pattern", "canvas"];
 
 function memoryFrom(row: Record<string, unknown>): Memory {
   const group = MEMORY_GROUPS.find((known) => known === row.memory_group) ?? "about";
@@ -261,8 +267,10 @@ export async function listMemories(email: string): Promise<Memory[]> {
 }
 
 // Returns the saved memory, or null when nothing new was saved (so callers never claim a save): the fact is
-// already known in any group, or Zeno found it itself (not "you") and the person once removed it.
-// expiresOn (YYYY-MM-DD, checked by the caller) hides it from that day on, as listMemories says.
+// already known in any group, or Zeno found it itself (not "you") and the person once removed it. A reworded known
+// fact (src/lib/vault.ts sameFact) is never a second row: a longer wording takes that row, text and source, except
+// that what Zeno found never overwrites the person's own words. expiresOn (YYYY-MM-DD, checked by the caller) hides
+// it from that day on, as listMemories says; an undated "To do:" clears itself 14 days after it is saved.
 export async function addMemory(
   email: string,
   text: string,
@@ -273,23 +281,41 @@ export async function addMemory(
   const clean = [...text.trim()].slice(0, 200).join("");
   const key = factKey(clean);
   if (!key) return null;
-  // shortcut: read, then insert, so the same fact saved twice in one instant can land twice; add a unique key column if that shows up.
-  // Expired rows are deleted here, on the way, so they never count as known or take a cap's slot.
+  // shortcut: read, then write, so the same fact saved twice in one instant can land twice; add a unique key column if that shows up.
+  // Expired rows are deleted here, on the way, so they never count as known or take a cap's slot. A removed sentence
+  // has no id.
   const known = await sql`
     WITH expired AS (
       DELETE FROM memories
       WHERE user_email = ${email} AND expires_on <= (now() AT TIME ZONE 'UTC' - interval '12 hours')::date
       RETURNING id
     )
-    SELECT text FROM memories WHERE user_email = ${email} AND id NOT IN (SELECT id FROM expired)
+    SELECT id, text, source FROM memories WHERE user_email = ${email} AND id NOT IN (SELECT id FROM expired)
     UNION ALL
-    SELECT jsonb_array_elements_text(forgotten) FROM user_state WHERE user_email = ${email} AND ${source} <> 'you'
+    SELECT NULL, jsonb_array_elements_text(forgotten), NULL FROM user_state WHERE user_email = ${email} AND ${source} <> 'you'
   `;
-  if (known.some((row) => factKey(String(row.text)) === key)) return null;
+  const same = known.filter((row) => sameFact(String(row.text), clean));
+  if (same.length > 0) {
+    const [row] = same;
+    if (
+      same.some((one) => one.id === null || factKey(String(one.text)) === key) ||
+      factKey(String(row.text)).length >= key.length ||
+      (row.source === "you" && source !== "you")
+    ) {
+      return null;
+    }
+    const [updated] = await sql`
+      UPDATE memories SET text = ${clean}, source = ${source}, expires_on = coalesce(${expiresOn}, expires_on)
+      WHERE id = ${row.id} AND user_email = ${email}
+      RETURNING id, text, created_at, memory_group, source
+    `;
+    return updated ? memoryFrom(updated) : null;
+  }
+  const expires = expiresOn ?? (clean.startsWith(todoMemory("")) ? new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10) : null);
   const [inserted, groupTrim, totalTrim] = await sql.transaction([
     sql`
       INSERT INTO memories (user_email, text, memory_group, source, expires_on)
-      VALUES (${email}, ${clean}, ${group}, ${source}, ${expiresOn})
+      VALUES (${email}, ${clean}, ${group}, ${source}, ${expires})
       ON CONFLICT DO NOTHING
       RETURNING id, text, created_at, memory_group, source
     `,
@@ -342,7 +368,8 @@ export async function dropMemories(email: string, ids: string[]): Promise<void> 
   await getSql()`DELETE FROM memories WHERE user_email = ${email} AND id = ANY(${ids}::uuid[])`;
 }
 
-// A pasted to-do, kept as a memory until it is booked (dropTodos) or the day after it is due.
+// A pasted to-do, kept as a memory until it is booked (dropTodos), its plan is finished (changeStepStatus), or the
+// day after it is due (14 days after it is saved when undated).
 export const todoMemory = (title: string) => `To do: ${title}`;
 
 export const dueDay = (date: string) => formatDate(new Date(`${date}T12:00:00Z`), "UTC");
@@ -356,6 +383,14 @@ export async function dropTodos(email: string, titles: string[]): Promise<void> 
   if (titles.length === 0) return;
   await ensureSchema();
   await getSql()`DELETE FROM memories WHERE user_email = ${email} AND source = 'you' AND text = ANY(${titles.map(todoMemory)}::text[])`;
+}
+
+// POST /api/canvas: each sync's deadlines replace the last sync's, so a submitted or moved assignment never lingers.
+export async function replaceCanvasDeadlines(email: string, deadlines: { text: string; expiresOn: string }[]): Promise<void> {
+  await ensureSchema();
+  await getSql()`DELETE FROM memories WHERE user_email = ${email} AND source = 'canvas'`;
+  // One at a time, so each save's dedupe and caps see the one before it.
+  for (const deadline of deadlines) await addMemory(email, deadline.text, { group: "projects", source: "canvas", expiresOn: deadline.expiresOn });
 }
 
 // What the profile scan saved since `since`, in the order it saved them, so a repeat call that day sees them too.

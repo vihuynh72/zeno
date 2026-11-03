@@ -95,6 +95,25 @@ try {
   assert.equal(await addMemory(memoryEmail, " ... ", {}), null, "no words, nothing saved");
   assert.equal((await addMemory(memoryEmail, "Bio lab Thursdays at 2pm."))?.group, "about", "another day is another fact; the group defaults to about");
 
+  // A reworded fact stays one row (Vi, Nov 2: a tidy list): a longer wording takes the row, but what Zeno finds never
+  // overwrites the person's own words.
+  assert.equal(
+    await addMemory(memoryEmail, "Has bio lab every Wednesday at 2 PM in Duncan Hall.", { group: "routines", source: "calendar" }),
+    null,
+    "a scan's wording never replaces theirs",
+  );
+  const fuller = await addMemory(memoryEmail, "Bio lab Wednesdays at 2pm in Duncan Hall.", { group: "routines" });
+  assert.deepEqual([fuller?.id, fuller?.text, fuller?.source], [lab?.id, "Bio lab Wednesdays at 2pm in Duncan Hall.", "you"], "their own longer wording takes the row");
+  assert.equal(await addMemory(memoryEmail, "Bio lab on Wednesdays at 2 PM."), null, "a shorter wording adds nothing");
+  const desk = await addMemory(memoryEmail, "Works at the campus library.", { source: "email" });
+  const deskLonger = await addMemory(memoryEmail, "Works at the campus library front desk.", { source: "calendar" });
+  assert.deepEqual([deskLonger?.id, deskLonger?.source], [desk?.id, "calendar"], "a longer finding takes a finding's row, with its source");
+  assert.deepEqual(
+    (await listMemories(memoryEmail)).filter((memory) => /library|wednesday/i.test(memory.text)).map((memory) => memory.text),
+    ["Works at the campus library front desk.", "Bio lab Wednesdays at 2pm in Duncan Hall."],
+    "one row each",
+  );
+
   // patterns keeps its 10 freshest noticed facts; what the person said never takes their slots.
   const cap = GROUP_CAPS.patterns;
   for (let n = 1; n <= 3; n++) await addMemory(memoryEmail, `Said pattern ${n}`, { group: "patterns" });
@@ -126,6 +145,7 @@ try {
     null,
     "a scan never brings it back",
   );
+  assert.equal(await addMemory(memoryEmail, "Has chess club every other Friday at 3 PM in the library.", { source: "calendar" }), null, "not even reworded");
   assert.equal((await addMemory(memoryEmail, "Has chess club every other Friday at 3 PM.", { group: "about" }))?.source, "you", "said again, it saves");
 
   // A row saved under the old rules (health "when it helps planning") is deleted on the next read and never listed;
@@ -187,10 +207,10 @@ try {
     const night = dayBounds(zone, new Date(Date.now() - (index + 1) * 86_400_000)).start.getTime() + 23 * 3_600_000;
     await sql`UPDATE steps SET done_at = ${new Date(night).toISOString()} WHERE id = ${item.id}`;
   }
-  const morning = "You finish most steps in the morning.";
+  const morning = "Works best in the morning.";
   assert.ok(await addMemory(laterEmail, morning, { group: "patterns", source: "pattern" }));
   const learned = await learnFromSteps(laterEmail, zone);
-  assert.equal(learned?.text, "You finish most steps late at night.");
+  assert.equal(learned?.text, "Works best late at night.");
   assert.deepEqual((await listMemories(laterEmail)).map((memory) => memory.text), [learned.text], "the morning pattern stopped holding");
   assert.deepEqual(await forgottenMemories(laterEmail), [], "Zeno's own clean-up is not the person's removal");
 
@@ -208,6 +228,62 @@ try {
   await sql`DELETE FROM goals WHERE user_email = ${laterEmail}`;
   await sql`DELETE FROM memories WHERE user_email = ${laterEmail}`;
   await sql`DELETE FROM user_state WHERE user_email = ${laterEmail}`;
+}
+
+// To-dos clear (Vi, Nov 2): an undated one 14 days after it is saved, and one at once when its plan's last step is done.
+const todoEmail = `todos-check-${crypto.randomUUID()}@zeno.local`;
+try {
+  const chapter = await addMemory(todoEmail, "To do: Read chapter 4 for HIST 110", { group: "projects" });
+  await addMemory(todoEmail, "To do: Email Prof Patel", { group: "projects" });
+  const [{ expires }] = await sql`SELECT expires_on::text AS expires FROM memories WHERE id = ${chapter?.id}`;
+  assert.equal(expires, new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10), "an undated to-do clears in 14 days");
+  const plan = await setGoal(todoEmail, "Read chapter 4 for HIST 110", [
+    { title: "Skim the headings", minutes: 5 },
+    { title: "Read the first half", minutes: 20 },
+  ]);
+  await setStepStatus(todoEmail, plan.steps[0].id, "done");
+  await setStepStatus(todoEmail, plan.steps[1].id, "skipped");
+  assert.equal((await listMemories(todoEmail)).length, 2, "a skipped last step finishes no to-do");
+  await setStepStatus(todoEmail, plan.steps[1].id, "done");
+  assert.deepEqual((await listMemories(todoEmail)).map((memory) => memory.text), ["To do: Email Prof Patel"], "its last step done clears it");
+  assert.deepEqual(await forgottenMemories(todoEmail), [], "dropped, not forgotten, so a later paste keeps it again");
+} finally {
+  await sql`DELETE FROM goals WHERE user_email = ${todoEmail}`;
+  await sql`DELETE FROM memories WHERE user_email = ${todoEmail}`;
+  await sql`DELETE FROM user_state WHERE user_email = ${todoEmail}`;
+}
+
+// Canvas deadlines: each sync replaces the last one's; the person's own deadline and their removals stay.
+const { deadlineMemory, replaceCanvasDeadlines } = await import("./goals.ts");
+const canvasEmail = `canvas-check-${crypto.randomUUID()}@zeno.local`;
+try {
+  const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+  const due = (title: string, n: number) => ({ text: deadlineMemory({ title, date: day(n) }), expiresOn: day(n + 1) });
+  const own = await addMemory(canvasEmail, due("CS 146: Project 2", 4).text, { group: "projects", expiresOn: day(5) });
+  await replaceCanvasDeadlines(canvasEmail, [due("BIO 121: Quiz 4", 2), due("CS 146: Project 2", 4), due("HIST 110: Essay 1", 6)]);
+  const first = await listMemories(canvasEmail);
+  assert.deepEqual(
+    first.map((memory) => [memory.text, memory.group, memory.source]),
+    [
+      [due("HIST 110: Essay 1", 6).text, "projects", "canvas"],
+      [due("BIO 121: Quiz 4", 2).text, "projects", "canvas"],
+      [own?.text, "projects", "you"],
+    ],
+    "their own deadline stays theirs, once",
+  );
+  const quiz = first.find((memory) => memory.text.startsWith("BIO 121"));
+  assert.ok(quiz && (await forgetMemory(canvasEmail, quiz.id)));
+  await replaceCanvasDeadlines(canvasEmail, [due("BIO 121: Quiz 4", 2), due("MATH 30: Problem set 6", 3)]);
+  assert.deepEqual(
+    (await listMemories(canvasEmail)).map((memory) => memory.text),
+    [due("MATH 30: Problem set 6", 3).text, own?.text],
+    "the next sync replaces the last one's, and a removed one stays removed",
+  );
+  const [{ expires }] = await sql`SELECT expires_on::text AS expires FROM memories WHERE user_email = ${canvasEmail} AND source = 'canvas'`;
+  assert.equal(expires, day(4), "kept until the day after it is due");
+} finally {
+  await sql`DELETE FROM memories WHERE user_email = ${canvasEmail}`;
+  await sql`DELETE FROM user_state WHERE user_email = ${canvasEmail}`;
 }
 
 // The daily profile scan, with Google and Muse stubbed and the real database: once a local day, the same facts
@@ -260,21 +336,22 @@ try {
   console.log = () => undefined;
   const coaching = "Has tutoring every other Friday at 3 PM.";
   const major = "Is a junior biology major at SJSU.";
-  const adhd = "Has ADHD coaching every other Friday at 4 PM.";
+  const checkIn = "Has a doctor check-in every other Friday at 4 PM.";
   modelReplies = [
     JSON.stringify({
       facts: [
         { text: coaching, group: "about", source: "calendar", private: false },
         { text: major, group: "about", source: "email", private: false },
-        { text: adhd, group: "about", source: "calendar", private: false },
+        { text: checkIn, group: "about", source: "calendar", private: false },
+        { text: "Has ADHD coaching every other Friday at 5 PM.", group: "about", source: "calendar", private: true },
       ],
     }),
   ];
   const first = await scanProfile(scanEmail, session, zone, { first: true });
   assert.deepEqual(texts(first), [coaching, major], "the first scan learns");
-  // Private (overall health), so it goes back to the device and no row ever holds it.
-  assert.deepEqual(first.state === "ok" && first.private, [{ text: adhd, group: "about" }]);
-  assert.equal((await sql`SELECT count(*)::int AS n FROM memories WHERE user_email = ${scanEmail} AND text ILIKE '%adhd%'`)[0].n, 0);
+  // Overall health in generic words goes back to the device, and a condition's name is kept nowhere (Vi, Nov 2).
+  assert.deepEqual(first.state === "ok" && first.private, [{ text: checkIn, group: "about" }]);
+  assert.equal((await sql`SELECT count(*)::int AS n FROM memories WHERE user_email = ${scanEmail} AND (text ILIKE '%adhd%' OR text ILIKE '%doctor%')`)[0].n, 0);
   assert.ok(gmailQueries.every((q) => q.startsWith("newer_than:30d ")), "the first scan reads 30 days of mail");
   assert.equal(modelBodies[0].response_format.json_schema.schema.properties.facts.maxItems, 20);
 
