@@ -120,6 +120,16 @@ function AddBox({ words, onAdd, onCancel, onPhoto, onToggle }: AddBoxProps) {
     onToggle(on);
   };
   const box = useRef<HTMLTextAreaElement>(null);
+  const whole = useRef<HTMLDivElement>(null);
+  // The open box, with Make a plan, in view above Talk, and above a phone's keyboard as it opens (round 7: Make a plan sat
+  // half under the dock). html's scroll padding is the dock, so "nearest" scrolls only when it is covered.
+  useEffect(() => {
+    if (!open) return;
+    const clear = () => requestAnimationFrame(() => whole.current?.scrollIntoView({ block: "nearest" }));
+    clear();
+    visualViewport?.addEventListener("resize", clear);
+    return () => visualViewport?.removeEventListener("resize", clear);
+  }, [open]);
   const close = () => {
     setOpen(false);
     onCancel();
@@ -137,7 +147,7 @@ function AddBox({ words, onAdd, onCancel, onPhoto, onToggle }: AddBoxProps) {
       onAdd(text);
     });
   return (
-    <div className="mt-2">
+    <div ref={whole} className="mt-2">
       <div className="choice add-box">
         <div className="lines">
           <textarea

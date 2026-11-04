@@ -23,6 +23,7 @@ export type Materials = {
   mail?: { id: string; gmail?: string };
   sourcesOpen?: boolean; // the /preview gallery shows the links already found
   notes?: Record<string, Note[]>; // by step id
+  why?: string[]; // Muse's own lines from planning this goal, kept on this device ("Why this plan", round 7)
 };
 
 const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -183,7 +184,8 @@ export function GoalAside({ goal, step, materials, brief, today, offer, apps = [
   const when = (start: string, end: string) => <span className="font-mono">{slotLabel(start, end, zone(), new Date(now))}</span>;
   // From your apps shows even with nothing in it, for Add a doc.
   const fromApps = Boolean(prompt || items.length > 0 || onAddDoc);
-  const empty = !next && !slot && !mail && related.length === 0 && !linkable && !fromApps && notes.length === 0;
+  const why = materials?.why ?? [];
+  const empty = !next && !slot && !mail && related.length === 0 && !linkable && !fromApps && notes.length === 0 && why.length === 0;
   return (
     <aside aria-labelledby="goal-aside" className="aside">
       <h2 id="goal-aside" className="text-[20px] leading-8 font-bold">
@@ -193,6 +195,16 @@ export function GoalAside({ goal, step, materials, brief, today, offer, apps = [
         <p className="mt-2 text-ink-2">Nothing for this goal yet.</p>
       ) : (
         <div className="mt-2 flex flex-col gap-4">
+          {why.length > 0 && (
+            <section className="mini">
+              <h3 className={HEAD}>Why this plan</h3>
+              <ul className="mt-1 flex flex-col gap-1">
+                {why.map((line, index) => (
+                  <li key={index}>{line}</li>
+                ))}
+              </ul>
+            </section>
+          )}
           {(next || slot) && (
             <section className="mini">
               <h3 className={HEAD}>Calendar</h3>

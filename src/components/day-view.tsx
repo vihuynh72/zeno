@@ -67,6 +67,7 @@ export type DayViewProps = {
   leaving: Step | null; // the finished card on its way to the pile
   note: string | null; // one plain line under the pills
   toast?: { text: string; undo: boolean } | null; // a short line over Talk for a few seconds: a goal removed (with Undo) or done
+  lineUndo?: boolean; // Zeno's line under the card ends in Undo (Skip's "Moved to the end.", round 7)
   signInFailed: boolean;
   busy: boolean; // a save is in flight, so the answers wait
   // The screen's answers (Vi, Nov 2): the first is its one big button, the rest small links under it. All are links
@@ -125,6 +126,7 @@ export type DayViewProps = {
     // The links by a desk's goal title (Nov 4): remove the goal or mark it done, and the toast's Undo for a removal.
     closeGoal?(how: "remove" | "finish"): void;
     undo?(): void;
+    unskip?(): void;
     // Connected apps (Nov 4): an item of From your apps becomes a goal; a token kept or dropped in Your apps; a doc's
     // link added under For this goal (resolves with a line saying why not, or "" once it shows).
     fromApp?(index: number): void;
@@ -339,7 +341,7 @@ export default function DayView(props: DayViewProps) {
       className="page flex min-h-dvh flex-col overflow-x-clip bg-desk text-ink"
       data-panel={panelOn || undefined}
       data-away={!home || undefined}
-      data-ws={aside ? true : undefined}
+      data-ws={panelOn || undefined}
     >
       <header className="mx-auto flex w-full max-w-[1224px] items-center justify-between gap-2 px-4 pt-4 sm:px-8 sm:pt-6 short:pt-3">
         <div className="flex items-center gap-3 sm:gap-6">
@@ -449,8 +451,8 @@ export default function DayView(props: DayViewProps) {
             )}
             {desk && (
               // Sticky across the desk column (Nov 4): the goal and its bar stay in view in Focus and after a Done, and
-              // the page scrolls under them into a short fade, as it does into the dock's.
-              <div data-strip className="sticky top-0 z-20 -mx-4 w-[calc(100%+2rem)] bg-desk px-4 pt-2 pb-1 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-linear-to-b after:from-desk">
+              // the page scrolls under them. Opaque to its edge (round 7: the Next card's words showed through a fade).
+              <div data-strip className="sticky top-0 z-20 -mx-4 w-[calc(100%+2rem)] bg-desk px-4 pt-2 pb-1">
                 <div className="mx-auto max-w-[760px]">
                   <GoalStrip
                     title={planning?.title ?? goal?.title ?? ""}
@@ -563,6 +565,14 @@ export default function DayView(props: DayViewProps) {
                 {props.line && (
                   <p className={top && props.quiet ? "text-ink-2" : undefined}>
                     <Said key={props.line} text={props.line} fade={props.line !== firstLine} />
+                    {props.lineUndo && (
+                      <>
+                        {" "}
+                        <button type="button" data-undo onClick={() => on.unskip?.()} className="link">
+                          Undo
+                        </button>
+                      </>
+                    )}
                   </p>
                 )}
                 {youLine}
@@ -720,7 +730,7 @@ export default function DayView(props: DayViewProps) {
             <p role="status" className="mb-2 flex items-center gap-1 px-4 text-center text-ink-2">
               {props.toast.text}
               {props.toast.undo && (
-                <button type="button" data-answer data-lead onClick={() => on.undo?.()} className="link">
+                <button type="button" data-answer data-lead data-undo onClick={() => on.undo?.()} className="link">
                   Undo
                 </button>
               )}

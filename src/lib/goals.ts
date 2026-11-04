@@ -367,10 +367,25 @@ export async function setStepStatus(email: string, stepId: string, status: StepS
 }
 
 // Skip (Vi, Nov 4): a todo step goes after every other step of its goal, which keep their order; null when it is not
-// theirs or not todo.
-export async function moveStepLater(email: string, stepId: string): Promise<Goal | null> {
+// theirs or not todo. With `beforeId`, Skip's Undo (round 7): it goes back in front of that step of the same goal, which
+// moves down one with every step after it.
+export async function moveStepLater(email: string, stepId: string, beforeId?: string): Promise<Goal | null> {
   await ensureSchema();
   const sql = getSql();
+  if (beforeId) {
+    const [back] = await sql`
+      WITH spot AS (
+        SELECT b.goal_id, b.position FROM steps b JOIN steps s ON s.goal_id = b.goal_id
+        WHERE b.id = ${beforeId} AND b.user_email = ${email} AND s.id = ${stepId} AND s.user_email = ${email} AND s.status = 'todo'
+      ), shifted AS (
+        UPDATE steps SET position = steps.position + 1 FROM spot
+        WHERE steps.goal_id = spot.goal_id AND steps.user_email = ${email} AND steps.position >= spot.position AND steps.id <> ${stepId}
+      )
+      UPDATE steps s SET position = spot.position FROM spot WHERE s.id = ${stepId} AND s.user_email = ${email}
+      RETURNING s.goal_id
+    `;
+    return back ? goalFrom(await goalQuery(email, String(back.goal_id))) : null;
+  }
   const [moved] = await sql`
     UPDATE steps s SET position = (SELECT max(position) + 1 FROM steps WHERE goal_id = s.goal_id AND user_email = ${email})
     WHERE s.id = ${stepId} AND s.user_email = ${email} AND s.status = 'todo'

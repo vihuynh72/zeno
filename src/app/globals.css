@@ -1499,8 +1499,8 @@ button:active .tap {
 
 /* ---------- The goals panel and the page around it (Nov 4, docs/PLAN-NOV4-GOALS.md) ----------
    A laptop with goals: the panel is the left column; an open goal takes the middle with "For this goal" on the right
-   (Vi, Nov 4), and any other screen the middle and the right, so the goals never move. One header over all three, Talk
-   centered under main. A phone: the panel is the home, under the hello; a goal's desk takes the whole screen. */
+   (Vi, Nov 4), and every other screen the same middle with the right column kept (round 7), so nothing moves. One
+   header over all three, Talk centered under main. A phone: the panel is the home, under the hello; a goal's desk takes the whole screen. */
 :root {
   --side: 260px;
   --aside: 260px;
@@ -1531,10 +1531,9 @@ button:active .tap {
   .page[data-panel] > header {
     max-width: calc(var(--side) + var(--aside) + var(--gap) * 2 + 760px + 64px);
   }
+  /* The middle column holds still (round 7): planning, Stop for now and the home keep the right column, and Talk stays
+     centered under the middle, so nothing widens or slides between screens. */
   .page[data-panel] > main {
-    grid-column: 4 / 7;
-  }
-  .page[data-panel][data-ws] > main {
     grid-column: 4;
   }
   /* In view while the desk scrolls, with its own scroll that ends above the dock even under the header (80px), so a
@@ -1559,6 +1558,7 @@ button:active .tap {
   }
   .page[data-panel] > .dock {
     padding-left: calc(var(--side) + var(--gap));
+    padding-right: calc(var(--aside) + var(--gap));
   }
   /* The panel is the way back to the goals, and the done pile has no room beside the card. */
   .page[data-panel] .back,
@@ -1612,9 +1612,6 @@ button:active .tap {
     @variant short {
       padding-top: 16px;
     }
-  }
-  .page[data-panel][data-ws] > .dock {
-    padding-right: calc(var(--aside) + var(--gap));
   }
   /* The column is narrow: a mail row or a link's title wraps to a second line before it is cut. */
   .page[data-ws] > .aside .truncate {

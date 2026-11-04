@@ -141,6 +141,11 @@ try {
   // Skip: a todo step goes after every other step; a running one, or another person's, stays put.
   const skipped = await moveStepLater(anyone, venue);
   assert.deepEqual(skipped?.steps.map((step) => step.title), ["Open the party board", "Pick a theme", "List 3 venues", "Send the invites", "Book the venue"]);
+  // Its Undo puts it back in front of the step it was before; never in front of another goal's step.
+  const invites = skipped?.steps.find((step) => step.title === "Send the invites")?.id ?? "";
+  const unskipped = await moveStepLater(anyone, venue, invites);
+  assert.deepEqual(unskipped?.steps.map((step) => step.title), ["Open the party board", "Pick a theme", "List 3 venues", "Book the venue", "Send the invites"]);
+  assert.equal(await moveStepLater(anyone, venue, runs.steps[0].id), null, "before another goal's step");
   assert.equal(await moveStepLater(anyone, piece?.steps[0].id ?? ""), null, "a running step");
   assert.equal(await moveStepLater("someone-else@zeno.local", venue), null, "another person's step");
   // A new current goal puts a step left running elsewhere back in line, as opening a plan does; a paused one doesn't.
