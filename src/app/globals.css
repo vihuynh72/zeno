@@ -588,6 +588,10 @@ button:active .tap {
   color: var(--ink);
   font-weight: 700;
 }
+/* Mark done · Remove by the goal's title (Vi, Nov 4: she couldn't find how to cancel a goal): ink, still not bold. */
+.link[data-ink] {
+  color: var(--ink);
+}
 
 .tap {
   transition:

@@ -8,7 +8,7 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { gapOf, goalTag, mins, planWeek, stepLabel } = await import("./week-plan.ts");
+const { byDate, gapOf, goalTag, mins, oneSitting, planWeek, stepLabel } = await import("./week-plan.ts");
 const { dateLabel } = await import("./desk-rows.ts");
 
 const LA = "America/Los_Angeles";
@@ -131,6 +131,63 @@ assert.deepEqual(kinds(planWeek([daily], [], [], "2026-11-04", LA)), ["", "", "s
 // A session done today puts the next one a gap later, with today's rest day tomorrow.
 const ranToday = goal("g-run3", "Run a 5K", [step("Run", 25, "done", "2026-11-04T17:00:00Z"), step("Run", 25)], null, "3 runs a week");
 assert.deepEqual(kinds(planWeek([ranToday], [], [], "2026-11-04", LA)), ["", "", "", "rest", "step", "rest", "", "", "", ""]);
+
+// Round 8: a step that names its day lands on or before it, and the steps around it keep their order.
+assert.equal(byDate("Send invites by Nov 8", "2026-11-04"), "2026-11-08");
+assert.equal(byDate("Order party favors by November 14th", "2026-11-04"), "2026-11-14");
+assert.equal(byDate("Pay rent by Fri", "2026-11-04"), "2026-11-06"); // Wednesday: this Friday
+assert.equal(byDate("Pay rent by friday", "2026-11-06"), "2026-11-06"); // on a Friday, today
+assert.equal(byDate("Book flights by Jan 5", "2026-11-04"), "2027-01-05");
+assert.equal(byDate("Plan the month by month", "2026-11-04"), null);
+assert.equal(byDate("Call venues and book one for Nov 22", "2026-11-04"), null); // "for", not "by"
+const party = goal("g-party", "Plan my daughters 8th birthday party", [
+  step("List 5 venue options near home", 5),
+  step("Call venues and book one for Nov 22", 20),
+  step("Make guest list with contacts", 15),
+  step("Send invites by Nov 8", 10),
+  step("Order party favors by Nov 14", 15),
+  step("Buy decorations", 20),
+  step("Confirm cake order", 10),
+], "2026-11-21");
+const partyDays = (plan: Plan) => plan.flatMap((day) => day.items.flatMap((item) => (item.kind === "step" ? [`${day.date} ${item.step.title}`] : [])));
+for (const zone of [LA, "UTC", "Asia/Tokyo"]) {
+  // Wednesday Nov 4 (evenly it was Mon 9), then Monday Nov 9, when the invites are late (today) and Nov 14 is in view.
+  for (const [today, invites] of [["2026-11-04", "2026-11-08"], ["2026-11-09", "2026-11-09"]]) {
+    const placed = partyDays(planWeek([party], [], [], today, zone));
+    const on = (title: string) => placed.find((line) => line.endsWith(title))?.slice(0, 10) ?? "none";
+    assert.ok(on("Send invites by Nov 8") <= invites, `invites on ${on("Send invites by Nov 8")} in ${zone}`);
+    assert.ok(today === "2026-11-04" || on("Order party favors by Nov 14") <= "2026-11-14", `favors on ${on("Order party favors by Nov 14")}`);
+    assert.deepEqual(
+      placed.map((line) => line.slice(11)),
+      party.steps.map((one) => one.title).slice(0, placed.length),
+    ); // in order
+    const dates = placed.map((line) => line.slice(0, 10));
+    assert.deepEqual([...dates].sort(), dates); // by date
+  }
+}
+// "by Fri" with no due date: Friday at the latest, though one a weekday would put it on Monday.
+const errands = goal("g-err", "Errands", [step("A", 10), step("B", 10), step("Pay rent by Fri", 10), step("D", 10)]);
+assert.deepEqual(spread(planWeek([errands], [], [], "2026-11-05", LA)).slice(3, 8), [["A"], ["B", "Pay rent by Fri"], [], [], ["D"]]);
+
+// Round 8: the parts of one sitting share its day; numbered sessions stay apart; "rest day" is for exercise only.
+assert.equal(oneSitting("Film first dinner intro and prep", "Film first dinner cook and plate"), true);
+assert.equal(oneSitting("Edit and post video 1", "Edit and post video 2"), false);
+assert.equal(oneSitting("Walk 2 minutes, jog 1 minute 6 times", "Walk 2 minutes, jog 2 minutes 5 times"), false);
+assert.equal(oneSitting("Run-walk", "Run-walk"), false);
+const tiktok = goal("g-tt", "Grow my TikTok", [
+  step("Script first video hook", 15),
+  step("Film first dinner intro and prep", 20),
+  step("Film first dinner cook and plate", 20),
+  step("Edit and post first video", 30),
+], null, "3 posts a week");
+assert.deepEqual(spread(planWeek([tiktok], [], [], "2026-11-04", LA)).slice(2, 7), [
+  ["Script first video hook"],
+  [],
+  ["Film first dinner intro and prep", "Film first dinner cook and plate"],
+  [],
+  ["Edit and post first video"],
+]);
+assert.ok(!kinds(planWeek([tiktok], [], [], "2026-11-04", LA)).some((day) => day.includes("rest")));
 
 // A Sunday shows the week ending, then next Monday to Wednesday; skipped and finished steps are never planned.
 const sunday = planWeek([goal("g-x", "X", [step("Skipped", 10, "skipped"), step("Done", 10, "done", "2026-11-08T20:00:00Z"), step("Left", 10)], "2026-11-11")], [], [], "2026-11-08", LA);

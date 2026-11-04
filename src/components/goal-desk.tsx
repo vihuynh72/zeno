@@ -60,12 +60,12 @@ export function GoalStrip(props: StripProps & { onClose?(how: "remove" | "finish
             <p className="text-ink-2">{caption}</p>
             {/* 44px tap targets that keep the caption's own line height, so the sticky strip stays as short. */}
             {onClose && (
-              <p className="-mx-1 -my-2.5 flex items-center gap-1 text-ink-2">
-                <button type="button" data-answer onClick={() => onClose("finish")} className="link">
+              <p className="-mx-1 -my-2.5 flex items-center gap-1">
+                <button type="button" data-answer onClick={() => onClose("finish")} data-ink className="link">
                   Mark done
                 </button>
                 <span aria-hidden="true">·</span>
-                <button type="button" data-answer onClick={() => onClose("remove")} className="link">
+                <button type="button" data-answer onClick={() => onClose("remove")} data-ink className="link">
                   Remove
                 </button>
               </p>
@@ -182,17 +182,21 @@ export function GoalAside({ goal, step, materials, brief, today, offer, apps = [
   const items = apps;
   const linkable = step !== null && !isEmailStep(step.title);
   const when = (start: string, end: string) => <span className="font-mono">{slotLabel(start, end, zone(), new Date(now))}</span>;
-  // From your apps shows even with nothing in it, for Add a doc.
-  const fromApps = Boolean(prompt || items.length > 0 || onAddDoc);
+  // Links and From your apps show only with something in them (round 8: placeholders on every goal); until then Find
+  // help online and Add a doc are quiet links at the end.
+  const linked = linkable && (links || isResearchStep(step.title));
+  const fromApps = Boolean(prompt || items.length > 0);
+  const findHelp = linkable && !linked;
+  const addDoc = onAddDoc && !fromApps;
   const why = materials?.why ?? [];
-  const empty = !next && !slot && !mail && related.length === 0 && !linkable && !fromApps && notes.length === 0 && why.length === 0;
+  const empty = !next && !slot && !mail && related.length === 0 && !linked && !fromApps && notes.length === 0 && why.length === 0;
   return (
     <aside aria-labelledby="goal-aside" className="aside">
       <h2 id="goal-aside" className="text-[20px] leading-8 font-bold">
         For this goal
       </h2>
       {empty ? (
-        <p className="mt-2 text-ink-2">Nothing for this goal yet.</p>
+        !findHelp && !addDoc && <p className="mt-2 text-ink-2">Nothing for this goal yet.</p>
       ) : (
         <div className="mt-2 flex flex-col gap-4">
           {why.length > 0 && (
@@ -226,17 +230,11 @@ export function GoalAside({ goal, step, materials, brief, today, offer, apps = [
           )}
           {mail && <MailCard id={mail.id} gmail={mail.gmail} />}
           {today && related.length > 0 && <Mail today={{ ...today, emails: related, unreadEmail: 0 }} />}
-          {linkable && (
+          {linked && (
             <section className="mini">
               <h3 className={HEAD}>Links</h3>
-              {links || isResearchStep(step.title) ? (
-                // Title in the key: a renamed step drops its links on the server, so the pack starts fresh too.
-                <PrepPack key={`${step.id}:${step.title}`} step={step} canvas={brief} />
-              ) : (
-                <button type="button" className="link -ml-1" onClick={() => setLinks(true)}>
-                  Find help online
-                </button>
-              )}
+              {/* Title in the key: a renamed step drops its links on the server, so the pack starts fresh too. */}
+              <PrepPack key={`${step.id}:${step.title}`} step={step} canvas={brief} />
             </section>
           )}
           {fromApps && (
@@ -269,6 +267,16 @@ export function GoalAside({ goal, step, materials, brief, today, offer, apps = [
             </section>
           )}
           {notes.length > 0 && <NotesCard notes={notes} from={before?.title} />}
+        </div>
+      )}
+      {(findHelp || addDoc) && (
+        <div className={`${empty ? "mt-1" : "mt-3"} flex flex-col items-start`}>
+          {findHelp && (
+            <button type="button" className="link -ml-1" onClick={() => setLinks(true)}>
+              Find help online
+            </button>
+          )}
+          {addDoc && <AddDoc key={goal.id} onAdd={onAddDoc} />}
         </div>
       )}
     </aside>

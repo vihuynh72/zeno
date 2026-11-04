@@ -36,6 +36,7 @@ function take(box: HTMLTextAreaElement | null, onAdd: (text: string) => void) {
 type PanelProps = {
   goals: Goal[]; // the open plans, in any order
   suggestions: CardRow[] | null;
+  caughtUp?: boolean;
   openId: string | null; // the goal whose desk is open, highlighted
   proposed?: Step | null; // the open goal's step on its desk, so its row names the same Next
   today: string;
@@ -108,7 +109,7 @@ export default function GoalsPanel(props: PanelProps) {
         )}
       </div>
       {(adding || words !== null) && onApp && <FromYourApps rows={apps} onPick={pickApp} limit={5} />}
-      <Suggestions rows={suggestions} onPick={onSuggest} onHide={props.onHide} onKeep={props.onKeep} onMemory={props.onMemory} />
+      <Suggestions rows={suggestions} caughtUp={props.caughtUp} onPick={onSuggest} onHide={props.onHide} onKeep={props.onKeep} onMemory={props.onMemory} />
     </aside>
   );
 }
@@ -253,29 +254,33 @@ export function FrontDoor({ hello, line, words, note, onAdd, onPhoto, children }
 // The Suggestions stack (Vi, Nov 4): the page passes the top 3 she hasn't hidden today. A row is one tap (a goal's next
 // step, mail to answer, a deadline or an app's item to plan) with ✕ to hide it for today; what Zeno noticed has Keep and
 // ✕ (Forget) instead. A row fades out, the rows under it move up, and focus goes to the row that took its place.
-// rows null: the day isn't read yet, so nothing claims she is caught up.
-type StackProps = { rows: CardRow[] | null; onPick(index: number): void; onHide(id: string): void; onKeep(id: string): void; onMemory(): void };
-export function Suggestions({ rows, onPick, onHide, onKeep, onMemory }: StackProps) {
+// rows null: the day isn't read yet, so nothing shows. No rows: only What Zeno remembers, with "You're all caught up."
+// only when the page says she hid cards today (caughtUp; round 8: it showed on a brand-new account).
+type StackProps = { rows: CardRow[] | null; caughtUp?: boolean; onPick(index: number): void; onHide(id: string): void; onKeep(id: string): void; onMemory(): void };
+export function Suggestions({ rows, caughtUp, onPick, onHide, onKeep, onMemory }: StackProps) {
   const [gone, setGone] = useState<string[]>([]);
   const list = useRef<HTMLUListElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
+  const memory = useRef<HTMLButtonElement>(null);
   if (rows === null) return null;
   const leave = (id: string, i: number, then: (id: string) => void) => {
     const done = () => {
       then(id);
       setGone((ids) => ids.filter((one) => one !== id));
-      requestAnimationFrame(() => (list.current?.querySelectorAll<HTMLElement>("[data-hide]")[i] ?? heading.current)?.focus());
+      requestAnimationFrame(() => (list.current?.querySelectorAll<HTMLElement>("[data-hide]")[i] ?? heading.current ?? memory.current)?.focus());
     };
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) return done();
     setGone((ids) => [...ids, id]);
     setTimeout(done, 200);
   };
   return (
-    <section aria-labelledby="suggestions" className="mt-6 w-full">
-      <h2 ref={heading} id="suggestions" tabIndex={-1} className="text-[20px] leading-8 font-bold outline-none">
-        Suggestions
-      </h2>
-      {rows.length === 0 && <p className="mt-2 text-ink-2">You&apos;re all caught up.</p>}
+    <section aria-labelledby={rows.length > 0 || caughtUp ? "suggestions" : undefined} className="mt-6 w-full">
+      {(rows.length > 0 || caughtUp) && (
+        <h2 ref={heading} id="suggestions" tabIndex={-1} className="text-[20px] leading-8 font-bold outline-none">
+          Suggestions
+        </h2>
+      )}
+      {rows.length === 0 && caughtUp && <p className="mt-2 text-ink-2">You&apos;re all caught up.</p>}
       <ul ref={list} className="feed mt-2">
         {rows.map((row, i) => (
           <li key={row.id} className="fade" data-gone={gone.includes(row.id) || undefined}>
@@ -321,7 +326,7 @@ export function Suggestions({ rows, onPick, onHide, onKeep, onMemory }: StackPro
           </li>
         ))}
       </ul>
-      <button type="button" data-answer onClick={onMemory} className="link -ml-1">
+      <button ref={memory} type="button" data-answer onClick={onMemory} className="link -ml-1">
         What Zeno remembers
       </button>
     </section>

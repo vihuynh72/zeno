@@ -157,6 +157,30 @@ const whyKey = (account: string) => `zeno:why:${account}`;
 const NOTE_STEPS = 40;
 const NOTES_A_STEP = 12;
 const SKIPPED = "Moved to the end.";
+// A line with Undo (round 7): it stays `ms`, then until her next tap anywhere but its Undo; then `off`. Returns the stop.
+function untilTap(ms: number, off: () => void) {
+  const stop = new AbortController();
+  const timer = setTimeout(() => {
+    document.addEventListener(
+      "pointerdown",
+      (event) => {
+        if ((event.target as Element | null)?.closest?.("[data-undo]")) return;
+        off();
+        stop.abort();
+      },
+      { signal: stop.signal },
+    );
+  }, ms);
+  return () => {
+    clearTimeout(timer);
+    stop.abort();
+  };
+}
+// A rewrite's one line on what changed ("Rewrote the plan around graphs and trees."), as its Why; a question is none.
+const whatChanged = (reply: string) => {
+  const first = reply.trim().split(/(?<=[.!])\s+/)[0] ?? "";
+  return first && first.length <= 90 && !first.includes("?") ? [first] : [];
+};
 // The day as this browser keeps it: no email snippets, and no Gmail link, which holds the address that the opaque account
 // key keeps out of storage. Both come back with each /api/day.
 const toKeep = (day: Day): Day => ({ ...day, emails: [], mailUrl: undefined });
@@ -413,7 +437,7 @@ export default function GuidedDay() {
   // Skip's "Moved to the end. Undo" under the card (round 7): the step, the step it went before, and its line.
   const [skipped, setSkipped] = useState<{ step: Step; before: string | null; line: string } | null>(null);
   const skipSaved = useRef<Promise<unknown>>(Promise.resolve());
-  const skipTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const skipOff = useRef(() => {}); // stops the Undo's wait (untilTap)
   // Connected apps (Nov 4): what they have waiting, read again after Your apps keeps or drops a token (appsRound); a doc
   // added under For this goal (docsRound); and the app just connected (/?connected=<app>), which opens Your apps.
   const [appItems, setAppItems] = useState<AppItem[]>([]);
@@ -448,8 +472,14 @@ export default function GuidedDay() {
   const frontDoor = screen === "ready" && !onDesk && plans.length === 0;
   // Coming back: her last goal's next step, or a goal of hers due within 2 days and sooner (resumePlan).
   const resume = fresh && screen === "ready" && !onDesk ? resumePlan(goal, plans, today, leftId) : null;
-  // The stack never repeats the step the coming-back card already offers.
-  const choices = stack.filter((card) => !resume || card.id !== `step:${resume.step.id}`).slice(0, 3);
+  // The stack never repeats what a big card already offers: the coming-back card's step, or the goal open on the desk
+  // (round 8: its only card was the step on the big card).
+  const choices = stack
+    .filter((card) => (!resume || card.id !== `step:${resume.step.id}`) && !(onDesk && card.kind === "step" && card.goal.id === goal?.id))
+    .slice(0, 3);
+  // "You're all caught up." only once she hid cards today and no big card offers a step (round 8: it showed on a new
+  // account and next to "Pick up where you left off").
+  const caughtUp = choices.length === 0 && hiddenNow.ids.length > 0 && !resume && !onDesk;
   const history = useRef<Turn[]>([]);
   const cache = useRef<Saved | null>(null);
   const tapped = useRef<string | null>(null); // the turn in flight came from a chip, not the type box: the words it shows
@@ -929,6 +959,11 @@ export default function GuidedDay() {
     if (res.progress) changeProgress(res.progress);
     const now = latest.current;
     const changed = (res.actions ?? []).some((one) => one.type === "goal-set" || one.type === "roadmap-changed");
+    // A rewrite by talking (make it specific, Smaller steps) replaces the goal's Why this plan with the turn's line on
+    // what changed, or clears it (round 8: the old reasons stayed next to the new plan). An added step keeps it.
+    const after = res.goal;
+    const was = after && [now.goal, ...now.goals].find((one) => one?.id === after.id);
+    if (changed && after && was && was.steps.some((one) => !after.steps.some((step) => step.title === one.title))) keepWhy(after.id, whatChanged(res.reply));
     const next = nextScreen(now.screen ?? "ready", res.actions ?? [], res.goal, now.screen === "ready" && now.view === "desk");
     const done = now.screen === "focus" && next === "checkin" ? openSteps(now.goal)[0] : undefined;
     // A skip said in Focus leaves it this way too, so only a step really marked done gets the stamp, the sound and "Nice".
@@ -1243,22 +1278,7 @@ export default function GuidedDay() {
   function showToast(next: NonNullable<typeof toast>, ms: number) {
     toastOff.current();
     setToast(next);
-    const stop = new AbortController();
-    const timer = setTimeout(() => {
-      document.addEventListener(
-        "pointerdown",
-        (event) => {
-          if ((event.target as Element | null)?.closest?.("[data-undo]")) return;
-          setToast(null);
-          stop.abort();
-        },
-        { signal: stop.signal },
-      );
-    }, ms);
-    toastOff.current = () => {
-      clearTimeout(timer);
-      stop.abort();
-    };
+    toastOff.current = untilTap(ms, () => setToast(null));
   }
 
   // Undo puts a removed goal back as it was: in the list, and open again when it was the goal on screen.
@@ -1283,6 +1303,8 @@ export default function GuidedDay() {
     if (res.state !== "ok" || !res.goal) return setNote("I couldn't bring that back just now.");
     takeGoal(res.goal);
     if (res.current?.id === res.goal.id) changeGoal(res.goal);
+    // Its 'Removed "…". Undo' goes too, so only this line says so (round 8).
+    setToast((shown) => (shown?.undo?.id === id ? null : shown));
     setLine("It's back, as it was.");
   }
 
@@ -1551,16 +1573,17 @@ export default function GuidedDay() {
     setProposedId(after);
     setLine(SKIPPED);
     setSkipped({ step, before, line: SKIPPED });
-    clearTimeout(skipTimer.current);
-    skipTimer.current = setTimeout(() => {
+    // As long as Remove's Undo (round 8: gone at 6 s before Maya and Dana could tap it).
+    skipOff.current();
+    skipOff.current = untilTap(30_000, () => {
       setSkipped(null);
       setLine((line) => (line === SKIPPED ? "" : line));
-    }, 6000);
+    });
     skipSaved.current = moveStep(step.id, { later: true }).then((res) => {
       if (res.state === "signed-out") return showSignedOut();
       // Only while nothing has moved on, so a Start tapped meanwhile keeps its running step.
       if (res.state === "ok") return void (latest.current.screen === "ready" && takeGoal(res.goal));
-      clearTimeout(skipTimer.current);
+      skipOff.current();
       setSkipped(null);
       if (putBack(step, before)) setLine("Couldn't skip that just now.");
     });
@@ -1570,7 +1593,7 @@ export default function GuidedDay() {
   function unskip() {
     const was = skipped;
     if (!was || !putBack(was.step, was.before)) return;
-    clearTimeout(skipTimer.current);
+    skipOff.current();
     setSkipped(null);
     setLine("");
     const before = was.before;
@@ -2027,6 +2050,8 @@ export default function GuidedDay() {
     // Zeno's answers to what it just said, on a step's screen only when they add something (Nov 4: never a second Start,
     // Done or Stop for now).
     const asked = extraReplies(options, asksBig(line, screen === "focus")).map((option) => say(option, () => tap(option)));
+    // Cancelling the goal she is on, in Adjust and Stuck? (Vi, Nov 4: "You can only skip"): Remove's path and Undo.
+    const removeThis = goal ? [say("Remove this goal", () => void endGoal(goal.id, goal.title, "remove"))] : [];
     if (screen === "ready" && onDesk) {
       // Saved answers wait for /api/day; a plan being made has no Start yet.
       if (!fresh || planning || !proposed) return [];
@@ -2039,6 +2064,7 @@ export default function GuidedDay() {
           ask("Smaller steps", `Make my steps smaller: split the longer ones into shorter parts. ${askFirst("update_steps")}`),
           ...(goal?.rhythm ? [ask("Fewer days a week", `Fewer days a week for this goal. ${askFirst("edit_goal")}`)] : []),
           ask("New due date", "I need a new due date for this goal. Ask me which date, with a few dates to tap, and save the one I pick with set_due."),
+          ...removeThis,
           other,
         ];
       }
@@ -2063,7 +2089,8 @@ export default function GuidedDay() {
       const done = say("Done", () => void finishStep(step));
       const stop = say("Stop for now", stopForNow);
       // Stuck? asks nothing (Vi, Nov 3): a smaller first piece on the same clock, the first move, or another goal.
-      if (stuck) return [done, say("Make it smaller", () => smallerNow(step)), say("Show me how", () => showMe(step)), say("Switch goal", switchGoal), stop];
+      // Remove this goal: the server puts its running step back in line, and the goals show with Undo (Vi, Nov 4).
+      if (stuck) return [done, say("Make it smaller", () => smallerNow(step)), say("Show me how", () => showMe(step)), say("Switch goal", switchGoal), ...removeThis, stop];
       const extra = isEmailStep(step.title) ? [say("Draft it in Gmail", () => tap(`Draft the email for: ${step.title}`, "Draft it in Gmail"))] : [];
       return [done, ...asked, say("Stuck?", () => setStuck(true)), stop, ...extra];
     }
@@ -2141,6 +2168,7 @@ export default function GuidedDay() {
       goals={plans}
       // Nothing claims she is caught up before the day is read.
       suggestions={fresh || choices.length > 0 ? choices.map((choice) => suggestionRow(choice, today)) : null}
+      caughtUp={caughtUp}
       addWords={addWords}
       planning={onDesk ? planning : null}
       resume={

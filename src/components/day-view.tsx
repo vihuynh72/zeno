@@ -51,6 +51,7 @@ export type DayViewProps = {
   held?: Goal[]; // every plan the page holds, finished ones too, so the Week lists steps finished since the day loaded
   // The Suggestions stack's top 3 (on.choose, on.hide, on.keep); null until the day is read.
   suggestions?: CardRow[] | null;
+  caughtUp?: boolean; // she hid cards today and nothing is left: Suggestions says "You're all caught up."
   addWords?: string | null; // words whose plan couldn't be made, back in the add box
   // a desk whose plan is still being made; view: Zeno's questions or Muse's thinking (plan-thinking.tsx) under its card
   planning?: { title: string; due: string | null; line: string; view?: ReactNode } | null;
@@ -406,7 +407,7 @@ export default function DayView(props: DayViewProps) {
               {youLine}
             </FrontDoor>
             <div className="w-full max-w-[760px]">
-              <Suggestions rows={props.suggestions ?? null} onPick={choose} onHide={hide} onKeep={keep} onMemory={() => on.sheet("memory")} />
+              <Suggestions rows={props.suggestions ?? null} caughtUp={props.caughtUp} onPick={choose} onHide={hide} onKeep={keep} onMemory={() => on.sheet("memory")} />
             </div>
           </>
         ) : home ? (
@@ -712,6 +713,7 @@ export default function DayView(props: DayViewProps) {
         <GoalsPanel
           goals={planGoals}
           suggestions={props.suggestions ?? null}
+          caughtUp={props.caughtUp}
           openId={desk && !planning ? goal?.id ?? null : null}
           proposed={props.proposed}
           today={today}

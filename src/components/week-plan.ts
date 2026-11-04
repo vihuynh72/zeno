@@ -20,9 +20,51 @@ const UNTIMED = 20; // what a step with no minutes counts for against the day's 
 const COUNT = "(\\d+|once|twice|one|two|three|four|five|six|seven)";
 const NUMBERS: Record<string, number> = { once: 1, one: 1, twice: 2, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7 };
 
+const MONTH = /\bby\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(?:uary|ruary|ch|il|e|y|ust|t|tember|ober|ember)?\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b/;
+const WEEKDAY = /\bby\s+(sun|mon|tue|wed|thu|fri|sat)(?:day|s|sday|nesday|rs|rsday|urday)?\b/;
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+// Rest days are for the body (round 8: "rest day" under a TikTok goal).
+const EXERCISE = /\b(run|runs|running|jog|jogging|walk|walks|walking|gym|lift|lifting|workouts?|exercise|yoga|swim|swimming|bike|biking|cycling|5k|10k|marathon|fit|fitness|cardio|strength|pilates|hiit|stretch|stretching|push-?ups?|squats?)\b/i;
+
 const open = (goal: Goal) => goal.steps.filter((step) => step.status === "todo" || step.status === "doing");
 const daysFrom = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
 const weekend = (date: string) => [0, 6].includes(new Date(`${date}T12:00:00Z`).getUTCDay());
+const pad = (n: number) => String(n).padStart(2, "0");
+
+// The day a step's title says it is due by ("Send invites by Nov 8", "Pay by Fri"), or null: a weekday is the next one
+// from today (today included); a month and day more than 2 months back is next year's.
+export function byDate(title: string, today: string): string | null {
+  const text = title.toLowerCase();
+  const month = MONTH.exec(text);
+  if (month) {
+    const year = Number(today.slice(0, 4));
+    const date = `${year}-${pad(MONTHS.indexOf(month[1]) + 1)}-${pad(Number(month[2]))}`;
+    if (Number.isNaN(Date.parse(date)) || Number(month[2]) > 31) return null;
+    return date < addDays(today, -60) ? `${year + 1}${date.slice(4)}` : date;
+  }
+  const weekday = WEEKDAY.exec(text);
+  return weekday ? addDays(today, (WEEKDAYS.indexOf(weekday[1]) - new Date(`${today}T12:00:00Z`).getUTCDay() + 7) % 7) : null;
+}
+
+// The last day (counted from today) each step may take: `cap`, or sooner when it or a step after it names its day, so
+// the steps keep their order.
+function lastDays(steps: Step[], today: string, cap: number) {
+  const own = steps.map((step) => {
+    const by = byDate(step.title, today);
+    return by ? Math.max(0, Math.min(cap, daysFrom(today, by))) : cap;
+  });
+  return own.map((_, i) => Math.min(...own.slice(i)));
+}
+
+// Parts of one sitting ("Film first dinner intro and prep", "Film first dinner cook and plate"): the same first 3 or more
+// words, then different words with no number, so numbered sessions ("Post video 1", "Post video 2") stay apart.
+export function oneSitting(a: string, b: string) {
+  const [x, y] = [a, b].map((title) => title.toLowerCase().split(/\s+/));
+  let same = 0;
+  while (same < Math.min(x.length, y.length) && x[same] === y[same]) same++;
+  return same >= 3 && same < Math.min(x.length, y.length) && ![...x.slice(same), ...y.slice(same)].some((word) => /\d/.test(word));
+}
 
 // "20m", "1h", "1h 30m".
 export const mins = (minutes: number) => (minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h${minutes % 60 ? ` ${minutes % 60}m` : ""}`);
@@ -52,8 +94,10 @@ export function gapOf(rhythm: string) {
 // Monday to Sunday of `today`'s week, then the next three days. Days before today list the steps finished on them (the
 // zone's clock); today and after list events, the goals due, and the plan, in that order:
 // - a goal with a due date spreads its open steps evenly over today to the day before it, in order, soonest due first;
-// - a goal that keeps going (rhythm) gets a session every gapOf days from its last one, and "rest day" the day after each;
+// - a goal that keeps going (rhythm) gets a session every gapOf days from its last one (parts of one sitting together),
+//   and, for exercise, "rest day" the day after each;
 // - any other goal takes one step a weekday until its steps run out.
+// A step that names its day ("by Nov 8", "by Fri") lands on or before it, and the steps before it do too.
 // A day holds about an hour of steps across goals (less with 3 or more timed events); a step that doesn't fit moves to
 // the next day with room, but never onto its due date, and a day with nothing planned always takes one.
 export function planWeek(goals: Goal[], events: PlanEvent[], done: DoneStep[], today: string, timeZone: string): PlanDay[] {
@@ -91,11 +135,12 @@ export function planWeek(goals: Goal[], events: PlanEvent[], done: DoneStep[], t
   for (const goal of goals.filter((goal) => goal.due && !goal.rhythm).sort((a, b) => a.due!.localeCompare(b.due!))) {
     const steps = open(goal);
     const span = Math.max(1, daysFrom(today, goal.due!)); // today up to the day before it's due
+    const last = lastDays(steps, today, span - 1); // or the day a step names (round 8: "Send invites by Nov 8" on Nov 9)
     let earliest = 0;
     steps.forEach((step, i) => {
-      const even = Math.max(earliest, Math.floor((i * span) / steps.length));
+      const even = Math.min(last[i], Math.max(earliest, Math.floor((i * span) / steps.length)));
       let at = even;
-      while (at < span - 1 && !fits(addDays(today, at), step)) at++;
+      while (at < last[i] && !fits(addDays(today, at), step)) at++;
       if (!fits(addDays(today, at), step)) at = even; // no room before it's due: its even day, over the hour
       place(addDays(today, at), goal, step);
       earliest = at;
@@ -111,12 +156,18 @@ export function planWeek(goals: Goal[], events: PlanEvent[], done: DoneStep[], t
       .at(-1);
     const sessions = last ? [last] : [];
     let date = last && addDays(last, gap) > today ? addDays(last, gap) : today;
+    let before: Step | null = null;
     for (const step of open(goal)) {
-      place(date, goal, step);
-      sessions.push(date);
-      date = addDays(date, gap);
+      // A part of the same sitting joins the session before it (round 8: one dinner filmed across Fri and Sun).
+      if (before && oneSitting(before.title, step.title)) place(sessions.at(-1)!, goal, step);
+      else {
+        place(date, goal, step);
+        sessions.push(date);
+        date = addDays(date, gap);
+      }
+      before = step;
     }
-    if (gap > 1) {
+    if (gap > 1 && EXERCISE.test(`${goal.title} ${goal.rhythm}`)) {
       for (const rest of sessions.map((session) => addDays(session, 1))) {
         if (rest >= today && !sessions.includes(rest)) day.get(rest)?.rest.push({ kind: "rest", goal });
       }
@@ -125,8 +176,11 @@ export function planWeek(goals: Goal[], events: PlanEvent[], done: DoneStep[], t
 
   for (const goal of goals.filter((goal) => !goal.due && !goal.rhythm)) {
     const steps = open(goal);
+    const last = lastDays(steps, today, Infinity);
     for (let date = today, next = 0; next < steps.length && date <= dates[SHOWN - 1]; date = addDays(date, 1)) {
-      if (!weekend(date) && fits(date, steps[next])) place(date, goal, steps[next++]);
+      // A step that names its day takes it at the latest, weekend or full, with the steps before it.
+      if (daysFrom(today, date) >= last[next]) while (next < steps.length && daysFrom(today, date) >= last[next]) place(date, goal, steps[next++]);
+      else if (!weekend(date) && fits(date, steps[next])) place(date, goal, steps[next++]);
     }
   }
 
