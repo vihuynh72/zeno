@@ -222,6 +222,11 @@ for (const ref of ["s1", "s2", "s9", "m1", 3]) assert.ok(errorOf("update_steps",
 assert.ok(errorOf("update_steps", { steps: [{ ...fine, ref: "s3" }, { ...fine, ref: "s3" }] }));
 assert.match(errorOf("update_steps", { steps: [{ title: "Pay off the credit card debt", minutes: 10 }] }) ?? "", /titles are stored/);
 assert.equal((checkCall(call("update_steps", { steps: Array(10).fill(fine) }), goal, refs) as { steps?: unknown[] }).steps?.length, 10, "10 fit");
+// A kept step whose minutes the model left out keeps its own (live, Nov 4: a reorder wiped every step's minutes).
+assert.deepEqual((checkCall(call("update_steps", { steps: [{ ref: "s4", title: "Draft the intro" }, { title: "Make a playlist" }] }), goal, refs) as { steps?: unknown[] }).steps, [
+  { id: "d", title: "Draft the intro", minutes: 25 },
+  { id: undefined, title: "Make a playlist", minutes: null },
+]);
 assert.ok(errorOf("update_steps", { steps: Array(11).fill(fine) }));
 
 // add_step (Nov 4, Make it smaller): one new step before an open step of the current goal, or at the end; nothing else.
@@ -1153,6 +1158,13 @@ const talkSent = sent[0].messages;
 assert.equal(talkSent[1].role, "system");
 assert.match(talkSent[1].content ?? "", /^Call finish_step only when they say they finished or skipped that step[\s\S]*call add_step with one first piece of 2 to 5 minutes[\s\S]*never drop, merge, reword or reorder[\s\S]*call set_due[\s\S]*call set_goal once for each, the most urgent first/);
 assert.match(talkSent.at(-1)!.content ?? "", /\nToday is \w{3} \w{3} \d+ = \d{4}-\d{2}-\d{2}\.\n[\s\S]*\nCurrent goal: none yet\.\nTheir other open goals, waiting in their list: Reply to landlord about the lease\.\n\nThe person says:\n/);
+// A goal named while a step runs waits in their list, so Focus is never cut short; the current goal stays.
+reset();
+replies.push(tools(fix("Study for the CS 146 exam")), say("Saved it for later. Back to the thesis."));
+const busyTurn = await talk(talkContext, null, [], "oh and i have a CS 146 exam next thursday");
+assert.deepEqual(calls, ["setGoal Study for the CS 146 exam paused"]);
+assert.equal(busyTurn.goal?.id, "goal-1");
+assert.match(results()[0].note, /waits in their goals list/);
 
 // On its own, start_step runs.
 reset();
@@ -1423,7 +1435,12 @@ const read = goalsFrom(
 );
 assert.deepEqual(read.map((one: { title: string }) => one.title), ["Plan Ana's 8th birthday party", "Run a 5K without stopping"], "a repeat and a private title drop; 3 at most were read");
 assert.deepEqual([read[0].due, read[0].rhythm, read[0].steps.length, read[0].steps[0], read[0].steps[1].minutes], ["2026-11-22", null, 10, { title: "Pick a theme", minutes: 5 }, 180]);
-assert.deepEqual([read[1].due, read[1].rhythm, read[1].steps.length, read[1].steps[0].minutes], ["2027-01-10", "3 runs a week", 5, 25], "sessions keep their honest length");
+assert.deepEqual(
+  [read[1].due, read[1].rhythm, read[1].steps.length, read[1].steps[0].minutes, read[1].steps[1].minutes],
+  ["2027-01-10", "3 runs a week", 6, 5, 25],
+  "a 5-minute starter, then sessions at their honest length",
+);
+assert.equal(goalsFrom(JSON.stringify({ goals: [{ ...JSON.parse(JSON.stringify({ title: "Run", due: "", rhythm: "daily" })), steps: many(9) }] }), today3)[0].steps.length, 6, "a starter and 5 sessions at most");
 const one = (over: object) => goalsFrom(JSON.stringify({ goals: [{ title: "Finish chapter 2 of my thesis", due: "2026-12-15", rhythm: "", steps: many(5), ...over }] }), today3);
 assert.equal(one({ due: "2026-11-02" })[0].due, null, "a past date is none");
 for (const due of ["Dec 15", "2026-02-30", 20261215, null]) assert.equal(one({ due })[0].due, null, String(due));
@@ -1444,11 +1461,12 @@ assert.deepEqual([addBody.reasoning_effort, addBody.response_format.json_schema.
 for (const rule of [
   /a parent, a worker, retired or anyone else/,
   /one for each separate thing they want to get done, at most 3, the most urgent first/,
-  /rather than 'Handle paperwork'\. Titles are saved on Zeno's servers: leave out amounts they owe, health details/,
-  /Never a date before today, and never one they didn't say\./,
+  /rather than 'Handle paperwork'\. Leave the date out of the title: it goes in due\. Titles are saved on Zeno's servers: leave out amounts they owe, health details/,
+  /'before' a month is the day before it, like 'before April' is March 31\. Never a date before today, and never one they didn't say\./,
   /rhythm: only for a goal that keeps going/,
   /4 to 10 steps in order that finish the whole job\. The first takes at most 5 minutes[^.]*\. The last one finishes it/,
-  /the next 3 to 5 sessions in order/,
+  /first one step of at most 5 minutes that gets them ready and can start right now, like picking the days; then the next 3 to 5 sessions in order/,
+  /and the same as any time the title says/,
   /a step never holds the finished work, an answer or a draft/,
   /Write titles and steps in the language they wrote in\./,
 ]) {

@@ -154,8 +154,14 @@ export async function setGoal(
   const sql = getSql();
   const goalId = crypto.randomUUID();
   const results = await sql.transaction([
-    // One goal at a time: the old one is paused, not lost.
-    ...(paused ? [] : [sql`UPDATE goals SET status = 'paused', updated_at = now() WHERE user_email = ${email} AND status = 'active'`]),
+    // One goal at a time: the old one is paused, not lost, and a step left running there goes back in line, as
+    // activateGoal does.
+    ...(paused
+      ? []
+      : [
+          sql`UPDATE steps SET status = 'todo', started_at = NULL WHERE user_email = ${email} AND status = 'doing'`,
+          sql`UPDATE goals SET status = 'paused', updated_at = now() WHERE user_email = ${email} AND status = 'active'`,
+        ]),
     sql`
       INSERT INTO goals (id, user_email, title, due, rhythm, status)
       VALUES (${goalId}, ${email}, ${title}, ${due}, ${rhythm}, ${paused ? "paused" : "active"})

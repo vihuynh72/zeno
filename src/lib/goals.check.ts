@@ -138,6 +138,12 @@ try {
   assert.equal(last?.steps.at(-1)?.title, "Send the invites", "no step named: after the last");
   assert.equal(await insertStep(anyone, party.id, { title: "x", minutes: 1 }, runs.steps[0].id), null, "another goal's step");
   assert.equal(await insertStep("someone-else@zeno.local", party.id, { title: "x", minutes: 1 }), null, "another person's goal");
+  // A new current goal puts a step left running elsewhere back in line, as opening a plan does; a paused one doesn't.
+  await setGoal(anyone, "Fix the bike", [{ title: "Find the pump", minutes: 5 }], null, { paused: true });
+  assert.equal((await getGoal(anyone, party.id))?.steps[0].status, "doing", "a paused new goal leaves the clock alone");
+  const bike = await setGoal(anyone, "Fix the bike light", [{ title: "Buy a battery", minutes: 10 }]);
+  assert.equal((await getGoal(anyone, party.id))?.steps[0].status, "todo");
+  assert.equal((await currentGoal(anyone))?.id, bike.id);
 
   // A due date said later (Nov 4: "due nov 15" typed into the tax goal was lost).
   assert.equal((await setGoalDue(anyone, runs.id, "2031-01-10"))?.due, "2031-01-10");
