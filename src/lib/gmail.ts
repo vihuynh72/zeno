@@ -71,10 +71,14 @@ const BULK = /^CATEGORY_(PROMOTIONS|SOCIAL|UPDATES|FORUMS)$/;
 const NO_REPLY = /no[-_]?reply|do[-_]?not[-_]?reply|notifications?@|mailer-daemon|newsletter/i;
 const IMPORTANT = "in:inbox -category:promotions -category:social -category:updates -category:forums";
 
+// A Gmail message id as the routes accept it.
+export const MAIL_ID = /^[A-Za-z0-9_-]{6,64}$/;
+
 // Only important mail (Vi, Nov 2), people and school: the newest 15 outside the bulk tabs, without bulk or no-reply
-// senders, at most 6.
-export async function getRecentEmail(accessToken: string): Promise<EmailSummary[]> {
-  const list = (await gmailFetch(accessToken, `messages?${new URLSearchParams({ maxResults: "15", q: IMPORTANT })}`)) as GmailListResponse;
+// senders, at most 6. all: every recent email instead ("Show all mail", Nov 4), the newest 20 in the inbox from any tab.
+export async function getRecentEmail(accessToken: string, all = false): Promise<EmailSummary[]> {
+  const query = all ? { maxResults: "20", q: "in:inbox" } : { maxResults: "15", q: IMPORTANT };
+  const list = (await gmailFetch(accessToken, `messages?${new URLSearchParams(query)}`)) as GmailListResponse;
 
   const ids = (list.messages ?? []).map((item) => item.id).filter(Boolean) as string[];
   const messages = await Promise.all(
@@ -91,7 +95,7 @@ export async function getRecentEmail(accessToken: string): Promise<EmailSummary[
     .flatMap((message, i) => {
       const from = header(message, "From");
       const labels = message.labelIds ?? [];
-      if (!from || NO_REPLY.test(from) || labels.some((label) => BULK.test(label))) return [];
+      if (!from || (!all && (NO_REPLY.test(from) || labels.some((label) => BULK.test(label))))) return [];
       return [
         {
           // The id it was read by: a made-up one could never open (Nov 4).
@@ -103,7 +107,34 @@ export async function getRecentEmail(accessToken: string): Promise<EmailSummary[
         },
       ];
     })
-    .slice(0, 6);
+    .slice(0, all ? 20 : 6);
+}
+
+// Mail she sent 3 to 14 days ago that nobody answered ("Waiting on", Nov 4): the threads of the newest 10 she sent in
+// that window, each read once for its headers; a thread whose last message is still hers, 3+ days old, to someone else
+// and not a no-reply address, waits. At most 3, newest first. self: her own address.
+export type Waiting = { id: string; to: string; subject: string; sentAt: string };
+export async function getWaiting(accessToken: string, self: string, now = Date.now()): Promise<Waiting[]> {
+  const query = { maxResults: "10", q: "in:sent older_than:3d newer_than:14d" };
+  const list = (await gmailFetch(accessToken, `messages?${new URLSearchParams(query)}`)) as { messages?: { threadId?: string }[] };
+  const threads = [...new Set((list.messages ?? []).flatMap((item) => (item.threadId ? [item.threadId] : [])))].slice(0, 6);
+  const read = await Promise.all(
+    threads.map((id) =>
+      (gmailFetch(accessToken, `threads/${encodeURIComponent(id)}?format=metadata&metadataHeaders=To&metadataHeaders=Subject`) as Promise<{ messages?: GmailMessage[] }>).catch(() => null),
+    ),
+  );
+  return read
+    .flatMap((thread) => {
+      const last = thread?.messages?.at(-1);
+      const at = Number(last?.internalDate);
+      // The first recipient: a quoted name may hold a comma ("Patel, Ana" <ana@school.edu>).
+      const to = ((last ? header(last, "To") : "").match(/(?:"[^"]*"|[^,])+/)?.[0] ?? "").trim();
+      const mine = last?.labelIds?.includes("SENT") && now - at >= 3 * 86_400_000;
+      if (!last?.id || !mine || !to || NO_REPLY.test(to) || addressOf(to) === self.toLowerCase()) return [];
+      return [{ id: last.id, to, subject: header(last, "Subject") || "(no subject)", sentAt: new Date(at).toISOString() }];
+    })
+    .sort((a, b) => Date.parse(b.sentAt) - Date.parse(a.sentAt))
+    .slice(0, 3);
 }
 
 // One email read in full for the Desk (GET /api/mail/[id]) with the person's own token: cleaned and capped at 6,000

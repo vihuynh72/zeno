@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import type { MailResponse } from "@/lib/day";
-import { GmailError, readMessage } from "@/lib/gmail";
+import { GmailError, MAIL_ID, readMessage } from "@/lib/gmail";
 
 // GET /api/mail/[id]: one email from the person's own inbox, read in full with their own token for the Desk and an
 // email's goal desk. The text is cleaned and capped in memory and goes only to their browser: never stored, logged,
@@ -12,7 +12,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ state: "signed-out" } satisfies MailResponse, { status: 401 });
   }
   const { id } = await params;
-  if (!/^[A-Za-z0-9_-]{6,64}$/.test(id)) {
+  if (!MAIL_ID.test(id)) {
     return NextResponse.json({ state: "bad-request" } satisfies MailResponse, { status: 400 });
   }
   // After a failed refresh the token is dead, so the mail can't be read until they sign in again.

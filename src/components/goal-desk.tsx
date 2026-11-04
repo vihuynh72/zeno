@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import type { CanvasBrief, DayEmail, Goal, MailResponse, Step } from "@/lib/day";
+import type { CanvasBrief, Goal, MailResponse, Step } from "@/lib/day";
 import { APP_NAMES, type AppItem } from "@/lib/connect";
 import BookingChip, { type Booking } from "@/components/booking-chip";
 import type { Today } from "@/components/day-view";
 import { goalLine, isEmailStep, isResearchStep, realMinutes, slotLabel, splitLater } from "@/components/day-flow";
-import { Mail } from "@/components/desk";
+import { Mail, MailActions } from "@/components/desk";
 import { dateLabel, senderName } from "@/components/desk-rows";
 import { forGoal, goalEvent } from "@/components/goal-match";
 import PrepPack from "@/components/prep-pack";
@@ -156,9 +156,8 @@ type AsideProps = {
   onAddDoc?(url: string): Promise<string>; // "Add a doc": "" once it shows, else the line saying why not
   onBook(): void;
   onUndo(): void;
-  onReply(email: DayEmail): void;
 };
-export function GoalAside({ goal, step, materials, brief, today, offer, apps = [], onAddDoc, onBook, onUndo, onReply }: AsideProps) {
+export function GoalAside({ goal, step, materials, brief, today, offer, apps = [], onAddDoc, onBook, onUndo }: AsideProps) {
   const now = useSyncExternalStore(everyMinute, () => Math.floor(Date.now() / 60_000) * 60_000, () => 0);
   const [links, setLinks] = useState(materials?.sourcesOpen ?? Boolean(step?.prep?.length));
   const { prompt, mail } = materials ?? {};
@@ -214,7 +213,7 @@ export function GoalAside({ goal, step, materials, brief, today, offer, apps = [
             </section>
           )}
           {mail && <MailCard id={mail.id} gmail={mail.gmail} />}
-          {today && related.length > 0 && <Mail today={{ ...today, emails: related, unreadEmail: 0 }} onReply={onReply} />}
+          {today && related.length > 0 && <Mail today={{ ...today, emails: related, unreadEmail: 0 }} />}
           {linkable && (
             <section className="mini">
               <h3 className={HEAD}>Links</h3>
@@ -375,7 +374,15 @@ function MailCard({ id, gmail }: { id: string; gmail?: string }) {
           <div className="mail-text mt-2" tabIndex={0} aria-label="The email's text">
             {mail.text}
           </div>
-          {open}
+          {/* Its reply drafted on a tap (Nov 4), and Open in Gmail. */}
+          <div className="mt-2">
+            <MailActions
+              mail={{ id, from: mail.from, subject: mail.subject, snippet: "", unread: false, asks: true }}
+              line=""
+              text={mail.text}
+              gmail={gmail?.split("#")[0]}
+            />
+          </div>
         </>
       )}
     </article>

@@ -53,6 +53,17 @@ export function gmailRow(mail: Pick<DayEmail, "id" | "subject" | "sensitive">, g
   return mail.sensitive ? `${gmail}#inbox/${encodeURIComponent(mail.id)}` : null;
 }
 
+// Gmail's compose window for this account (gmail: the day's mailUrl) with a reply draft filled in: she sends it there,
+// Zeno never does (Nov 2: no outbound mail). shortcut: a new message, not threaded under the email, since gmail.readonly
+// can't save a Gmail draft; ask Vi before adding the gmail.compose scope.
+export function composeUrl(gmail: string, to: string, subject: string, body: string): string {
+  const url = new URL(gmail.split("#")[0]);
+  const su = /^re:/i.test(subject) ? subject : `Re: ${subject}`;
+  for (const [key, value] of Object.entries({ view: "cm", fs: "1", to, su, body })) url.searchParams.set(key, value);
+  // Spaces as %20, as agent.ts draftUrl sends them: some decoders show "+" as a plus (a typed "+" is already %2B).
+  return url.href.replace(/\+/g, "%20");
+}
+
 // "https://SJSU.instructure.com/courses/1" reads as sjsu.instructure.com.
 export const canvasHost = (base: string) => base.trim().replace(/^https?:\/\//i, "").split(/[/?#]/)[0].toLowerCase();
 

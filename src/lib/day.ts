@@ -320,6 +320,27 @@ export type MailResponse =
   | { state: "ok"; from: string; address: string; subject: string; date: string; text: string }
   | { state: "signed-out" | "bad-request" | "not-found" | "error" };
 
+// Mail that helps (Vi, Nov 4). POST /api/mail/lines body { ids }: up to 6 important emails. lines: one each by id, what
+// it asks and by when, from one Muse call; code, bank and private mail never reaches it and gets none. The page keeps
+// them on the device for the day, so GET /api/day stays instant.
+export type MailLinesResponse = { state: "ok"; lines: Record<string, string> } | { state: "signed-out" | "bad-request" | "error" };
+
+// POST /api/mail/[id]/draft: Muse's short reply in her voice, which she edits and sends herself from Gmail's compose
+// window; Zeno never sends mail. private: code, bank or private mail, which never reaches the model.
+export type DraftResponse =
+  | { state: "ok"; draft: string; to: string; subject: string }
+  | { state: "signed-out" | "bad-request" | "not-found" | "private" | "error" };
+
+// GET /api/mail ("Show all mail"): the newest 20 emails from every inbox tab, as the day's rows.
+export type MailListResponse = { state: "ok"; emails: DayEmail[] } | { state: "signed-out" | "error" };
+
+// GET /api/mail/waiting ("Waiting on"): up to 3 emails she sent 3+ days ago with no reply; to is the To header. Code and
+// bank mail is left out.
+export type WaitingResponse = { state: "ok"; waiting: { id: string; to: string; subject: string; sentAt: string }[] } | { state: "signed-out" | "error" };
+
+// POST /api/goal/step body ("Add as a step"): one step from an email for one of her goals. Answers with GoalResponse.
+export type AddStepRequest = { goalId: string; title: string };
+
 // ---------- The Nov 3 night round (docs/PLAN-NOV3-APPS.md) ----------
 
 // POST /api/goal/snap body: a photo or screenshot of an assignment, shrunk in the browser to a JPEG, PNG or WebP data

@@ -8,7 +8,7 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { bookedEvents, canvasHost, dueDays, dueTime, gmailRow, httpsOnly, markEvents, senderName, snippetLine } = await import("./desk-rows.ts");
+const { bookedEvents, canvasHost, composeUrl, dueDays, dueTime, gmailRow, httpsOnly, markEvents, senderName, snippetLine } = await import("./desk-rows.ts");
 
 // Every mail row opens (Nov 4, Vi: "certain emails you can't even click on"): mail with an id opens in Zeno, code or bank
 // mail at its message in this account's Gmail, never in Zeno, and a row with no id as Gmail's search for its subject.
@@ -17,6 +17,22 @@ assert.equal(gmailRow({ id: "18c2f", subject: "Lab 3" }, inbox), null);
 assert.equal(gmailRow({ id: "18c2f", subject: "Your code is [number]", sensitive: true }, inbox), `${inbox}#inbox/18c2f`);
 assert.equal(gmailRow({ subject: 'Lab 3 "moved" & more' }, inbox), `${inbox}#search/subject%3A%22Lab%203%20%22moved%22%20%26%20more%22`);
 assert.equal(gmailRow({ subject: "Lab 3" }), "https://mail.google.com/mail/#search/subject%3A%22Lab%203%22", "no account link: plain Gmail");
+
+// A reply draft opens as Gmail's compose window for this account, filled in; she sends it (Nov 4). "Re:" once.
+const compose = new URL(composeUrl(`${inbox}#inbox`, "kim@school.edu", "Office hours?", "Hi Kim,\n\nWed at 2 & Thu work.\n\nMaya"));
+assert.equal(`${compose.origin}${compose.pathname}`, "https://mail.google.com/mail/");
+assert.deepEqual(Object.fromEntries(compose.searchParams), {
+  authuser: "maya@school.edu",
+  view: "cm",
+  fs: "1",
+  to: "kim@school.edu",
+  su: "Re: Office hours?",
+  body: "Hi Kim,\n\nWed at 2 & Thu work.\n\nMaya",
+});
+assert.equal(new URL(composeUrl("https://mail.google.com/mail/", "a@b.co", "RE: Lab 3", "x")).searchParams.get("su"), "RE: Lab 3");
+const spaced = composeUrl("https://mail.google.com/mail/", "a@b.co", "Lab 3", "1 + 1 is 2");
+assert.ok(!spaced.includes("+") && spaced.includes("Lab%203"), "spaces as %20, never +");
+assert.equal(new URL(spaced).searchParams.get("body"), "1 + 1 is 2", "a typed + stays a +");
 
 const event = (title: string, start: string, end: string, allDay = false): DayEvent => ({ title, start, end, allDay });
 const day = [

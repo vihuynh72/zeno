@@ -583,7 +583,6 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
           canvasSynced: noop,
           openGoal: noop,
           openDeadline: noop,
-          reply: noop,
         }}
       />
     </div>

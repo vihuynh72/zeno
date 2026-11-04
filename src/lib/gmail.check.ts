@@ -1,7 +1,7 @@
 // Self-check for gmail.ts's day mail, asking mail and one email in full, against a stubbed Gmail: node src/lib/gmail.check.ts
 import assert from "node:assert/strict";
 
-const { GmailError, addressOf, asks, cleanBody, getRecentEmail, readMessage } = await import("./gmail.ts");
+const { GmailError, addressOf, asks, cleanBody, getRecentEmail, getWaiting, readMessage } = await import("./gmail.ts");
 
 // Asking mail (Vi, Nov 3): a "?" or a request's words in the subject or snippet, in any case, never in mail the person
 // sent, and never a link's "?".
@@ -58,6 +58,47 @@ assert.deepEqual(
 );
 assert.deepEqual(emails[0], { id: "m1", from: "Prof Kim <kim@sjsu.edu>", subject: "Subject m1", snippet: "About m1", unread: true });
 assert.equal(emails[1].unread, false);
+
+// "Show all mail" (Nov 4): the newest 20 in the inbox from every tab, no-reply and bulk senders too; senderless mail still out.
+urls.length = 0;
+const everything = await getRecentEmail("tok", true);
+assert.deepEqual(Object.fromEntries(new URL(urls[0]).searchParams), { maxResults: "20", q: "in:inbox" });
+assert.deepEqual(
+  everything.map((item) => item.id),
+  mail.filter(({ id }) => id !== "m5").map(({ id }) => id),
+);
+
+// "Waiting on" (Nov 4): threads of mail she sent 3 to 14 days ago whose last message is still hers, 3+ days old, to
+// someone else (the first recipient, a quoted comma kept) and not a no-reply address; at most 3, newest first.
+const NOW = Date.parse("2026-11-04T18:00:00Z");
+const DAY = 86_400_000;
+const sentMsg = (id: string, to: string, daysAgo: number, labels = ["SENT"]) => ({
+  id,
+  labelIds: labels,
+  internalDate: String(NOW - daysAgo * DAY),
+  payload: { headers: [{ name: "To", value: to }, { name: "Subject", value: `About ${id}` }] },
+});
+const threads: Record<string, { messages: object[] }> = {
+  t1: { messages: [sentMsg("a1", '"Patel, Ana" <ana@school.edu>, dana@school.edu', 4)] },
+  t2: { messages: [sentMsg("b1", "kim@school.edu", 6), sentMsg("b2", "me@school.edu", 5, ["INBOX"])] },
+  t3: { messages: [sentMsg("c1", "lee@school.edu", 9)] },
+  t4: { messages: [sentMsg("d1", "noreply@bank.example", 5)] },
+  t5: { messages: [sentMsg("e1", "Me <ME@school.edu>", 7)] },
+  t6: { messages: [sentMsg("f1", "ruth@school.edu", 2)] },
+  t7: { messages: [sentMsg("g1", "sam@school.edu", 4)] },
+};
+urls.length = 0;
+globalThis.fetch = (async (input: RequestInfo | URL) => {
+  const url = String(input);
+  urls.push(url);
+  if (url.includes("/messages?")) return Response.json({ messages: ["t1", "t2", "t1", "t3", "t4", "t5", "t6", "t7"].map((threadId, i) => ({ id: `x${i}`, threadId })) });
+  const id = /\/threads\/(\w+)\?/.exec(url)?.[1] ?? "";
+  return id === "t3" ? new Response("boom", { status: 500 }) : Response.json(threads[id]);
+}) as typeof fetch;
+const waiting = await getWaiting("tok", "me@school.edu", NOW);
+assert.deepEqual(Object.fromEntries(new URL(urls[0]).searchParams), { maxResults: "10", q: "in:sent older_than:3d newer_than:14d" });
+assert.equal(urls.length, 1 + 6, "each thread read once, at most 6");
+assert.deepEqual(waiting, [{ id: "a1", to: '"Patel, Ana" <ana@school.edu>', subject: "About a1", sentAt: new Date(NOW - 4 * DAY).toISOString() }], "answered, failed, no-reply, to herself and too new all left out; t7 is past the 6 threads read");
 
 // One email in full for the Desk: format=full with the person's token, the plain part over the HTML one, cleaned like
 // the scan's (no quoted reply, links as [link]) with its paragraphs, capped at 6,000 characters; Gmail's 404 stays one.

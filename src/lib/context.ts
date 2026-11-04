@@ -1,9 +1,9 @@
 import type { Session } from "next-auth";
 import { dueIn } from "@/lib/brief";
 import { CALENDAR_WRITE, calendarFailure, calendarWriteFor, freeSlots, getTodayEvents, localDays, upcomingDeadlines, type CalendarEvent } from "@/lib/calendar";
-import type { CalendarWrite, CanvasBrief, Deadline, FreeSlot, Goal, Memory, Progress } from "@/lib/day";
+import type { CalendarWrite, CanvasBrief, DayEmail, Deadline, FreeSlot, Goal, Memory, Progress } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
-import { getRecentEmail, type EmailSummary } from "@/lib/gmail";
+import { addressOf, asks, getRecentEmail, type EmailSummary } from "@/lib/gmail";
 import { currentGoal, deadlineMemory, factKey, listMemories, todoMemory } from "@/lib/goals";
 import { sensitiveEmail } from "@/lib/profile";
 import { NO_PROGRESS, progressFor } from "@/lib/progress";
@@ -166,6 +166,17 @@ export function knownDeadlines(booked: Deadline[], memories: Memory[], timeZone:
 const data = (text: string) => `<<<${text.replace(/[<>]{3,}/g, "")}>>>`;
 // "No passwords or codes" (docs/PLAN-NOV.md): a sign-in code can be 4 digits or split ("482 913"), and a link or
 // address can carry one, a link without https too ("zoom.us/j/812?pwd=...").
+// Mail rows for the page (GET /api/day, GET /api/mail). The day is kept in the browser, and codes are kept nowhere: code
+// and bank mail shows that it came, not what it says, and never asks; its row opens it in Gmail, never in Zeno (Nov 4: it
+// couldn't be clicked). Mail the person sent never asks either.
+export const dayEmails = (emails: EmailSummary[], self: string): DayEmail[] =>
+  emails.map(({ id, from, subject, snippet, unread }) => {
+    const address = addressOf(from);
+    return sensitiveEmail({ from, subject, snippet })
+      ? { id, from, address, subject: scrub(subject), snippet: "", unread, asks: false, sensitive: true }
+      : { id, from, address, subject, snippet, unread, asks: asks(subject, snippet, address === self.toLowerCase()) };
+  });
+
 export const scrub = (text: string) =>
   text
     .replace(/https?:\/\/\S+|www\.\S+|\b[\w-]+(\.[\w-]+)+\/\S*/gi, "[link]")

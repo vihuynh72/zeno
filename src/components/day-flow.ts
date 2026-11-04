@@ -169,6 +169,16 @@ export function mailPlan(email: DayEmail | null) {
   return { title: `Answer ${name}`, steps: [{ title: about ? `Reply to ${name} about ${about}` : `Reply to ${name}`, minutes: 2 }] };
 }
 
+// Mail she sent that nobody answered ("Waiting on", Nov 4): a 2-minute follow-up, its subject cut as an answer's plan
+// cuts it, worded as an email to write so Focus offers to draft it (isEmailStep).
+export function followPlan(to: string, subject: string) {
+  const name = sender(to);
+  const prefix = `Reply to ${name} about `;
+  const [step] = mailPlan({ from: to, subject, snippet: "", unread: false }).steps;
+  const about = step.title.startsWith(prefix) ? step.title.slice(prefix.length) : "";
+  return { title: `Follow up with ${name}`, steps: [{ title: about ? `Email ${name} to follow up on ${about}` : `Email ${name} to follow up`, minutes: 2 }] };
+}
+
 // The step Zeno proposes on the desk: the one she tapped while it is still open, else the first open one.
 export const proposedStep = (goal: Goal | null, id: string | null): Step | null =>
   openSteps(goal).find((step) => step.id === id) ?? openSteps(goal)[0] ?? null;
