@@ -1178,7 +1178,7 @@ export default function GuidedDay() {
       changeGoal(res.goal);
       // More goals from the same words are in the list now, and the line says so (live, Nov 4: one just appeared there).
       const titles = others.map((one) => one.title.replace(/[.!?]+$/, ""));
-      if (titles.length > 0) setLine(`Also added to your goals: ${titles.join(" and ")}.`);
+      if (titles.length > 0) setLine(`Also added to your goals: ${new Intl.ListFormat("en", { type: "conjunction" }).format(titles)}.`);
       return;
     }
     goHome();
