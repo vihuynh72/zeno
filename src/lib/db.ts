@@ -80,6 +80,8 @@ export async function ensureSchema() {
         sql`ALTER TABLE steps ADD COLUMN IF NOT EXISTS event_id TEXT`,
         sql`ALTER TABLE steps ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ`,
         sql`ALTER TABLE goals ADD COLUMN IF NOT EXISTS due DATE`,
+        // A goal that keeps going ("3 runs a week", Nov 4): its steps are the next few sessions; null for one that ends.
+        sql`ALTER TABLE goals ADD COLUMN IF NOT EXISTS rhythm TEXT`,
         sql`
           CREATE TABLE IF NOT EXISTS user_state (
             user_email TEXT PRIMARY KEY,

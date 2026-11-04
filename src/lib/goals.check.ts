@@ -9,8 +9,8 @@ registerHooks({
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
 const {
-  activateGoal, changeStepStatus, currentGoal, doneTitles, finishedDays, finishedYesterday, openGoals, orderGoals, recentSteps, replaceRemainingSteps, savePrep,
-  setGoal, setStepStatus, stepTitles, titleKey,
+  activateGoal, changeStepStatus, currentGoal, doneTitles, finishedDays, finishedYesterday, getGoal, insertStep, openGoals, orderGoals, recentSteps,
+  replaceRemainingSteps, savePrep, setGoal, setGoalDue, setStepStatus, stepsDoneSince, stepTitles, titleKey, weekStart,
 } = await import("./goals.ts");
 const { getSql } = await import("./db.ts");
 const { localDate } = await import("./tz.ts");
@@ -102,6 +102,67 @@ try {
 } finally {
   // Steps go with their goals.
   await getSql()`DELETE FROM goals WHERE user_email = ${email}`;
+}
+
+// Monday 00:00 of this week on the person's clock (Nov 4, the Week's finished steps), across a DST change.
+const zoneLA = "America/Los_Angeles";
+assert.equal(weekStart(zoneLA, new Date("2026-11-04T06:00:00Z")).toISOString(), "2026-11-02T08:00:00.000Z", "Tue Nov 3, 10 PM: Monday at PST midnight");
+assert.equal(weekStart(zoneLA, new Date("2026-11-02T08:00:00Z")).toISOString(), "2026-11-02T08:00:00.000Z", "Monday itself");
+assert.equal(weekStart(zoneLA, new Date("2026-11-02T07:59:00Z")).toISOString(), "2026-10-26T07:00:00.000Z", "a minute before: last week, at PDT midnight");
+assert.equal(weekStart("UTC", new Date("2026-11-08T23:59:00Z")).toISOString(), "2026-11-02T00:00:00.000Z", "Sunday night");
+assert.equal(weekStart("Asia/Tokyo", new Date("2026-11-08T16:00:00Z")).toISOString(), "2026-11-08T15:00:00.000Z", "Tokyo's Monday Nov 9 starts on UTC Sunday");
+
+// Goals for anyone (Nov 4): a rhythm that keeps a goal going, goals that wait paused, one step put before another (the
+// running clock moves to it), a due date set later, and this week's finished steps.
+const anyone = `goals-check-${crypto.randomUUID()}@zeno.local`;
+try {
+  const party = await setGoal(anyone, "Plan Ana's party", [{ title: "Pick a theme", minutes: 5 }, { title: "Book the venue", minutes: 20 }], "2030-11-22");
+  const runs = await setGoal(anyone, "Run a 5K", [{ title: "Walk-jog 20 minutes", minutes: 20 }], null, { rhythm: "3 runs a week", paused: true });
+  assert.deepEqual([runs.rhythm, party.rhythm], ["3 runs a week", null], "a rhythm, and none");
+  assert.equal((await currentGoal(anyone))?.id, party.id, "a paused goal leaves the current one current");
+  assert.deepEqual((await openGoals(anyone)).map((goal) => [goal.title, goal.rhythm]), [["Plan Ana's party", null], ["Run a 5K", "3 runs a week"]]);
+  assert.equal((await getGoal(anyone, runs.id))?.rhythm, "3 runs a week");
+  assert.equal(await getGoal("someone-else@zeno.local", runs.id), null, "another person's goal is not found");
+
+  // Make it smaller: the piece goes right before the step, and every step keeps its title and order.
+  const [theme, venue] = party.steps.map((step) => step.id);
+  const smaller = await insertStep(anyone, party.id, { title: "List 3 venues", minutes: 3 }, venue);
+  assert.deepEqual(smaller?.steps.map((step) => [step.title, step.status]), [["Pick a theme", "todo"], ["List 3 venues", "todo"], ["Book the venue", "todo"]]);
+  // A running step hands its clock to the piece, so the timer keeps running on it.
+  const running = await changeStepStatus(anyone, theme, "doing");
+  const piece = await insertStep(anyone, party.id, { title: "Open the party board", minutes: 2 }, theme);
+  assert.deepEqual(piece?.steps.map((step) => [step.title, step.status]), [["Open the party board", "doing"], ["Pick a theme", "todo"], ["List 3 venues", "todo"], ["Book the venue", "todo"]]);
+  assert.equal(piece?.steps[0].startedAt, running?.goal.steps[0].startedAt, "the same start time");
+  assert.equal(piece?.steps[1].startedAt, null);
+  const last = await insertStep(anyone, party.id, { title: "Send the invites", minutes: 10 });
+  assert.equal(last?.steps.at(-1)?.title, "Send the invites", "no step named: after the last");
+  assert.equal(await insertStep(anyone, party.id, { title: "x", minutes: 1 }, runs.steps[0].id), null, "another goal's step");
+  assert.equal(await insertStep("someone-else@zeno.local", party.id, { title: "x", minutes: 1 }), null, "another person's goal");
+  // A new current goal puts a step left running elsewhere back in line, as opening a plan does; a paused one doesn't.
+  await setGoal(anyone, "Fix the bike", [{ title: "Find the pump", minutes: 5 }], null, { paused: true });
+  assert.equal((await getGoal(anyone, party.id))?.steps[0].status, "doing", "a paused new goal leaves the clock alone");
+  const bike = await setGoal(anyone, "Fix the bike light", [{ title: "Buy a battery", minutes: 10 }]);
+  assert.equal((await getGoal(anyone, party.id))?.steps[0].status, "todo");
+  assert.equal((await currentGoal(anyone))?.id, bike.id);
+
+  // A due date said later (Nov 4: "due nov 15" typed into the tax goal was lost).
+  assert.equal((await setGoalDue(anyone, runs.id, "2031-01-10"))?.due, "2031-01-10");
+  assert.equal((await setGoalDue(anyone, runs.id, null))?.due, null, "cleared");
+  assert.equal(await setGoalDue("someone-else@zeno.local", runs.id, "2031-01-10"), null);
+
+  // The Week's finished steps: from Monday on, newest first, with the real minutes when it was timed.
+  await setStepStatus(anyone, piece!.steps[0].id, "done");
+  await setStepStatus(anyone, runs.steps[0].id, "done");
+  await getSql()`UPDATE steps SET started_at = done_at - interval '7 minutes' WHERE id = ${piece!.steps[0].id}`;
+  await setStepStatus(anyone, theme, "done");
+  await getSql()`UPDATE steps SET done_at = now() - interval '8 days' WHERE id = ${theme}`;
+  const week = await stepsDoneSince(anyone, new Date(Date.now() - 86_400_000));
+  assert.deepEqual(week.map((step) => [step.title, step.goal, step.minutes]), [["Walk-jog 20 minutes", "Run a 5K", null], ["Open the party board", "Plan Ana's party", 7]]);
+  assert.ok(Date.parse(week[0].doneAt) >= Date.parse(week[1].doneAt), "newest first");
+  // A rhythm goal with every step done is finished until its next sessions come.
+  assert.equal((await getGoal(anyone, runs.id))?.steps.every((step) => step.status === "done"), true);
+} finally {
+  await getSql()`DELETE FROM goals WHERE user_email = ${anyone}`;
 }
 
 // Memory: one row per fact whatever its case, punctuation or spacing; caps that drop the oldest scanned facts first.
