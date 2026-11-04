@@ -16,7 +16,7 @@ const { getSql } = await import("./db.ts");
 const { localDate } = await import("./tz.ts");
 
 // The home's goal options (Vi, Nov 3): the current plan first, then by due date with undated ones last, then the most
-// recently updated; at most 5.
+// recently updated; every one of them (Nov 4: with a cap of 5, a 6th goal was missing from the panel and made twice).
 const open = (id: string, due: string | null, updatedAt: number, current = false) => ({ goal: { id, title: id, due, steps: [] }, current, updatedAt });
 assert.deepEqual(
   orderGoals([
@@ -28,7 +28,7 @@ assert.deepEqual(
     open("thu-newer", "2026-11-05", 9),
     open("sat", "2026-11-07", 1),
   ]).map((goal) => goal.id),
-  ["current", "thu-newer", "thu", "fri", "sat"],
+  ["current", "thu-newer", "thu", "fri", "sat", "undated-new", "undated-old"],
 );
 assert.deepEqual(orderGoals([open("old", null, 1), open("new", null, 2)]).map((goal) => goal.id), ["new", "old"]);
 assert.deepEqual(orderGoals([]), []);
@@ -159,10 +159,58 @@ try {
   const week = await stepsDoneSince(anyone, new Date(Date.now() - 86_400_000));
   assert.deepEqual(week.map((step) => [step.title, step.goal, step.minutes]), [["Walk-jog 20 minutes", "Run a 5K", null], ["Open the party board", "Plan Ana's party", 7]]);
   assert.ok(Date.parse(week[0].doneAt) >= Date.parse(week[1].doneAt), "newest first");
-  // A rhythm goal with every step done is finished until its next sessions come.
+  // A paused rhythm goal whose last session was finished from an app keeps waiting in their list, with no step left, until
+  // its next few are planned (Nov 4: it was marked done and vanished from every list).
   assert.equal((await getGoal(anyone, runs.id))?.steps.every((step) => step.status === "done"), true);
+  const [paused] = await getSql()`SELECT status FROM goals WHERE id = ${runs.id}`;
+  assert.equal(paused.status, "paused", "never done by running out");
+  assert.ok((await openGoals(anyone)).some((goal) => goal.id === runs.id && goal.steps.every((step) => step.status === "done")), "still listed");
 } finally {
   await getSql()`DELETE FROM goals WHERE user_email = ${anyone}`;
+}
+
+// Rolling goals (Nov 4): the current rhythm goal stays current with no step left, and planning its next few (or any
+// paused rhythm goal's) never changes the current goal or stops a running step. A rhythm goal marked done before Nov 4
+// comes back paused, or current when nothing else is.
+const rolling = `goals-check-${crypto.randomUUID()}@zeno.local`;
+try {
+  const statusOf = async (id: string) => (await getSql()`SELECT status FROM goals WHERE id = ${id}`)[0]?.status;
+  const essay = await setGoal(rolling, "Write the essay", [{ title: "Open the doc", minutes: 5 }, { title: "Draft the intro", minutes: 20 }], null, { paused: true });
+  const run = await setGoal(rolling, "Run a 5K", [{ title: "Walk-jog 20 minutes", minutes: 20 }], null, { rhythm: "3 runs a week" });
+  await changeStepStatus(rolling, run.steps[0].id, "doing");
+  const last = await changeStepStatus(rolling, run.steps[0].id, "done");
+  assert.equal((await currentGoal(rolling))?.id, run.id, "its last session done, it stays current: the paused essay doesn't take over");
+  assert.deepEqual([await statusOf(run.id), await statusOf(essay.id), last?.goal.steps.map((step) => step.status)], ["active", "paused", ["done"]]);
+  assert.deepEqual((await openGoals(rolling)).map((goal) => goal.title), ["Run a 5K", "Write the essay"], "both listed, the run with no step left");
+  // Opened again, it is current; its next few, planned while the essay's step runs, change neither.
+  assert.equal((await activateGoal(rolling, essay.id))?.id, essay.id);
+  await changeStepStatus(rolling, essay.steps[0].id, "doing");
+  const next = await replaceRemainingSteps(rolling, run.id, [{ title: "Walk-jog 25 minutes", minutes: 25 }]);
+  assert.deepEqual(next?.steps.map((step) => [step.title, step.status]), [["Walk-jog 20 minutes", "done"], ["Walk-jog 25 minutes", "todo"]]);
+  assert.deepEqual([await statusOf(run.id), (await currentGoal(rolling))?.id], ["paused", essay.id]);
+  assert.equal((await getGoal(rolling, essay.id))?.steps[0].status, "doing", "the essay's step keeps running");
+  // A rhythm goal marked done before Nov 4: paused while another goal is current, current when none is.
+  await getSql()`UPDATE goals SET status = 'done' WHERE id = ${run.id}`;
+  await replaceRemainingSteps(rolling, run.id, [{ title: "Walk-jog 30 minutes", minutes: 30 }]);
+  assert.deepEqual([await statusOf(run.id), (await currentGoal(rolling))?.id], ["paused", essay.id]);
+  await getSql()`UPDATE goals SET status = 'paused' WHERE id = ${essay.id}`;
+  await getSql()`UPDATE goals SET status = 'done' WHERE id = ${run.id}`;
+  await replaceRemainingSteps(rolling, run.id, [{ title: "Walk-jog 30 minutes", minutes: 30 }]);
+  assert.equal((await currentGoal(rolling))?.id, run.id, "nothing else current: it is");
+
+  // Make it smaller on a plan that already has 10 steps: the 11th goes right before the running step, which hands it its clock.
+  const ten = await setGoal(rolling, "Plan the move", Array.from({ length: 10 }, (_, i) => ({ title: `Part ${i + 1}`, minutes: 10 })));
+  const running = await changeStepStatus(rolling, ten.steps[9].id, "doing");
+  const eleven = await insertStep(rolling, ten.id, { title: "Open the moving list", minutes: 2 }, ten.steps[9].id);
+  assert.equal(eleven?.steps.length, 11);
+  assert.deepEqual(eleven?.steps.slice(-2).map((step) => [step.title, step.status]), [["Open the moving list", "doing"], ["Part 10", "todo"]]);
+  assert.equal(eleven?.steps[9].startedAt, running?.goal.steps[9].startedAt, "the clock carries on");
+
+  // Every open goal is listed (Nov 4: a cap of 5 hid the 6th, and adding it again made a copy).
+  for (const title of ["Goal A", "Goal B", "Goal C", "Goal D"]) await setGoal(rolling, title, [{ title: "Start", minutes: 5 }], null, { paused: true });
+  assert.equal((await openGoals(rolling)).length, 7, "the move, the run, the essay and four more");
+} finally {
+  await getSql()`DELETE FROM goals WHERE user_email = ${rolling}`;
 }
 
 // Memory: one row per fact whatever its case, punctuation or spacing; caps that drop the oldest scanned facts first.

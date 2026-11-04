@@ -83,6 +83,11 @@ const none: [string, string][] = [
   ["[]", "a list"],
 ];
 for (const [text, label] of none) assert.equal(snapFrom(text, TODAY), null, label);
+// A title refused for a private detail is named in `refused`, for one more try; nothing found names nothing.
+const refused: string[] = [];
+assert.equal(snapFrom(reply({ title: "Read the visa instructions" }), TODAY, refused), null);
+assert.equal(snapFrom(reply({ found: false }), TODAY, refused), null);
+assert.deepEqual(refused, ["Read the visa instructions"]);
 
 // snapPlan: one strict-JSON call at minimal effort; the photo rides only in the user turn's image part, beside today's
 // date, and the system prompt says it is data, with a deadline's step rules.
@@ -93,10 +98,12 @@ type Sent = {
 };
 const sent: Sent[] = [];
 let answer: Response = new Response("unset", { status: 500 });
+// Answers for calls in turn, before `answer`: a Response is read once.
+let answers: Response[] = [];
 process.env.META_MODEL_API_KEY = "check-only";
 globalThis.fetch = (async (_url: unknown, init: { body: string }) => {
   sent.push(JSON.parse(init.body));
-  return answer;
+  return answers.shift() ?? answer;
 }) as typeof fetch;
 const quietLog = console.log;
 console.log = () => {}; // callModel logs one line per call
@@ -122,6 +129,25 @@ answer = model(JSON.stringify({ found: false, title: "", due: "", steps: [] }));
 assert.equal(await snapPlan(jpeg, TODAY), null);
 answer = new Response("upstream down", { status: 500 });
 await assert.rejects(snapPlan(jpeg, TODAY), /^Error: Model request failed with 500/);
+
+// A photo whose title was refused for a private detail (Nov 4, as POST /api/goal/add) gets one more call with the photo,
+// told what couldn't be saved; one still refused is an error (the route's 502), never "nothing in that photo" (422).
+sent.length = 0;
+answers = [model(reply({ title: "Renew my visa" })), model(reply({ title: "Fill in the renewal form" }))];
+assert.equal((await snapPlan(jpeg, TODAY))?.title, "Fill in the renewal form");
+assert.equal(sent.length, 2);
+assert.deepEqual([sent[1].reasoning_effort, sent[1].response_format.json_schema.name], ["minimal", "snap"]);
+const [said, photo] = sent[1].messages[1].content as { type: string; text?: string }[];
+assert.match(said.text ?? "", /^Today is 2026-11-03\.\nZeno couldn't save <<<Renew my visa>>>: titles are stored on Zeno's servers/);
+assert.deepEqual(photo, { type: "image_url", image_url: { url: jpeg } }, "the same photo");
+sent.length = 0;
+answers = [model(reply({ title: "Renew my visa" })), model(reply({ title: "Renew the visa" }))];
+await assert.rejects(snapPlan(jpeg, TODAY), /^Error: The photo's goal held a private detail$/);
+assert.equal(sent.length, 2, "one more try, never two");
+answers = [model(JSON.stringify({ found: false, title: "", due: "", steps: [] }))];
+sent.length = 0;
+assert.equal(await snapPlan(jpeg, TODAY), null);
+assert.equal(sent.length, 1, "nothing found: one call");
 console.log = quietLog;
 
 console.log("snap self-check passed");

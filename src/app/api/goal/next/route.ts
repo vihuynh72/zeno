@@ -12,8 +12,9 @@ export const maxDuration = 30;
 
 // Body { id } (src/lib/day.ts NextStepsRequest): a goal that keeps going (rhythm set) whose steps are all finished gets its
 // next 3 to 5 sessions from Muse, planned from its rhythm and the sessions done so far (the last ones again when the model
-// fails), and becomes the current plan. One with steps left comes back unchanged. bad-request for a goal that is not
-// theirs or has no rhythm.
+// fails), and keeps its status: they may have opened another goal while Muse planned, so the current goal and a running
+// step never change here. One with steps left comes back unchanged. bad-request for a goal that is not theirs or has no
+// rhythm.
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.email) {

@@ -25,7 +25,8 @@ export type Step = {
 
 // The one goal Zeno is helping with now; steps are in roadmap order. due is YYYY-MM-DD when known.
 // rhythm marks a goal that keeps going (Vi, Nov 3: a rolling plan): a short line such as "3 runs a week". Its steps are
-// the next few only; when they are done, POST /api/goal/next plans the next few. Null or missing: a project that ends.
+// the next few only; when they are done, POST /api/goal/next plans the next few. It never finishes by running out of
+// steps: with none left it keeps its place in the goals lists until then. Null or missing: a project that ends.
 export type Goal = { id: string; title: string; steps: Step[]; due?: string | null; rhythm?: string | null };
 
 // The grouped profile, in the order Memory shows it.
@@ -104,8 +105,8 @@ export type DayResponse =
       // Up to 3 things the person can tap instead of typing, worded as they would say them.
       options: string[];
       goal: Goal | null;
-      // Every open plan (the current one first, then by due date, at most 5): the home's goal options, the Desk's Goals
-      // card and the Week (Vi, Nov 3). Missing from days saved before Nov 3.
+      // Every open plan, the current one first, then by due date, and every goal that keeps going even with no step
+      // left: the home's goal options, the Desk's Goals card and the Week (Vi, Nov 3). Missing from days saved before Nov 3.
       goals?: Goal[];
       // Steps finished this week (Monday to now, the person's time zone), newest first, for the Week (Nov 4).
       doneThisWeek?: DoneStep[];
@@ -149,7 +150,8 @@ export type FirstPick = {
 // POST /api/day/opening body { private?: string[]; heard?: string[] } uses the device's private facts and the pattern
 // memory ids its openings already named (a canvas list is still accepted and ignored since Nov 3: the line plans nothing);
 // GET is the same without them. pick is always null since Nov 3 (she picks the goal). noticed: the pattern memory this
-// opening names (learned on an earlier day, not in heard), for the browser to add to heard.
+// opening names (learned on an earlier day, not in heard), for the browser to add to heard. With nothing real to say
+// (Nov 4), opening is GET /api/day's rule line, often "", and no model is asked.
 export type OpeningResponse =
   | { state: "ok"; opening: string; options: string[]; pick: FirstPick | null; noticed?: string[] }
   | { state: "signed-out" | "error" };
@@ -314,7 +316,8 @@ export type MailResponse =
 
 // POST /api/goal/snap body: a photo or screenshot of an assignment, shrunk in the browser to a JPEG, PNG or WebP data
 // URL under 3.5 MB. Muse Spark reads it once (never stored) and saves its steps as the current plan. Answers with
-// GoalResponse; bad-request when the photo holds no assignment.
+// GoalResponse; bad-request when the photo holds no assignment, error when what it found could not be worded without a
+// private detail (Nov 4).
 export type SnapRequest = { image: string };
 
 // POST /api/app-token mints a personal token for connected apps (MCP clients such as Muse Code or Claude Code, and the
@@ -337,11 +340,12 @@ export type CompanionNow =
 
 // POST /api/goal/add body: the person's own words for a goal ("Run a 5K by January 10, I've never run"). Muse turns
 // them into a short title, a due date when one is said, a rhythm when the goal keeps going, and the first steps, and
-// saves it as the current plan. Answers with GoalResponse; bad-request when the words hold no goal.
+// saves it as the current plan. Answers with GoalResponse; bad-request when the words hold no goal, error when they held
+// goals that could not be worded without a private detail (Nov 4: titles are stored, so the detail stays out).
 export type AddGoalRequest = { text: string };
 
 // POST /api/goal/next body: a goal that keeps going (rhythm set) gets its next few steps from what is done so far.
-// Answers with GoalResponse.
+// Answers with GoalResponse. It never changes which goal is current: the goal comes back with its status as it was.
 export type NextStepsRequest = { id: string };
 
 // A finished step for the Week: its title, its goal's title, when it was done (ISO) and its real minutes when known.

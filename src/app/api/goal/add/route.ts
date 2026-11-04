@@ -7,13 +7,14 @@ import type { GoalResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
 import { timeZoneFrom } from "@/lib/tz";
 
-// One model call, then the saves.
+// One model call (a second when a goal was refused for a private detail), then the saves.
 export const maxDuration = 30;
 
 // Body { text } (src/lib/day.ts AddGoalRequest): the person's own words become up to 3 goals in one Muse call (readGoals in
 // agent.ts): specific titles, due dates read in their time zone, a rhythm for a goal that keeps going, and steps that
-// finish the job. The first is the current plan, the others wait paused in `others`. bad-request (422) when the words hold
-// no goal. Their words reach this one call and are never logged.
+// finish the job. The first is the current plan, the others wait paused in `others`. bad-request (422) only when the words
+// hold no goal; goals that couldn't be worded without a private detail are an error (502), so the page never says there
+// was no goal. Their words reach these calls only and are never logged.
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.email) {
