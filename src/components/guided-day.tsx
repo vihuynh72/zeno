@@ -1612,7 +1612,7 @@ export default function GuidedDay() {
       if (offers.some((one) => one.state !== "booked")) return [say("No thanks", () => goHome()), other];
       // A booked offer answered Zeno's question, so one way home (live, Nov 2: it was a dead end); so does a line that
       // asks nothing ("Okay, it'll be here.", round 2); a plain question still waits for Talk or the keyboard.
-      return offers.length || !asks(line) ? [say("Back to my goals", () => goHome())] : [];
+      return offers.length || (line && !asks(line)) ? [say("Back to my goals", () => goHome())] : [];
     }
     if (screen === "focus" && step) {
       if (!fresh) return [];
