@@ -364,7 +364,8 @@ export default function DayView(props: DayViewProps) {
                     </p>
                     <p className="font-bold">
                       {props.resume.step}
-                      {props.resume.minutes ? <span className="mins">{props.resume.minutes} min</span> : null}
+                      {/* Inline: the card's right-hand minutes collided with the goal's line under a long step (Nov 4). */}
+                      {props.resume.minutes ? <span className="font-normal text-ink-2"> · {props.resume.minutes} min</span> : null}
                     </p>
                     <p>
                       <span className="hand text-ink-2">

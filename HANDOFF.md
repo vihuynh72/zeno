@@ -40,13 +40,25 @@ then review fixes, Claude's own Chrome test, round 2 of the simulation and its f
   two goals from one sentence, Start, Make it smaller with the clock carried across a reload, Done, the Week, a due
   date by typing, a goal named mid-step, Show me how, Stop for now, words with no goal, a rolling goal planning its
   next few, a money goal reworded, coming back.
-- **The 10-person simulation:** round 1 (Nov 3 evening) averaged 2.8 of 5; round 2 (Nov 4, 1 AM, on `80ddf7a`)
-  averaged 3.2 (Maya 4, Jordan 3, Priya 4, Sam 2, Lucia 3, Kenji 3, Ruth 4, Alex 3, Amara 3, Dana 3). Reports and
-  synthesis: scratchpad `sim/synthesis-round2.json`. Its two blockers (the reply landing under the sticky strip after
-  typing; a blank home on coming back) are fixed in `5e63641`.
-- **Known gaps:** steps can still run 45-90 min (a server fix caps them, in progress); habits run as a checklist (no
-  day picker or rest days); the Week doesn't place future steps on days; Today repeats the goals without saying what
-  to do first; long AI waits (10-25 s) for some adds and talk turns.
+- **The 10-person simulation (same ten personas each round, fresh users, a local production build):** round 1 (Nov 3
+  evening) 2.8 of 5; round 2 (1 AM) 3.2; round 3 (2:30 AM) 3.3; round 4 (4 AM) ROUND4. Reports and syntheses in the
+  scratchpad (`sim/synthesis-round2.json`, `-round3.json`, `-round4.json`).
+- **After round 2:** coming back offers "Pick up where you left off" (the current goal's next step, one Start); sending
+  from the docked box brings the step and the reply into view; a first run with nothing to read opens straight on the
+  front door; Enter adds a line there (one goal a line, up to 5); typed and tapped turns are answered on screen only;
+  steps of 25 min or less (a habit session up to 45), up to 12, planned backward from the due date ("Order by …"); a
+  job too big for 12 steps becomes rolling work sessions; Today shows each goal's next step and Done today; a goal
+  named mid-flow waits unless she says "now" (never while a step runs); `switch_goal`; practice questions are fine;
+  "Not now" answers at once; Zeno never claims a save it didn't make.
+- **After round 3:** "Your notes" under For this step keep what she said on a step and Zeno's answers (device only,
+  cleared at sign-out, Copy) and feed Zeno's memory after a reload; `edit_goal` changes the current goal ("I can do
+  4 hours a day") instead of copying it; Start brings the clock to the top; Done stays above the dock on phones; a step
+  paused by opening another goal says so; failed typed words come back in the box.
+- **Production:** deployed four times overnight (`64043a5`, `65edf91`, `2b3377f`, `33cec97`, then the latest); no
+  runtime errors. Each deploy passed all 31 checks, tsc, eslint and the build.
+- **Known gaps:** Make it smaller adds a piece before the step (Vi's design; testers in three rounds asked for a split
+  instead); habits run as a checklist (no day picker or rest days); the Week doesn't place future steps on days; some
+  adds and talk turns take 10-25 s; voice not tested by ear; no Google-connected account tested tonight.
 
 ## 0. The Nov 3 night round: more ways in (branch `nov3/extensions`, Linear VI-364)
 
