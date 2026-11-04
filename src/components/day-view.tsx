@@ -201,10 +201,12 @@ export default function DayView(props: DayViewProps) {
     if (!pills) return;
     const { top, bottom } = pills.getBoundingClientRect();
     const dockTop = document.querySelector(".dock")?.getBoundingClientRect().top ?? innerHeight;
-    // On a goal's desk the scroll stops where the goal strip would leave the top, so a Done shows its bar fill (live,
-    // Nov 3: Done scrolled the bar off a 1440x900 laptop); the links may then sit in the dock's fade.
-    const strip = document.querySelector<HTMLElement>('main section[aria-label="Goal"]');
-    const room = strip ? Math.max(0, strip.getBoundingClientRect().top - 8) : Infinity;
+    // On a goal's desk the scroll stops before the step card slides under the sticky goal strip (Nov 4), so the step and
+    // a Done's bar fill stay in view (live, Nov 3: Done scrolled the bar off a 1440x900 laptop); the links may then sit
+    // in the dock's fade.
+    const strip = document.querySelector<HTMLElement>("[data-strip]");
+    const card = mainRef.current?.querySelector(".card");
+    const room = strip && card ? Math.max(0, card.getBoundingClientRect().top - strip.offsetHeight - 8) : Infinity;
     const need = Math.min(bottom - (dockTop - 16), room);
     if (top < innerHeight && need > 0) {
       window.scrollBy({ top: need, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
@@ -362,18 +364,20 @@ export default function DayView(props: DayViewProps) {
               </div>
             )}
             {desk && (
-              // Sticky in the desk column (Nov 4): the goal and its bar stay in view in Focus and after a Done, and the
-              // page scrolls under them into a short fade.
-              <div className="sticky top-0 z-20 w-full max-w-[760px] bg-desk pt-2 pb-1 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-linear-to-b after:from-desk">
-                <GoalStrip
-                  title={planning?.title ?? goal?.title ?? ""}
-                  due={planning ? planning.due : goal?.due}
-                  rhythm={planning ? null : goal?.rhythm}
-                  steps={planning ? [] : steps}
-                  marked={marked}
-                  caption={barCaption(done, steps.length, screen === "checkin" && Boolean(props.celebrate))}
-                  today={today}
-                />
+              // Sticky across the desk column (Nov 4): the goal and its bar stay in view in Focus and after a Done, and
+              // the page scrolls under them into a short fade, as it does into the dock's.
+              <div data-strip className="sticky top-0 z-20 -mx-4 w-[calc(100%+2rem)] bg-desk px-4 pt-2 pb-1 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-linear-to-b after:from-desk">
+                <div className="mx-auto max-w-[760px]">
+                  <GoalStrip
+                    title={planning?.title ?? goal?.title ?? ""}
+                    due={planning ? planning.due : goal?.due}
+                    rhythm={planning ? null : goal?.rhythm}
+                    steps={planning ? [] : steps}
+                    marked={marked}
+                    caption={barCaption(done, steps.length, screen === "checkin" && Boolean(props.celebrate))}
+                    today={today}
+                  />
+                </div>
               </div>
             )}
 
