@@ -27,7 +27,7 @@ const {
   ASKS_FOR_BLOCK, checkCall, checkPlan, checkPlanRequest, cleanCanvas, cleanHeard, cleanHistory, datesText, DEFERRED, DEFERS, draftUrl, extractNotes,
   finalSay, goalsFrom, goalText, isDate, keepNotes, newPattern, nextSessions, notesFrom, openingNews, openingPrompt, othersText, parseOpening,
   mayAsk, parseReply, planDeadline, planFrom, planSessions, readGoals, roundSlots, rulePlan, ruleSessions, saidFinish, sameGoal, saveGoals, slotsText, SMALLER, thinkingFrom,
-  systemPrompt, talk, TOOLS, unasked, unclaimed, wantsNow, withoutRefs, RESHAPE,
+  systemPrompt, talk, TOOLS, unasked, unclaimed, wantsNow, withoutRefs, RESHAPE, answersRebuild,
 } = await import("./agent.ts");
 const { freeLine, ruleOpening, ruleOptions, senderName } = await import("./brief.ts");
 const { dayToText, knownDeadlines } = await import("./context.ts");
@@ -1362,6 +1362,27 @@ turn = await talk(talkContext, null, [], "Can you put drafting first");
 assert.deepEqual(calls, ["replaceRemainingSteps"], "only the second try saved");
 // "drafting" names s4, so the merge is caught on s3, reworded without being named.
 assert.match(sent[1].messages.filter((one) => one.role === "tool").map((one) => one.content).join(" "), /not changed: s3 \\"Outline three points\\" would be dropped or reworded/);
+// Round 8: her answer to Zeno's own "Tell me and I'll rebuild the plan around it" is the rewrite she asked for (Priya's
+// tapped "W-2s and 1099s" got another question and an added step): the turn hears so, and a rewrite of every step saves.
+const rebuildAsk = "What did your accountant list as needed? Tell me and I'll rebuild the plan around it.";
+assert.ok(answersRebuild("W-2s and 1099s", rebuildAsk));
+assert.ok(answersRebuild("Heaps and sorting", "Which topics are on it? I'll make the steps fit them."));
+assert.ok(!answersRebuild("what do you mean?", rebuildAsk), "a question back");
+assert.ok(!answersRebuild("home", "Pick home or a venue first. Start now?"), "an answer to another question");
+assert.ok(!answersRebuild("thanks", "Rewrote the plan around graphs."), "no question asked");
+const rebuilt = tools(call("update_steps", { steps: [{ ref: "s3", title: "Download your W-2 from payroll", minutes: 10 }, { ref: "s4", title: "Download 1099s from your bank", minutes: 10 }] }));
+reset();
+replies.push(rebuilt, say("Rewrote the plan around W-2s and 1099s."));
+turn = await talk(talkContext, null, [{ role: "user", content: "make this more specific" }, { role: "assistant", content: rebuildAsk }], "W-2s and 1099s");
+assert.deepEqual(calls, ["replaceRemainingSteps"], "every step reworded, none named, and saved");
+assert.equal(turn.reply, "Rewrote the plan around W-2s and 1099s.");
+assert.match(sent[0].messages.at(-1)?.content ?? "", /\n\nThey are answering your question about what the plan needs: rewrite the current goal's plan around their answer this turn with one update_steps call, then say what changed in one line and ask nothing more\.\n\nThe person says:\nW-2s and 1099s$/);
+// The same words with no such question reword nothing they didn't name.
+reset();
+replies.push(rebuilt, say("Okay."));
+turn = await talk(talkContext, null, [], "W-2s and 1099s");
+assert.deepEqual(calls, [], "an unasked rewording is refused");
+assert.doesNotMatch(sent[0].messages.at(-1)?.content ?? "", /They are answering your question/);
 // Make it smaller adds a first piece before the step (Nov 4: 8 of 10 got the bigger piece or lost work): update_steps is
 // sent to add_step, which leaves every step as it was.
 reset();
@@ -2053,9 +2074,15 @@ for (const rule of [
   /a step never holds the finished work, an answer or a draft/,
   /Write questions, answers, thinking, titles and steps in the language they wrote in\./,
   // Vi, Nov 4: what the plan rests on, plans for creators (the questions' rule only where it may ask, below).
-  /thinking: 3 to 5 lines of at most 50 characters, the facts and reasons the first goal's plan rests on, like '5K by Jan 1: 8 weeks', '\$3,000 by Jun 1: \$100 a week'[^.]*'12 books in 8 weeks: tight'\. Only what you know\./,
-  /A creator goal, like a channel, a newsletter, an app or a shop: its cadence is the rhythm, like '1 video a week'/,
-  /'Edit and post video 1', and checking the number that shows progress; a first launch includes the setup a first-timer wouldn't know/,
+  // Round 8: a fact paired with the decision it leads to, never her answers read back.
+  /thinking: 3 to 5 lines of at most 50 characters, each a fact, a colon, then the decision it leads to in the first goal's plan, like '3 posts a week: film them all Sunday', '5K by Jan 1: 8 weeks of 3 runs'[^.]*\. Never only their words or answers read back[^.]*\. Only what you know\./,
+  /A creator goal, like a channel, a newsletter, an app or a shop: its cadence is the rhythm, like '3 posts a week'/,
+  // Round 8: the creator example is the medium's craft, not the goal split up (the model copies examples).
+  /steps are that medium's craft from the field below, like 'Write 3 hooks for the first 2 seconds' and 'Batch-film 3 videos in one session' for short videos, never the goal's words split up, like 'Film video 1', 'Edit and post video 1', and checking the number that shows progress on a set day; a first launch includes the setup a first-timer wouldn't know/,
+  /a short video's \(TikTok, Reels, Shorts\) are steps like 'Write 3 hooks for the first 2 seconds', 'Batch-film 3 videos in one session', 'Post at 6 PM, a question in the caption' and 'Check 3-second hold rate on Sunday'/,
+  /paperwork, forms or documents for someone, like an accountant, are each form by name with where it comes from[^;]*, then sending them through the accountant's secure portal, never plain email;/,
+  // Round 8: one tapped chip cut the exam plan to 2 of its 4 topics.
+  /An exam plan covers every usual topic of that exam, even when they named only one, like their weakest: right after the 5-minute starter, the weakest gets 3 practice steps, then the other topics\./,
   // Round 7: plans that know the field.
   /Know the field: a video's pieces are its title and hook, the script, filming, editing, the thumbnail, then uploading on a set day with its description, and noting the number that shows progress/,
   /an Etsy or other shop's are pricing each item with fees, titles and tags buyers search, photos or mockups, and shipping settings or, for digital items, the file delivery/,
@@ -2090,7 +2117,7 @@ assert.match(addBody.messages[1].content, /^Today is Tue Nov 3 = 2026-11-03\.\n[
 assert.equal(sent.length, 1, "nothing refused, one call");
 for (const words of ["get fit", "be more productive", "start a business", "learn Spanish", "quiero ponerme en forma", "sleep better", "get my life together"]) assert.ok(mayAsk(words), words);
 // Round 7: a plan that rests on one fact they rarely type may ask, a date or a task verb notwithstanding.
-for (const words of ["study for my CS 146 exam Friday", "send the paperwork my accountant asked for", "open an Etsy shop", "find a new job", "plan my birthday party", "plan mom's birthday", "preparar mi examen del viernes"]) {
+for (const words of ["study for my CS 146 exam Friday", "send the paperwork my accountant asked for", "Send tax extension paperwork to my accountant", "send my tax forms to my accountant", "mandar los documentos a mi contadora", "open an Etsy shop", "find a new job", "plan my birthday party", "plan mom's birthday", "preparar mi examen del viernes"]) {
   assert.ok(mayAsk(words), words);
 }
 for (const words of ["run a 5K by January", "call the bank this week", "PHIL paper due Friday", "save $3,000", "taxes, mom's party", "get fit\nread more", "get fit and eat well", "entrevista del jueves", "one two three four five six seven eight nine", "do my taxes", "I want to call the bank", "necesito terminar mi tarea", "call the bank this week, plan mom's birthday and do my taxes before April"]) {
@@ -2130,8 +2157,9 @@ for (const rule of [
   /ask: only for one goal that names an area of life but not what done looks like[^.]*'get fit'/,
   /first what done looks like, like 'What does fit mean for you\?', then where they start, worded to fit any first answer/,
   /Each has 3 tap answers of at most 4 words[^.]*\. Never ask about health conditions, medicines, money owed, passwords or anything private\. When you ask, thinking and goals are empty\./,
-  /Never ask about a call, a paper, a form or another task that is clear as said, a habit most people plan the same way, or a goal with its result said[^:]*: plan it\./,
-  /Also for one goal whose plan rests on one fact they didn't say: then ask just that 1 question, like for an exam 'Which topics, and which is weakest\?'[^.]*'Home or a venue\?', and never what their words already say/,
+  /Never ask about a call, a paper or another task that is clear as said, a habit most people plan the same way, or a goal with its result said[^:]*: plan it\./,
+  // Round 8: one thing per question ('Which topics, and which is weakest?' with one-tap chips cut the exam in half).
+  /Also for one goal whose plan rests on one fact they didn't say: then ask just that 1 question, about one thing, like for an exam 'Which topic is weakest\?' with 3 of that exam's usual topics as answers, one topic each, for paperwork, forms or documents someone asked them for, like an accountant, 'What did your accountant ask for\?'[^.]*'Home or a venue\?', and never what their words already say/,
 ]) {
   assert.match(askPrompt, rule);
   assert.doesNotMatch(addBody.messages[0].content, rule);
@@ -2153,16 +2181,25 @@ const answered = await readGoals("get fit", zone, tuesday10pm, {
 });
 assert.deepEqual(answered.thinking, ["5K by Jan 1: 8 weeks", "1 mile now: start with run-walk", "Tue and Thu 6 PM are free", "3 runs a week"], "long lines out, 5 at most, then padding out");
 assert.deepEqual(
-  ["Start unknown: begin run-walk", "Birthday date not given", "No start info: keep it simple", "Ongoing habit, no due date", "Fits in small steps", "Habit goal: needs a rhythm", "No phone in bed: set a wind-down", "Not active lately: start walking"].map((line) =>
+  ["Start unknown: begin run-walk", "Birthday date not given", "No start info: keep it simple", "Ongoing habit, no due date", "Fits in small steps", "Habit goal: needs a rhythm", "No phone in bed: set a wind-down", "Not active lately: start walking", "Graphs weakest: 3 graph steps first"].map((line) =>
     thinkingFrom(JSON.stringify({ thinking: [line] })).length,
   ),
-  [0, 0, 0, 0, 0, 0, 1, 1],
+  [0, 0, 0, 0, 0, 0, 1, 1, 1],
+);
+// Round 8: a line that only reads back what they typed or answered decides nothing (Dana: "300 followers, posts sometimes").
+assert.deepEqual(
+  thinkingFrom(JSON.stringify({ thinking: ["300 followers, posts sometimes", "3 posts a week: film them all Sunday", "Home cooking videos", "5K by Jan 1"] }), [
+    "grow my TikTok",
+    "300 followers, posts sometimes",
+    "Home cooking videos",
+  ]),
+  ["3 posts a week: film them all Sunday", "5K by Jan 1"],
 );
 assert.deepEqual([answered.goals.map((one: { title: string }) => one.title), answered.ask], [["Run a 5K"], []]);
 assert.deepEqual(Object.keys(schemaOf(sent[0]).properties), ["thinking", "goals"], "answered: no ask");
 assert.match(
   sent[0].messages[1].content ?? "",
-  /\nWhat they typed: <<<get fit>>>\nTheir answers to your questions: <<<What does fit mean for you\?>>> <<<Run a 5K  now>>>; <<<How far can you run today\?>>> <<<About 1 mile>>>\.\nFree times on their calendar this week, start to end: 2026-11-10T18:00-08:00 to 2026-11-10T19:30-08:00\.$/,
+  /\nWhat they typed: <<<get fit>>>\nTheir answers to your questions: <<<What does fit mean for you\?>>> <<<Run a 5K  now>>>; <<<How far can you run today\?>>> <<<About 1 mile>>>\.\nYour first thinking line says what their answers changed in the plan, like 'Barely moving: start with run-walk' or 'Graphs weakest: 3 graph steps first'\.\nFree times on their calendar this week, start to end: 2026-11-10T18:00-08:00 to 2026-11-10T19:30-08:00\.$/,
 );
 // Questions it may not ask, all dropped: one more call plans instead, with no ask.
 reset();
