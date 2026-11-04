@@ -79,8 +79,9 @@ export async function companionDone(email: string): Promise<CompanionNow> {
 // Both companion routes: the bearer token's owner, else 401; a failure is 500 with nothing about the person.
 export async function companionReply(request: Request, act: (email: string) => Promise<CompanionNow>): Promise<Response> {
   const json = (body: CompanionNow, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
+  // Outside the try: reading the headers is where the build learns the route is dynamic, and that signal must not be caught.
+  const token = bearerOf(request);
   try {
-    const token = bearerOf(request);
     const owner = token ? await tokenOwner(token) : null;
     return owner ? json(await act(owner.email)) : json({ state: "unauthorized" }, 401);
   } catch (error) {

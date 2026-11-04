@@ -8,6 +8,34 @@ time, by voice or by tapping. Built for the Meta Global AI Developer Hackathon
 with Muse Spark (tool-calling agent, JSON replies with options) and Muse Voice
 Transcribe (realtime speech input).
 
+## Connect an AI app
+
+Zeno is also an MCP server, so an AI app can see and update your goals and steps. It never sees your mail, your
+calendar or what Zeno remembers. In Zeno, open the account menu, choose **Connect an app**, then **Make a token**.
+Zeno shows the token once. Making a new one turns the old one off, and **Turn off** stops it.
+
+**Muse Code:** add Zeno to the `mcp_servers` block of `~/.config/muse/settings.json`:
+
+```json
+"mcp_servers": {
+  "zeno": {
+    "transport": "streamable_http",
+    "url": "https://zeno-sigma-topaz.vercel.app/api/mcp",
+    "headers": { "Authorization": "Bearer <token>" }
+  }
+}
+```
+
+**Claude Code:**
+
+```bash
+claude mcp add --transport http zeno https://zeno-sigma-topaz.vercel.app/api/mcp --header "Authorization: Bearer <token>"
+```
+
+The tools are `list_goals`, `next_step`, `plan_goal` (a title and an optional due date, at most 20 new plans a day),
+`start_step` and `finish_step`. The Zeno Mac clock uses the same token with `GET /api/companion/now` and
+`POST /api/companion/done`.
+
 ## Run locally
 
 ```bash

@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import AppsSheet from "@/components/apps-sheet";
 
-// The person's initial in the top bar opens Memory, Sound, Canvas, Privacy and Sign out. canvas is null until the page
-// knows whose account it is (the link is kept per account), true once Canvas is linked on this device. onCalendar is
-// set only when they unticked calendar access on Google's consent screen, so a block they ask for has a way through.
+// The person's initial in the top bar opens Memory, Sound, Canvas, Connect an app, Privacy and Sign out. canvas is null
+// until the page knows whose account it is (the link is kept per account), true once Canvas is linked on this device.
+// onCalendar is set only when they unticked calendar access on Google's consent screen, so a block they ask for has a
+// way through. Connect an app opens its own sheet (apps-sheet.tsx).
 export default function AccountMenu({
   initial,
   muted,
@@ -27,6 +29,7 @@ export default function AccountMenu({
   open?: boolean;
 }) {
   const menu = useRef<HTMLDivElement>(null);
+  const [apps, setApps] = useState(false);
   // The /preview gallery shows it open for screenshots.
   useEffect(() => {
     if (open) menu.current?.showPopover?.();
@@ -73,6 +76,16 @@ export default function AccountMenu({
             Let Zeno add to your calendar
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => {
+            menu.current?.hidePopover();
+            setApps(true);
+          }}
+          className="pill pill-small pill-quiet w-full"
+        >
+          Connect an app
+        </button>
         {/* A full load, not a client navigation: Back must not repaint the page from this load's saved day. */}
         <a href="/privacy" className="pill pill-small pill-quiet w-full">
           Privacy
@@ -81,6 +94,8 @@ export default function AccountMenu({
           Sign out
         </button>
       </div>
+      {/* Outside the popover, which hides everything inside it when it closes. */}
+      <AppsSheet open={apps} onClose={() => setApps(false)} />
     </>
   );
 }
