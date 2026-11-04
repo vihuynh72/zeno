@@ -273,6 +273,22 @@ export async function setGoalDue(email: string, goalId: string, due: string | nu
   return updated.length > 0 ? goalFrom(rows) : null;
 }
 
+// A goal's own title or rhythm (checked by the caller), as setGoalDue sets its due date: one left out (undefined) stays,
+// and a null rhythm clears it, so the goal ends once its steps are done. null when the goal is not theirs.
+export async function editGoal(email: string, goalId: string, edit: { title?: string; rhythm?: string | null }): Promise<Goal | null> {
+  await ensureSchema();
+  const sql = getSql();
+  const [updated, rows] = await sql.transaction([
+    sql`
+      UPDATE goals SET title = coalesce(${edit.title ?? null}, title),
+        rhythm = CASE WHEN ${edit.rhythm === undefined} THEN rhythm ELSE ${edit.rhythm ?? null} END, updated_at = now()
+      WHERE id = ${goalId} AND user_email = ${email} RETURNING id
+    `,
+    goalQuery(email, goalId),
+  ]);
+  return updated.length > 0 ? goalFrom(rows) : null;
+}
+
 // Monday 00:00 of this week on the person's clock, a day at a time so a DST change is kept.
 export function weekStart(timeZone: string, now = new Date()): Date {
   let start = dayBounds(timeZone, now).start;
