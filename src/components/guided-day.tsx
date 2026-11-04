@@ -808,7 +808,8 @@ export default function GuidedDay() {
       { role: "user", content: text },
       { role: "assistant", content: res.reply },
     ]);
-    if (about && res.reply.trim()) keepNote(about.id, { you: theirs, zeno: res.reply });
+    // A turn that only put the step off ("Not now": the server's instant "Okay, it'll be here.") leaves no note.
+    if (about && res.reply.trim() && res.reply !== "Okay, it'll be here.") keepNote(about.id, { you: theirs, zeno: res.reply });
     // What the turn remembered stays quiet (Vi, Nov 2): it shows in Memory, and private facts only on this device.
     keep(res.private);
     // shortcut: a step already on the calendar is not offered again (booking it would double-book); add "Move to …?" if people ask.
