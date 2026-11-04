@@ -8,8 +8,9 @@ import { goalRow, panelGoals, type PanelRow } from "@/components/day-flow";
 // Suggestions. A laptop's left column beside the open goal's desk; a phone's home under the hello. Nothing here talks
 // to the server: the page's handlers do.
 
-// A dash starts each, so one that wraps on a phone still reads as one example.
-const EXAMPLES = "– Run a 5K by January\n– Finish my portfolio site by Friday\n– Study for my CS exam next Thursday";
+// School and life, each on one line of a 360px phone (the plan's longer ones wrapped and read as five examples); a dash
+// starts each, so one that still wraps reads as one.
+const EXAMPLES = "– Run a 5K by January\n– Finish my site by Friday\n– Study for Thursday's exam";
 
 // Enter makes the plan, Shift+Enter starts a new line, Escape closes the box (the panel's only).
 function onKeys(event: KeyboardEvent<HTMLTextAreaElement>, submit: () => void, close?: () => void) {
