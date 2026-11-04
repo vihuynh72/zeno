@@ -2,6 +2,9 @@
 
 **Status:** Draft, awaiting Vi's approval. Once approved, it replaces the shot list in `docs/SUBMISSION.md`.
 **Nov 3 update:** shots 3 and 4 now show the goal-first day (`docs/PLAN-NOV3.md`), and recording moved to Nov 4 (see "Recording plan").
+**Nov 4 update (overnight round, `docs/PLAN-NOV4-GOALS.md`):** the first home is the front door ("What do you want to
+get done?" with a box), goals sit in a sidebar on the left of a laptop, a life goal gets a rolling plan, and the video
+follows Maya plus one life goal (Vi, Nov 3 10:30 PM). Shot 3 and the life-goal beat below are written for that.
 **Due:** Nov 4, 6:00 PM PT. **Length:** 3:00. **Account:** the demo account dotcainha@gmail.com only, never Vi's own.
 **Spec:** `sdlc-studio/prd.md` (feature ids like A3 and open questions like OQ-2 point there).
 
@@ -49,10 +52,13 @@ Shots 7-8 cover how it's built (Meta AI use is 25% of judging) and the close.
 
 - **On screen:** the take starts signed out (only Zeno's session cookie deleted, so Canvas stays linked; see "Before
   every take") → Sign in with Google → "Reading your calendar and email…" (cut the wait) → "I read your calendar and
-  email and learned N things, including N deadlines." [Start my day] → the home: "Hey Maya." and Zeno's line, then
-  "What are we working on?" with up to 3 goals: Canvas deadlines she hasn't started ("not started · due Fri") and the
-  Prof. Patel email that asks her something ("Answer Prof. Patel · 2 min"). The wall from shot 2 folds into three
-  choices she picks from.
+  email and learned N things, including N deadlines." [Start] → the front door: "Hey Maya.", "Tell me a goal. I'll
+  break it into small steps and stay with you while you do them.", the box "What do you want to get done?" and
+  [Make a plan]; under it, Suggestions: Canvas deadlines with no plan yet ("Plan it") and the Prof. Patel email that
+  asks her something ("Answer Prof. Patel · 2 min"). The wall from shot 2 folds into a few things she can tap.
+- **Life-goal beat (Vi: Maya plus one life goal, about 8 s):** she types "Run a 5K by January" and taps Make a plan →
+  "Planning: Run a 5K by January…" (cut, 4-6 s) → the desk: "Run a 5K" with "3 runs a week · week 1 · N days left" and
+  a 5-minute first step. The goals sidebar on the left now lists it. Then she taps the PHIL 134 suggestion for shot 4.
 - **Say:** "Zeno is for brains that know what to do but can't start, ADHD brains included. It reads your calendar, your
   email and Canvas, and turns all of it into one card: the next small step."
 - **App must do:** the first sign-in scan, its one line, and a first card with Start, picked from real deadlines
@@ -62,7 +68,7 @@ Shots 7-8 cover how it's built (Meta AI use is 25% of judging) and the close.
 ### 4. 0:50-1:30 · Moment 2: focus with Zeno (it stays with you)
 
 - **On screen:** tap a goal (the PHIL 134 paper) → "Breaking it into steps…" (about 4 s, cut it) → its desk: the goal
-  bar, "Next: <first step> · 5 min", every step, and "On your desk" with the assignment's own words from Canvas → tap
+  bar, "Next: <first step> · 5 min", every step, and "For this step" with the assignment's own words from Canvas → tap
   Start → a stopwatch counting up from 0:00 with "of 5 min" in grey →
   Music: lo-fi → at about 0:20 cut to Google Docs, typing → back to Zeno's tab after 70 to 90 seconds: the card reads
   "Back. 1 min on 'Reread the PHIL 134 prompt'." → stay on Zeno's tab: at the step's check-in minute (minute 4 by

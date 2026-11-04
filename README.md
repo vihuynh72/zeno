@@ -18,7 +18,8 @@ Open https://zeno-sigma-topaz.vercel.app in Chrome, Edge or Safari.
 3. Google lists what Zeno asks for. Tick each box (or **Select all**), then
    **Continue**.
 4. Zeno reads your calendar and email once, in about 15 seconds, and says what
-   it learned. Tap **Start my day**, then pick what you're working on.
+   it learned. Tap **Start**, then type a goal (school or life, like "Run a 5K by
+   January") and tap **Make a plan**.
 
 What Zeno asks for, and why:
 
