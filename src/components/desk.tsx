@@ -1,7 +1,7 @@
 "use client";
 
 import { type CSSProperties, type KeyboardEvent, type MouseEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { DayEmail, DayEvent, Deadline, DoneStep, Goal, MailResponse, Progress, SourceState } from "@/lib/day";
+import type { DayEmail, DayEvent, Deadline, DoneStep, Goal, MailResponse, SourceState } from "@/lib/day";
 import type { Today } from "@/components/day-view";
 import { browserZone, freeGaps, gmailRow, httpsOnly, markEvents, senderName, snippetLine, timeRange } from "@/components/desk-rows";
 import { deskPlans, doneCaption, doneSteps, dueShort, duration, mergeDone, nextCaption, sameGoal } from "@/components/goal-rows";
@@ -45,7 +45,6 @@ type DeskProps = {
   // The working cards (Vi, Nov 3): every open plan, this week's days for the Week, and taps that leave the Desk for a
   // plan's desk, a deadline's new plan, or an email's reply.
   goals?: Goal[];
-  progress?: Progress;
   onGoal?(goalId: string): void;
   onDeadline?(deadline: Deadline): void;
   onReply?(email: DayEmail): void;
@@ -121,7 +120,7 @@ function unfold(dialog: HTMLDialogElement, from: DOMRect | undefined) {
   dialog.firstElementChild?.animate([{ opacity: 0.4 }, { opacity: 1 }], { duration: 120, easing: "ease-out" });
 }
 
-function DeskBody({ tab: opensOn = "today", today, goal, goals, progress, onSignIn, onGoal, onDeadline, onReply, booked = [] }: Omit<DeskProps, "open" | "onClose">) {
+function DeskBody({ tab: opensOn = "today", today, goal, goals, onSignIn, onGoal, onDeadline, onReply, booked = [] }: Omit<DeskProps, "open" | "onClose">) {
   // Wall clock to the minute; 0 on the server, so nothing is marked before the browser knows the time.
   const now = useSyncExternalStore(everyHalfMinute, () => Math.floor(Date.now() / 60_000) * 60_000, () => 0);
   const [tab, setTab] = useState(opensOn);
@@ -191,11 +190,12 @@ function DeskBody({ tab: opensOn = "today", today, goal, goals, progress, onSign
           aria-labelledby="desk-tab-week"
           className={`flex flex-col gap-4 px-4 sm:px-8 ${grid ? "min-h-0 flex-1 pb-4 sm:pb-8" : "pb-8"}`}
         >
-          {/* Goals across the week first (Vi, Nov 3); the calendar grid one tap away, once there is a calendar to show. */}
+          {/* The week's plan first (Vi, Nov 3; a plan since Nov 4); the calendar grid one tap away, once there is a calendar
+              to show. */}
           {calendarOn && (
             <div className="-ml-1 flex items-center gap-2 text-ink-2">
               <button type="button" onClick={() => setView("goals")} aria-pressed={!grid} data-lead={!grid || undefined} className="link">
-                Goals
+                Plan
               </button>
               <span aria-hidden="true">·</span>
               <button type="button" onClick={() => setView("calendar")} aria-pressed={grid} data-lead={grid || undefined} className="link">
@@ -206,16 +206,7 @@ function DeskBody({ tab: opensOn = "today", today, goal, goals, progress, onSign
           {grid ? (
             <WeekGrid now={now} onSignIn={onSignIn} />
           ) : (
-            <WeekGoals
-              now={now}
-              goals={plans}
-              deadlines={deadlines}
-              done={done}
-              calendar={calendarOn}
-              progress={progress}
-              onGoal={onGoal}
-              onDeadline={onDeadline}
-            />
+            <WeekGoals now={now} goals={plans} done={done} calendar={calendarOn} onGoal={onGoal} />
           )}
         </div>
       ) : (
