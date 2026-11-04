@@ -49,7 +49,8 @@ export type DayViewProps = {
   held?: Goal[]; // every plan the page holds, finished ones too, so the Week lists steps finished since the day loaded
   suggestions?: PanelRow[]; // the panel's Suggestions: deadlines with no plan and email that asks something (on.choose)
   addWords?: string | null; // words whose plan couldn't be made, back in the add box
-  planning?: { title: string; due: string | null; line: string } | null; // a desk whose plan is still being made
+  // a desk whose plan is still being made; view: Zeno's questions or Muse's thinking (plan-thinking.tsx) under its card
+  planning?: { title: string; due: string | null; line: string; view?: ReactNode } | null;
   // Coming back: the goal she was last on (or one due within 2 days), its next step, and whether she started it.
   resume?: { goal: string; step: string; minutes: number | null; started: boolean; due: string | null } | null;
   stuck?: boolean; // Stuck? is open in Focus: its four ways out, without Pop out and Music beside them
@@ -484,7 +485,7 @@ export default function DayView(props: DayViewProps) {
             </div>
 
             {props.celebrate && progress && progress.week.length > 0 && screen === "checkin" && <StreakRow progress={progress} />}
-            {planning && screen === "ready" && <p className="mt-2 text-center text-ink-2">Muse, Meta&apos;s AI, is making the steps.</p>}
+            {planning && screen === "ready" && (planning.view ?? <p className="mt-2 text-center text-ink-2">Muse, Meta&apos;s AI, is making the steps.</p>)}
 
             {/* Under a step card, Zeno's line (in Focus, or about the step it proposes: never only spoken, Nov 4) and the
                 person's words. */}
