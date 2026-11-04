@@ -78,6 +78,7 @@ export type DayViewProps = {
   on: {
     chip(index: number): void;
     choose(index: number): void; // a home option: its plan's desk
+    snap(photo: File): void; // "Add from a photo": Muse Spark reads an assignment's photo, and its plan's desk opens
     home(): void; // the Zeno mark and "← All goals"
     propose(stepId: string): void; // a todo step tapped on the desk becomes the proposed one
     hear(): void;
@@ -143,6 +144,8 @@ export default function DayView(props: DayViewProps) {
   const done = steps.filter((s) => s.status === "done").length;
   const choices = home ? props.choices ?? [] : [];
   const lineOnCard = !top && !next;
+  // "Add from a photo" ends the home's links, with goal options or without them, once its answers are live.
+  const photo = home && screen === "ready" && !props.busy;
   const doneCount = done - (props.leaving ? 1 : 0);
   const pile = (screen === "focus" || screen === "checkin") && doneCount > 0;
   const blocked = voice.error === "blocked";
@@ -173,6 +176,7 @@ export default function DayView(props: DayViewProps) {
   const mainRef = useRef<HTMLElement>(null);
   const pillsRef = useRef<HTMLDivElement>(null);
   const typeRef = useRef<HTMLButtonElement>(null);
+  const photoRef = useRef<HTMLInputElement>(null);
   const pressed = useRef(false);
   const answersKey = `${screen}:${desk}:${next?.id}:${hear}:${props.chips.join("|")}:${choices.length}:${(props.offers ?? []).map((offer) => offer.state).join(",")}`;
   // Home, a plan's desk or a card: each opens at the top of the page, so the strip and the hello are never scrolled off.
@@ -475,7 +479,7 @@ export default function DayView(props: DayViewProps) {
             </button>
           )}
           {otherOffers.length > 0 && <div className="flex flex-wrap justify-center gap-2">{otherOffers.map((offer) => offerChip(offer))}</div>}
-          {(links.length > 0 || hear) && (
+          {(links.length > 0 || hear || photo) && (
             <div className="links">
               {/* Each "·" travels with the link after it; on a phone, where the row wraps, space alone sets them apart. */}
               {links.map((label, i) => (
@@ -509,6 +513,18 @@ export default function DayView(props: DayViewProps) {
                   </button>
                 </span>
               )}
+              {photo && (
+                <span className="flex items-center gap-2">
+                  {(links.length > 0 || hear) && (
+                    <span aria-hidden="true" className="max-sm:hidden">
+                      ·
+                    </span>
+                  )}
+                  <button type="button" onClick={() => photoRef.current?.click()} className="link">
+                    Add from a photo
+                  </button>
+                </span>
+              )}
               {/* Before Music, whose stations open on their own row after it. Mounted after a Done too, so its window can
                   show what is next. */}
               <FocusPop {...props} />
@@ -523,6 +539,24 @@ export default function DayView(props: DayViewProps) {
             <StepsList steps={steps} marked={marked} onPropose={screen === "ready" ? on.propose : undefined} />
             <DeskMaterials key={sourceStep?.id ?? "none"} materials={props.materials} step={sourceStep} brief={props.brief} />
           </>
+        )}
+
+        {/* No capture attribute, so a phone offers Take Photo or the library, and a laptop a file picker. Always mounted
+            while signed in, so a pick still arrives if the home redraws behind the picker. */}
+        {signedIn && (
+          <input
+            ref={photoRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = ""; // the same photo picked again still counts
+              if (!file) return;
+              pressed.current = true;
+              on.snap(file);
+            }}
+          />
         )}
 
         {screen === "signed-out" && (

@@ -23,6 +23,7 @@ import type {
   ProfileResponse,
   Progress,
   SaveMemoryResponse,
+  SnapRequest,
   Step,
   StepResponse,
   StepStatus,
@@ -83,6 +84,7 @@ const SIGNED_OUT_LINE = "Zeno helps you start the thing you keep putting off.";
 const THINK_FAIL = "I couldn't think that through just now. Try again?";
 const SAVE_FAIL = "I couldn't save that just now. Try again?";
 const OPEN_FAIL = "Couldn't open that. Try again.";
+const SNAP_FAIL = "I couldn't find an assignment in that photo.";
 const WRAP_LINE = "Saved. I'll bring it back next time.";
 const READING_LINE = "Reading your calendar and email…";
 const PASTE_LINE = "Paste a syllabus, a to-do list or notes. I'll pull out what matters.";
@@ -189,6 +191,23 @@ async function getJson<T>(url: string, init?: RequestInit): Promise<T | { state:
 
 const post = <T,>(url: string, body: unknown) =>
   getJson<T>(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+// A photo for /api/goal/snap, shrunk here: a JPEG at quality 0.8 whose longest side is 1600 px at most, drawn on white
+// (a screenshot's see-through parts would turn black). Throws when the browser can't read the file (HEIC in Chrome).
+async function shrinkPhoto(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("No 2D canvas");
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return canvas.toDataURL("image/jpeg", 0.8);
+}
 
 function patchStep(id: string, status: StepStatus) {
   return getJson<StepResponse>(`/api/steps/${encodeURIComponent(id)}`, {
@@ -1001,6 +1020,27 @@ export default function GuidedDay() {
     setNote(OPEN_FAIL);
   }
 
+  // "Add from a photo" (Vi, Nov 3 night): Muse Spark reads a photo or screenshot of an assignment once, and its plan
+  // opens as a deadline's does. The desk says it is reading at once; the photo is shrunk here and never kept.
+  async function snapAssignment(photo: File) {
+    if (making.current.has("snap")) return;
+    making.current.add("snap");
+    const ticket = openDesk();
+    setPlanning({ title: "Your assignment", due: null, line: "Reading your photo…" });
+    const image = await shrinkPhoto(photo).catch(() => null);
+    const res = image ? await post<GoalResponse>("/api/goal/snap", { image } satisfies SnapRequest) : ({ state: "bad-request" } as const);
+    making.current.delete("snap");
+    if (res.state === "signed-out") return showSignedOut();
+    if (ticket !== opened.current) {
+      if (res.state === "ok") takeNew(res.goal);
+      return;
+    }
+    setPlanning(null);
+    if (res.state === "ok") return changeGoal(res.goal);
+    goHome();
+    setNote(res.state === "bad-request" ? SNAP_FAIL : OPEN_FAIL);
+  }
+
   // Stuck? in Focus, "Make it smaller": the step goes back to todo (a plan change only rewrites todo steps), then Talk
   // asks for its first small piece, as Something smaller does on the desk.
   async function smallerNow(step: Step) {
@@ -1474,6 +1514,9 @@ export default function GuidedDay() {
       on={{
         chip,
         choose,
+        snap(photo) {
+          if (fresh) void snapAssignment(photo);
+        },
         home: leaveForHome,
         propose: (stepId) => setProposedId(stepId),
         hear() {

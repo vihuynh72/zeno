@@ -6,10 +6,17 @@ export function aiConfigured() {
 
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
+// A user turn with a picture beside its words (a photo of an assignment, as a data URL), which Muse Spark reads.
+export type PictureMessage = {
+  role: "user";
+  content: ({ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } })[];
+};
+
 export type ToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
 
 export type AgentMessage =
   | ChatMessage
+  | PictureMessage
   | { role: "assistant"; content: string | null; tool_calls: ToolCall[] }
   | { role: "tool"; tool_call_id: string; content: string };
 
@@ -121,7 +128,7 @@ export async function askWithTools(
   throw new Error("Model returned an empty reply after retry");
 }
 
-export async function askModel(messages: ChatMessage[], options: AskOptions): Promise<string> {
+export async function askModel(messages: (ChatMessage | PictureMessage)[], options: AskOptions): Promise<string> {
   // One deadline for the call and its retries, so routes still answer inside their maxDuration.
   const reply = await askWithTools(messages, options, AbortSignal.timeout(options.totalMs ?? 25000));
   if (!reply.content) throw new Error("Model returned tool calls instead of text");
