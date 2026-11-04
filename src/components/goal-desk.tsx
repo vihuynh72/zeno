@@ -149,7 +149,7 @@ const everyMinute = (onChange: () => void) => {
 // "For this goal" (Vi, Nov 4: "On the right, everything for that goal: calendar times, related mail, links, files from
 // connected apps, your notes"): a laptop's right column, under the desk on a phone and a tablet. Each part shows only
 // when it has something, and nothing here writes without a tap. Links are laid out only for a step that reads or looks
-// things up; any other step offers "Find help online", searched only on a tap (each search is billed). A reply is hers to
+// things up; any other step offers "Find links", searched only on a tap (each search is billed). A reply is hers to
 // write: no links for an email step. Key it by the step, so a new step starts with its button again.
 type AsideProps = {
   goal: Goal;
@@ -159,7 +159,7 @@ type AsideProps = {
   today: Today | null;
   offer?: Booking; // the next free time that fits the step, booked with one tap
   apps?: GoalItem[]; // the goal's own item (an app's, or the page from the web) and docs, then what connected apps have that matches it
-  onAddDoc?(url: string): Promise<string>; // "Add a doc": "" once it shows, else the line saying why not
+  onAddDoc?(url: string): Promise<string>; // "Add a Google Doc": "" once it shows, else the line saying why not
   onBook(): void;
   onUndo(): void;
 };
@@ -188,7 +188,7 @@ export function GoalAside({ goal, step, materials, brief, today, offer, apps = [
   const linkable = step !== null && !isEmailStep(step.title);
   const when = (start: string, end: string) => <span className="font-mono">{slotLabel(start, end, zone(), new Date(now))}</span>;
   // Links and From your apps show only with something in them (round 8: placeholders on every goal); until then Find
-  // help online and Add a doc are quiet links at the end.
+  // links and Add a Google Doc are quiet links at the end.
   const linked = linkable && (links || isResearchStep(step.title));
   const fromApps = Boolean(prompt || items.length > 0);
   const findHelp = linkable && !linked;
@@ -204,19 +204,7 @@ export function GoalAside({ goal, step, materials, brief, today, offer, apps = [
         !findHelp && !addDoc && <p className="mt-2 text-ink-2">Nothing for this goal yet.</p>
       ) : (
         <div className="mt-2 flex flex-col gap-4">
-          {why.length > 0 && (
-            <section className="mini">
-              <h3 className={`${HEAD} flex items-center gap-1.5`}>
-                <Icon name="sparkle" className="h-[18px] w-[18px]" />
-                Why this plan
-              </h3>
-              <ul className="mt-1 flex flex-col gap-1">
-                {why.map((line, index) => (
-                  <li key={index}>{line}</li>
-                ))}
-              </ul>
-            </section>
-          )}
+          <WhyPlan lines={why} />
           {(next || slot) && (
             <section className="mini">
               <h3 className={HEAD}>Calendar</h3>
@@ -285,7 +273,7 @@ export function GoalAside({ goal, step, materials, brief, today, offer, apps = [
           {findHelp && (
             <button type="button" className="link -ml-1 gap-1.5" onClick={() => setLinks(true)}>
               <Icon name="search" />
-              Find help
+              Find links
             </button>
           )}
           {addDoc && <AddDoc key={goal.id} onAdd={onAddDoc} />}
@@ -295,7 +283,34 @@ export function GoalAside({ goal, step, materials, brief, today, offer, apps = [
   );
 }
 
-// "Add a doc" (Nov 4): a Google Doc's link, shared "Anyone with the link", shows under From your apps for this goal.
+// "Why this plan" (round 7): Muse's own lines from planning this goal. A laptop's sit in For this goal; a phone's right
+// under the step's buttons (round 9: two screens down, Ruth never scrolled to them), the first 2 of 4 or more, then More.
+export function WhyPlan({ lines, phone = false }: { lines: string[]; phone?: boolean }) {
+  const [more, setMore] = useState(false);
+  if (lines.length === 0) return null;
+  const Head = phone ? "h2" : "h3";
+  const shown = phone && !more && lines.length > 3 ? lines.slice(0, 2) : lines;
+  return (
+    <section className={phone ? "mini mt-6 w-full max-w-[760px] sm:hidden" : "mini max-sm:hidden"}>
+      <Head className={`${HEAD} flex items-center gap-1.5`}>
+        <Icon name="sparkle" className="h-[18px] w-[18px]" />
+        Why this plan
+      </Head>
+      <ul className="mt-1 flex flex-col gap-1">
+        {shown.map((line, index) => (
+          <li key={index}>{line}</li>
+        ))}
+      </ul>
+      {shown.length < lines.length && (
+        <button type="button" className="link -ml-1" aria-expanded={false} onClick={() => setMore(true)}>
+          More
+        </button>
+      )}
+    </section>
+  );
+}
+
+// "Add a Google Doc" (Nov 4): a Google Doc's link, shared "Anyone with the link", shows under From your apps for this goal.
 function AddDoc({ onAdd }: { onAdd(url: string): Promise<string> }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -304,7 +319,7 @@ function AddDoc({ onAdd }: { onAdd(url: string): Promise<string> }) {
     return (
       <button type="button" className="link -ml-1 mt-1 gap-1.5" onClick={() => setOpen(true)}>
         <Icon name="doc" />
-        Add doc
+        Add a Google Doc
       </button>
     );
   return (

@@ -188,8 +188,9 @@ assert.equal(checkinMinute(2), 3);
 assert.equal(checkinMinute(5, 0.75), 4);
 assert.equal(checkinMinute(3, 0.75), 3, "never under 3");
 for (const junk of [NaN, 0, -1, Infinity]) assert.equal(checkinMinute(15, junk), 15, String(junk));
-// The line under the card by state: calm (the card shows the planned minutes), the check-in at its moment, welcome back.
-assert.equal(FOCUS.calm, "I'll stay quiet.");
+// The line under the card by state: calm is none (the card shows the planned minutes), the check-in at its moment,
+// welcome back.
+assert.equal(FOCUS.calm, "");
 assert.equal(FOCUS.checkin(15), "15 min in. Finish the line you're on, then Done.");
 assert.equal(FOCUS.checkin(16), "16 min in. Wrap up this bit, then Done.");
 assert.equal(FOCUS.checkin(20), "20 min in. Get it to a stopping point, then Done.");

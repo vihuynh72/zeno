@@ -85,6 +85,19 @@ const PATHS = {
   link: <path d="M10 14a4 4 0 005.66 0l3-3a4 4 0 00-5.66-5.66l-1 1M14 10a4 4 0 00-5.66 0l-3 3a4 4 0 005.66 5.66l1-1" />,
   memory: <path d="M12 20.5s-7.5-4.6-7.5-10A4.3 4.3 0 0112 7.9a4.3 4.3 0 017.5 2.6c0 5.4-7.5 10-7.5 10z" />,
   sparkle: <path d="M12 3.5l1.8 5.2 5.2 1.8-5.2 1.8L12 17.5l-1.8-5.2L5 10.5l5.2-1.8zM18.5 16l.8 2 2 .7-2 .8-.8 2-.7-2-2-.8 2-.7z" />,
+  popOut: (
+    <>
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+      <path d="M3.5 8.5h17M9 17l6-6M11 11h4v4" />
+    </>
+  ),
+  music: (
+    <>
+      <path d="M9.5 17.5V6l10-2v11.5" />
+      <circle cx="7" cy="17.5" r="2.5" />
+      <circle cx="17" cy="15.5" r="2.5" />
+    </>
+  ),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;
