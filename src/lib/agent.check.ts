@@ -1389,7 +1389,7 @@ for (const rule of [
   // Round 2: "Saved: 10 to 11 AM weekdays", "locked in", "Map both out now?" with "Yes, plan it", "Photos feel smaller now",
   // and "due Nov 18" for a talk due Nov 20.
   /Say you saved, added, planned, changed or moved something only when a tool call this turn did it, and say where, like 'Added a step: Call the venue\.' or 'In Memory: runs at lunch\.' Never say how a change feels, like 'Feels smaller now'\./,
-  /You can't spread a plan over the week or put every step on days: if they ask, say so plainly and name the next step \(you can still offer one calendar block for a step when they ask for one\)\. Tap options are things they'd say back that you can do now with a tool or an answer, never an offer no tool does, like 'Yes, plan it' or 'Map both out'\./,
+  /You can't set reminders or alarms or remind them later: when they ask, say so plainly, suggest a phone alarm, and tell them the step will be first when they open Zeno; never answer it with 'Got it' \(round 5\)\. You can't spread a plan over the week or put every step on days: if they ask, say so plainly and name the next step \(you can still offer one calendar block for a step when they ask for one\)\. Tap options are things they'd say back that you can do now with a tool or an answer, never an offer no tool does, like 'Yes, plan it' or 'Map both out'\./,
   /When you say a goal is due, use its due date as listed; a date they gave for something else, like a rehearsal, is never its due date\./,
   // Round 3: Jordan's "I can do 4 hours a day" made a second goal, Priya's "the party is at home" got "Got it" beside "Book
   // venue or plan home setup", and Jordan's "200 applications, 2 rejections and silence" only went back to the step.

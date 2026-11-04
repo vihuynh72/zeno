@@ -1008,9 +1008,11 @@ export default function GuidedDay() {
     else failStart(res, before, back);
   }
 
-  // Coming back's Start: a goal other than the current one opens first (made current), then its step starts.
+  // Coming back's Start: the current goal's step starts at once; another goal opens first (made current), then its step
+  // starts, unless opening it failed (round 5: the current goal's Start did nothing, as the view was still the home).
   async function resumeStart(plan: Goal, step: Step) {
-    if (latest.current.goal?.id !== plan.id) await openPlan(plan);
+    if (latest.current.goal?.id === plan.id) return void startStep(step);
+    await openPlan(plan);
     if (latest.current.goal?.id === plan.id && latest.current.view === "desk") void startStep(step);
   }
 
