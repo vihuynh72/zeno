@@ -282,6 +282,8 @@ const STATES: Record<string, Fixture> = {
   },
   // A deadline tapped with no plan yet: Muse breaks it into steps, with no Start until it has.
   "goal-desk-planning": { view: "desk", planning: { title: QUIZ.title, due: QUIZ.date, line: "Breaking it into steps…" }, chips: [] },
+  // "Add from a photo": Muse Spark reads the assignment's photo, then its plan's desk opens as a deadline's does.
+  "snap-reading": { view: "desk", planning: { title: "Your assignment", due: null, line: "Reading your photo…" }, chips: [] },
   // Focus on the desk: the step card with its stopwatch, the bar's running segment red, the steps and materials below.
   "desk-focus": {
     screen: "focus",
@@ -546,6 +548,7 @@ export default function Gallery({ state, theme }: { state: string; theme?: "ligh
         on={{
           chip: noop,
           choose: noop,
+          snap: noop,
           home: noop,
           propose: noop,
           hear: noop,
