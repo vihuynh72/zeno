@@ -408,7 +408,7 @@ export default function GuidedDay() {
   // hid today, 3 at a time; this device's Canvas list only once /api/day said whose it is.
   const plans = openPlans(goal, goals);
   const hiddenNow = hiddenOn(hidden, today);
-  const choices = feedStack({
+  const stack = feedStack({
     plans,
     deadlines: base?.deadlines ?? [],
     emails: day?.emails ?? [],
@@ -421,8 +421,7 @@ export default function GuidedDay() {
     timeZone: zone(),
     now: new Date(booted?.at ?? 0),
   })
-    .filter((card) => !hiddenNow.ids.includes(card.id))
-    .slice(0, 3);
+    .filter((card) => !hiddenNow.ids.includes(card.id));
   const proposed = proposedStep(goal, proposedId);
   // Focus and the screen after Done are always on the desk; the card and talk are while its plan is made or has a step
   // open; otherwise the home.
@@ -431,6 +430,8 @@ export default function GuidedDay() {
   const frontDoor = screen === "ready" && !onDesk && plans.length === 0;
   // Coming back: her last goal's next step, or a goal of hers due within 2 days and sooner (resumePlan).
   const resume = fresh && screen === "ready" && !onDesk ? resumePlan(goal, plans, today, leftId) : null;
+  // The stack never repeats the step the coming-back card already offers.
+  const choices = stack.filter((card) => !resume || card.id !== `step:${resume.step.id}`).slice(0, 3);
   const history = useRef<Turn[]>([]);
   const cache = useRef<Saved | null>(null);
   const tapped = useRef<string | null>(null); // the turn in flight came from a chip, not the type box: the words it shows
