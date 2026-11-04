@@ -1,8 +1,91 @@
 # Zeno handoff
 
-Last updated: 2026-11-04 early morning, by Claude (session 4: the Nov 4 overnight round, goals for anyone; before it
+Last updated: 2026-11-04 midday, by Claude (session 4: the Nov 4 day round; before it the Nov 4 overnight round, goals for anyone;
 the Nov 3 night round, the Nov 3 goal-first round, the Nov 2 round, the tidy round and the pre-recording build).
 Read this first, then the Linear doc **"Zeno hackathon build plan (Nov 4)"** (project Zeno, team VI).
+
+## 0. The Nov 4 day round: the workspace, smarter planning, apps (branch `nov4/final`, Linear VI-365)
+
+Vi tested production at 8:40 AM Nov 4 and said:
+- no connectors for other apps
+- no way to delete a goal
+- "pretty basic", with a boring Week and boring mail
+- forwarded mail showed nothing, and some mail couldn't be clicked
+- the "Type to Zeno" box cut off the suggestions
+- no workstation
+- the AI "just names the goal", and should be smarter, more specific and show its thinking
+- life and creator goals didn't work
+
+Vi's answers (9-11 AM):
+- **Workspace:** three panes on a laptop: goals | the open goal | "For this goal".
+- **Planning:** a vague goal gets 1-2 tap questions, then "Muse is planning…" shows its reasoning.
+- **Connectors:** Notion, Google Docs/Drive, Slack, Linear, Trello, Jira, Confluence, and Zeno in other AI apps. Each user connects their own workspace.
+- **Week:** "Both": done days behind, the plan ahead.
+- **Mail:** make it a goal or step, draft a reply, one-line summaries, show all mail. Claude's pick: "Waiting on".
+- **Suggestions:** the 3 at a time Vi likes, each with ✕. The next one moves up, hidden ones come back tomorrow. Sources: goals' next steps, mail that asks, app items, "Zeno noticed".
+- **Delete:** goals, suggestions and memories can all be deleted.
+- **Simulations:** 5-6 personas with diverse goals, not 10.
+- **Code freeze:** 2 PM PT.
+
+**Shipped** (agent branches merged into `nov4/final`, each checked; production `f9d94a9`, then this docs commit):
+- `nov4/basics` (91f2007):
+  - Remove / Mark done for goals, with a 6 s Undo. The round-7 fix below lengthened it to 30 s+.
+  - Talk tools that ask before they act.
+  - Forwarded mail shows the forwarded message.
+  - Every mail row opens.
+  - The dock sizes to what it holds, so nothing sits under it.
+- `nov4/workspace` (410ece4): the three panes; Skip and Adjust beside Start; "+ Add goal" always visible.
+- `nov4/planning` (05dd6e2, 6106f45):
+  - Vague goals get questions in the same model call.
+  - The plan returns `thinking` lines.
+  - Free calendar times go to the planner.
+  - Prompts were tuned for creator and life goals. The eval is in scratchpad `plan-eval/`.
+- `nov4/oauth` (360e644): OAuth 2.1 for `/api/mcp` (dynamic client registration, PKCE, refresh). Claude.ai and ChatGPT can add `https://zeno-sigma-topaz.vercel.app/api/mcp` as a custom connector.
+- `nov4/apps` (0588646, 4dc5754):
+  - The "Your apps" sheet (header "Apps").
+  - Linear (pasted key) and Trello (authorize).
+  - Google Docs by link, plus "Add a doc" under For this goal.
+  - "From your apps" in the add box.
+  - `goals.source`.
+- `nov4/notion-slack` (3493a4f): Notion and Slack OAuth, server side. Tokens stay on the device (`zeno.connect.<app>.<account>`).
+- `nov4/atlassian` (f11dcd7): Jira and Confluence with one pasted Atlassian API token. Only `*.atlassian.net` hosts are fetched.
+- `nov4/week-plan` (2faabdd): `planWeek`. Days behind show ✓ done; days ahead get steps spread before due dates and habit sessions with rest days.
+- `nov4/mail` (6f1cc9a, f22ab8c): summary lines, Draft a reply (a compose window; no new Google scope), Make it a goal, Add as a step, Show all mail, Waiting on.
+- `nov4/feed` (0d579f2): Suggestions as a ranked stack, 3 at a time, with ✕ (hidden for today) and "Zeno noticed" (Keep / Forget). It also adds a "What Zeno remembers" link and a visible Forget in Memory.
+- Round-7 fixes:
+  - `nov4/fix-ux` (a940854):
+    - Remove's Undo lasts 30 s+, then until the next tap.
+    - Mark done asks first when steps are left.
+    - Skip says "Moved to the end. Undo".
+    - The thinking lines come 600 ms apart and stay as "Why this plan".
+    - The laptop layout holds still.
+    - On a phone, the add box stays above the dock.
+  - `nov4/fix-ai` (ad87d9d):
+    - "Make it more specific" rewrites the whole plan in one turn.
+    - Exams, accountant requests, shops, jobs and parties get one tap question.
+    - Field-specific plan rules.
+    - `restore_goal` ("bring back my Etsy goal").
+- Merge fixes on `nov4/final`:
+  - The stack never repeats the coming-back card's step.
+  - App items feed the stack, and their goals keep `source`.
+
+**Set up in Vi's browser (Nov 4):**
+- **Notion:** connection "Zeno". OAuth, any workspace, read content only, no user information. Redirect `https://zeno-sigma-topaz.vercel.app/api/connect/notion/callback`.
+- **Trello:** workspace "Zeno Apps" (free; it only hosts the app) and app "Zeno". Trello Auth API key; allowed origin is production.
+- **Vercel production env:** `NOTION_CLIENT_ID`, `NOTION_CLIENT_SECRET` and `NEXT_PUBLIC_TRELLO_KEY` (a Config var, since Trello keys are public).
+- **Slack:** waits on a Slack workspace Vi creates. Vi's Slack has only CodeDay and CodePath, which are big community workspaces. Then create the app with user scope `search:read`, redirect `…/api/connect/slack/callback` and public distribution, and add `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET`.
+- **Google Drive picker:** not built. It needs Vi's Google Cloud console. Docs work by link.
+
+**Simulated testing:**
+- **Round 7** (six personas on 12d1200): 3.2. Its P0s are fixed above.
+- **Round 8** (three personas on f9d94a9): results below once in.
+
+**Not verified:**
+- the mail actions against a real Gmail inbox
+- live Notion, Slack, Trello, Linear, Jira or Confluence accounts
+- the Claude.ai and ChatGPT connector flows live
+- voice by ear
+- iOS Safari's keyboard
 
 ## 0. The Nov 4 overnight round: goals for anyone (branch `nov4/goals`, Linear VI-365)
 
