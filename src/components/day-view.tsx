@@ -362,15 +362,15 @@ export default function DayView(props: DayViewProps) {
                       {props.resume.step}
                       {props.resume.minutes ? <span className="mins">{props.resume.minutes} min</span> : null}
                     </p>
-                    <p className="text-ink-2">{props.resume.goal}</p>
+                    <p>
+                      <span className="hand text-ink-2">{props.resume.goal}</span>
+                    </p>
                   </>
                 )}
                 {screen !== null && youLine}
               </div>
             </article>
-            {panelOn && (
-              <p className="mt-6 text-center text-ink-2 max-lg:hidden">{props.resume ? "Or pick another goal on the left." : "Pick a goal on the left, or add one."}</p>
-            )}
+
           </>
         ) : (
           <>
@@ -553,6 +553,11 @@ export default function DayView(props: DayViewProps) {
             </div>
           )}
         </div>
+
+        {/* A laptop's home points at the goals beside it, under Start when she is coming back. */}
+        {home && !frontDoor && panelOn && (
+          <p className="mt-6 text-center text-ink-2 max-lg:hidden">{props.resume ? "Or pick another goal on the left." : "Pick a goal on the left, or add one."}</p>
+        )}
 
         {/* The steps and the materials stay below the step, in Focus too, and a quiet word on who made the steps. */}
         {desk && !planning && goal && (
