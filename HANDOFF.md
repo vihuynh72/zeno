@@ -27,7 +27,7 @@ Vi's answers (9-11 AM):
 - **Simulations:** 5-6 personas with diverse goals, not 10.
 - **Code freeze:** 2 PM PT.
 
-**Shipped** (agent branches merged into `nov4/final`, each checked; production `f9d94a9`, then this docs commit):
+**Shipped** (agent branches merged into `nov4/final`, each checked; production `8bba60e`):
 - `nov4/basics` (91f2007):
   - Remove / Mark done for goals, with a 6 s Undo. The round-7 fix below lengthened it to 30 s+.
   - Talk tools that ask before they act.
@@ -76,9 +76,40 @@ Vi's answers (9-11 AM):
 - **Slack:** waits on a Slack workspace Vi creates. Vi's Slack has only CodeDay and CodePath, which are big community workspaces. Then create the app with user scope `search:read`, redirect `…/api/connect/slack/callback` and public distribution, and add `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET`.
 - **Google Drive picker:** not built. It needs Vi's Google Cloud console. Docs work by link.
 
+- **Round 8 fixes:**
+  - `nov4/fix8-ui` (201ed16): Suggestions never disagrees with the big card or repeats the open step; "Why this plan" follows a rewrite; Week dates ("by Nov 8" on or before Nov 8; parts of one sitting share a day; rest days only for exercise); Skip's Undo lasts 30 s+; bringing a goal back clears the Removed line; empty "Links" / "From your apps" hide. Vi's "cancel the goal": **Remove this goal** in Adjust and in Stuck?, and "Mark done · Remove" in ink.
+  - `nov4/fix8-ai` (49d7570): an exam asks "Which topic is weakest?" and still covers every topic; tapping an answer to Zeno's rebuild question rewrites the plan in that turn; accountant requests ask "What did your accountant ask for?" and name each form's source and the secure portal; creator plans name the craft (3 hooks, batch-filming, posting time, 3-second hold rate); thinking lines are "fact: decision".
+  - `e989101`: a talk turn that adds two or more steps puts Zeno's line on top of "Why this plan".
+- **"Is this the one?"** `nov4/lookup` (f8cba05, Vi's 12 PM ask: plans need real context):
+  - When a typed goal names a real thing (a hackathon, a race, an exam, a program), the first call returns a web query.
+  - The server runs one Muse web search (prep.ts, 10 s limit). The card shows title, date, one line and the source, with Yes / A different one / Skip.
+  - Yes plans from the facts: the real due date, a thinking line that cites the source, and the page kept as the goal's source ("From the web: …").
+  - Live: "I'm doing the Meta hackathon" found the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026, dev.meta.ai) and planned "Build project for Meta hackathon, due today". Everyday goals never look up and aren't slower.
+  - Off-switch: `looks` in `src/app/api/goal/add/route.ts`. The add route's limit is now 40 s.
+- **Production: `8bba60e`** (12:27 PM). No runtime errors in the 3 h before it. All 43 self-checks, tsc, eslint and the build pass.
+
+**Connected live on production (Nov 4, by Claude with Vi's OK, demo account in Vi's Chrome):** Notion (Class Notes page only, read-only) and Trello (read, 30 days). Both round trips work, and the app's suggestions showed real Canvas items.
+
 **Simulated testing:**
 - **Round 7** (six personas on 12d1200): 3.2. Its P0s are fixed above.
-- **Round 8** (three personas on f9d94a9): results below once in.
+- **Round 8** (three personas on f9d94a9): 3.33 (Maya 4, Priya 3, Dana 3). Its P0s are fixed above.
+- **After the fixes, Claude checked in Chrome on the final build:**
+  - the tax-paperwork question and plan
+  - "make it more specific" and "also add…" rewrites, with Why updating
+  - the Meta hackathon lookup end to end
+
+**Before recording:**
+1. On the demo account, add "I'm doing the Meta hackathon" to show the lookup card, then Yes.
+2. Show the workspace: Why this plan, From the web.
+3. Show Apps (Notion and Trello connected), Remove with Undo, and the Week.
+4. Use mail only if the inbox has a fitting email.
+5. Say "done" aloud for Zeno's voice.
+
+**Open questions for Vi:**
+- After a confirmed match, should Zeno still ask one question?
+- Should bare "do my taxes" ask?
+- A "Recently removed" list in the account menu?
+- After the video: Slack (needs a workspace Vi owns), the Google Drive picker, and a lookup cache.
 
 **Not verified:**
 - the mail actions against a real Gmail inbox
