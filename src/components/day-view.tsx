@@ -22,7 +22,6 @@ import MemorySheet from "@/components/memory-sheet";
 import StreakRow from "@/components/streak-row";
 import VoiceRing from "@/components/voice-ring";
 import YourApps from "@/components/your-apps";
-import { Icon } from "@/components/icons";
 
 // An action's icon beside its word (Vi, Nov 4: "I like the idea of an icon… not too different from other apps"), by
 // the label the page gives it; an action not here keeps its word alone.
