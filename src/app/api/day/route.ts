@@ -6,7 +6,7 @@ import { loadUserContext, scrub } from "@/lib/context";
 import type { DayResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
 import { addressOf, asks } from "@/lib/gmail";
-import { doneTitles, finishedYesterday, hasAnyGoal, openGoals, recentSteps, titleKey } from "@/lib/goals";
+import { doneTitles, finishedYesterday, hasAnyGoal, openGoals, recentSteps, stepsDoneSince, titleKey, weekStart } from "@/lib/goals";
 import { paceOf } from "@/lib/patterns";
 import { sensitiveEmail } from "@/lib/profile";
 import { accountKey } from "@/lib/session-json";
@@ -24,7 +24,7 @@ export async function GET() {
   const email = session.user.email;
   const firstName = session.user.name?.trim().split(/\s+/)[0] || null;
   const timeZone = timeZoneFrom((await cookies()).get("tz")?.value);
-  const [context, anyGoal, steps, goals, finished, done] = await Promise.all([
+  const [context, anyGoal, steps, goals, finished, done, doneThisWeek] = await Promise.all([
     loadUserContext(email, session, timeZone),
     // A failed read counts as having goals, so an error never restarts the first-time setup.
     databaseConfigured() ? hasAnyGoal(email).catch(() => true) : true,
@@ -34,6 +34,8 @@ export async function GET() {
     databaseConfigured() ? openGoals(email).catch(() => undefined) : [],
     databaseConfigured() ? finishedYesterday(email, timeZone).catch(() => []) : [],
     databaseConfigured() ? doneTitles(email, localDate(timeZone)).catch(() => []) : [],
+    // The Week's finished steps (Nov 4); a failed read leaves them out, so the Week never says nothing was done.
+    databaseConfigured() ? stepsDoneSince(email, weekStart(timeZone)).catch(() => undefined) : [],
   ]);
   const finishedKeys = new Set(done.map(titleKey));
 
@@ -47,6 +49,7 @@ export async function GET() {
     options: ruleOptions(context),
     goal: context.goal,
     goals,
+    doneThisWeek,
     sources: { calendar: context.calendarState, email: context.emailState, goals: context.tasksState },
     events: context.events.map(({ title, start, end, allDay, zeno }) => ({ title, start, end, allDay, zeno })),
     free: context.free,

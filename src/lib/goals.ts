@@ -1,8 +1,8 @@
-import { MEMORY_GROUPS, type Goal, type Memory, type MemoryGroup, type MemorySource, type PrepSource, type StepStatus } from "@/lib/day";
+import { MEMORY_GROUPS, type DoneStep, type Goal, type Memory, type MemoryGroup, type MemorySource, type PrepSource, type StepStatus } from "@/lib/day";
 import { ensureSchema, getSql } from "@/lib/db";
 // profile.ts imports this file too; neither uses the other until a call, so the cycle is safe.
 import { factVerdict } from "@/lib/profile";
-import { dayBounds, formatDate } from "@/lib/tz";
+import { dayBounds, formatDate, localDate } from "@/lib/tz";
 import { sameFact, within } from "@/lib/vault";
 
 // A step for a new or edited roadmap; `id` keeps an existing todo step.
@@ -24,6 +24,7 @@ function goalFrom(rows: Record<string, unknown>[]): Goal | null {
     id: String(rows[0].goal_id),
     title: String(rows[0].goal_title),
     due: rows[0].goal_due ? String(rows[0].goal_due) : null,
+    rhythm: rows[0].goal_rhythm ? String(rows[0].goal_rhythm) : null,
     steps: rows
       .filter((row) => row.id !== null)
       .map((row) => ({
@@ -43,7 +44,7 @@ function goalFrom(rows: Record<string, unknown>[]): Goal | null {
 
 function goalQuery(email: string, goalId: string) {
   return getSql()`
-    SELECT g.id AS goal_id, g.title AS goal_title, to_char(g.due, 'YYYY-MM-DD') AS goal_due,
+    SELECT g.id AS goal_id, g.title AS goal_title, to_char(g.due, 'YYYY-MM-DD') AS goal_due, g.rhythm AS goal_rhythm,
       s.id, s.title, s.minutes, s.status, s.started_at, s.done_at, s.prep, s.event_id, s.scheduled_at
     FROM goals g LEFT JOIN steps s ON s.goal_id = g.id AND s.user_email = ${email}
     WHERE g.id = ${goalId} AND g.user_email = ${email}
@@ -93,7 +94,7 @@ export async function doneTitles(email: string, today: string): Promise<string[]
 export async function openGoals(email: string): Promise<Goal[]> {
   await ensureSchema();
   const rows = await getSql()`
-    SELECT g.id AS goal_id, g.title AS goal_title, to_char(g.due, 'YYYY-MM-DD') AS goal_due, g.updated_at AS goal_updated,
+    SELECT g.id AS goal_id, g.title AS goal_title, to_char(g.due, 'YYYY-MM-DD') AS goal_due, g.rhythm AS goal_rhythm, g.updated_at AS goal_updated,
       g.id = (SELECT id FROM goals WHERE user_email = ${email} AND status = 'active' ORDER BY created_at DESC LIMIT 1) AS goal_current,
       s.id, s.title, s.minutes, s.status, s.started_at, s.done_at, s.prep, s.event_id, s.scheduled_at
     FROM goals g JOIN steps s ON s.goal_id = g.id AND s.user_email = ${email}
@@ -140,15 +141,25 @@ export async function hasAnyGoal(email: string): Promise<boolean> {
   return (await getSql()`SELECT 1 FROM goals WHERE user_email = ${email} LIMIT 1`).length > 0;
 }
 
-// due is YYYY-MM-DD, checked by the caller.
-export async function setGoal(email: string, title: string, steps: NewStep[], due: string | null = null): Promise<Goal> {
+// due is YYYY-MM-DD, checked by the caller; rhythm marks a goal that keeps going ("3 runs a week"). A paused goal waits
+// in their list (the second and third goal of one message, Nov 4) and leaves the current one current.
+export async function setGoal(
+  email: string,
+  title: string,
+  steps: NewStep[],
+  due: string | null = null,
+  { rhythm = null, paused = false }: { rhythm?: string | null; paused?: boolean } = {},
+): Promise<Goal> {
   await ensureSchema();
   const sql = getSql();
   const goalId = crypto.randomUUID();
   const results = await sql.transaction([
     // One goal at a time: the old one is paused, not lost.
-    sql`UPDATE goals SET status = 'paused', updated_at = now() WHERE user_email = ${email} AND status = 'active'`,
-    sql`INSERT INTO goals (id, user_email, title, due) VALUES (${goalId}, ${email}, ${title}, ${due})`,
+    ...(paused ? [] : [sql`UPDATE goals SET status = 'paused', updated_at = now() WHERE user_email = ${email} AND status = 'active'`]),
+    sql`
+      INSERT INTO goals (id, user_email, title, due, rhythm, status)
+      VALUES (${goalId}, ${email}, ${title}, ${due}, ${rhythm}, ${paused ? "paused" : "active"})
+    `,
     ...steps.map(
       (step, index) => sql`
         INSERT INTO steps (goal_id, user_email, title, minutes, position)
@@ -198,6 +209,80 @@ export async function replaceRemainingSteps(email: string, goalId: string, steps
     goalQuery(email, goalId),
   ]);
   return goalFrom(results[results.length - 1]);
+}
+
+// One of the person's goals, any status; null when it is not theirs.
+export async function getGoal(email: string, goalId: string): Promise<Goal | null> {
+  await ensureSchema();
+  return goalFrom(await goalQuery(email, goalId));
+}
+
+// One new todo step right before `beforeId` (a step of this goal), or after the last step when null; every other step
+// keeps its title, status and order (Make it smaller, Nov 4: a first piece before the step, never a rewrite). A running
+// step hands its clock to the new piece and goes back in line, so the timer keeps running on the piece. null when the
+// goal or that step is not theirs.
+export async function insertStep(email: string, goalId: string, step: NewStep, beforeId: string | null = null): Promise<Goal | null> {
+  await ensureSchema();
+  const sql = getSql();
+  const [found] = await sql`
+    SELECT b.position AS target, (SELECT max(position) FROM steps WHERE goal_id = g.id AND user_email = ${email}) AS last
+    FROM goals g LEFT JOIN steps b ON b.id = ${beforeId} AND b.goal_id = g.id AND b.user_email = ${email}
+    WHERE g.id = ${goalId} AND g.user_email = ${email}
+  `;
+  if (!found || (beforeId && found.target === null)) return null;
+  const position = beforeId ? Number(found.target) : found.last === null ? 0 : Number(found.last) + 1;
+  const results = await sql.transaction([
+    sql`UPDATE steps SET position = position + 1 WHERE goal_id = ${goalId} AND user_email = ${email} AND position >= ${position}`,
+    sql`
+      INSERT INTO steps (goal_id, user_email, title, minutes, position, status, started_at)
+      SELECT ${goalId}, ${email}, ${step.title}, ${step.minutes}, ${position},
+        CASE WHEN b.status = 'doing' THEN 'doing' ELSE 'todo' END, CASE WHEN b.status = 'doing' THEN b.started_at END
+      FROM (SELECT 1) one LEFT JOIN steps b ON b.id = ${beforeId} AND b.user_email = ${email}
+    `,
+    sql`UPDATE steps SET status = 'todo', started_at = NULL WHERE id = ${beforeId} AND user_email = ${email} AND status = 'doing'`,
+    // A new todo step reopens a finished goal, as replaceRemainingSteps does.
+    sql`
+      UPDATE goals SET updated_at = now(), status = CASE WHEN status = 'done' THEN 'active' ELSE status END
+      WHERE id = ${goalId} AND user_email = ${email}
+    `,
+    goalQuery(email, goalId),
+  ]);
+  return goalFrom(results[results.length - 1]);
+}
+
+// A goal's due date (YYYY-MM-DD, checked by the caller), or none; null when the goal is not theirs.
+export async function setGoalDue(email: string, goalId: string, due: string | null): Promise<Goal | null> {
+  await ensureSchema();
+  const sql = getSql();
+  const [updated, rows] = await sql.transaction([
+    sql`UPDATE goals SET due = ${due}, updated_at = now() WHERE id = ${goalId} AND user_email = ${email} RETURNING id`,
+    goalQuery(email, goalId),
+  ]);
+  return updated.length > 0 ? goalFrom(rows) : null;
+}
+
+// Monday 00:00 of this week on the person's clock, a day at a time so a DST change is kept.
+export function weekStart(timeZone: string, now = new Date()): Date {
+  let start = dayBounds(timeZone, now).start;
+  while (new Date(`${localDate(timeZone, start)}T00:00:00Z`).getUTCDay() !== 1) start = dayBounds(timeZone, new Date(start.getTime() - 1)).start;
+  return start;
+}
+
+// The Week's finished steps (Nov 4): done since `since`, newest first, at most 50. minutes is the real time from Start to
+// Done when it was timed (1 minute to 6 hours, as paceOf counts it), else null.
+export async function stepsDoneSince(email: string, since: Date): Promise<DoneStep[]> {
+  await ensureSchema();
+  const rows = await getSql()`
+    SELECT s.title, g.title AS goal, s.started_at, s.done_at
+    FROM steps s JOIN goals g ON g.id = s.goal_id AND g.user_email = ${email}
+    WHERE s.user_email = ${email} AND s.status = 'done' AND s.done_at >= ${since.toISOString()} AND s.done_at <= now()
+    ORDER BY s.done_at DESC LIMIT 50
+  `;
+  return rows.map((row) => {
+    const doneAt = iso(row.done_at) as string;
+    const real = row.started_at ? (Date.parse(doneAt) - Date.parse(iso(row.started_at) as string)) / 60_000 : NaN;
+    return { title: String(row.title), goal: String(row.goal), doneAt, minutes: real > 0 && real <= 360 ? Math.max(1, Math.round(real)) : null };
+  });
 }
 
 export async function setStepStatus(email: string, stepId: string, status: StepStatus): Promise<Goal | null> {
