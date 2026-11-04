@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import type { Goal, Step } from "@/lib/day";
 import { goalRow, panelGoals, type PanelRow } from "@/components/day-flow";
 
-// The goals panel (Nov 4, docs/PLAN-NOV4-GOALS.md): "+ Add a goal" on top, every open goal by due date, then
+// The goals panel (Nov 4, docs/PLAN-NOV4-GOALS.md): every open goal by due date, "+ Add goal" under them, then
 // Suggestions. A laptop's left column beside the open goal's desk; a phone's home under the hello. Nothing here talks
 // to the server: the page's handlers do.
 
@@ -51,8 +51,6 @@ export default function GoalsPanel({ goals, suggestions, openId, proposed, today
   return (
     <aside aria-label="Goals" className="panel">
       <h2 className="text-[20px] leading-8 font-bold">Goals</h2>
-      {/* Keyed by the words, so failed ones open the box again with them in it. */}
-      <AddBox key={words ?? ""} words={words} onAdd={onAdd} onCancel={onCancel} onPhoto={onPhoto} />
       <ul className="mt-2 flex flex-col gap-2">
         {panelGoals(goals).map((goal) => {
           const open = goal.id === openId;
@@ -85,12 +83,17 @@ export default function GoalsPanel({ goals, suggestions, openId, proposed, today
           );
         })}
       </ul>
+      {/* Under the last goal, and on a laptop held at the column's foot while the goals scroll (Vi, Nov 4: "Is there a way
+          to add a goal?"). Keyed by the words, so failed ones open the box again with them in it. */}
+      <div className="add">
+        <AddBox key={words ?? ""} words={words} onAdd={onAdd} onCancel={onCancel} onPhoto={onPhoto} />
+      </div>
       <Suggestions rows={suggestions} onPick={onSuggest} />
     </aside>
   );
 }
 
-// "+ Add a goal": a tap opens the box in place at once, with no AI turn; Make a plan sends the words.
+// "+ Add goal": a tap opens the box in place at once, with no AI turn; Make a plan sends the words.
 // Its buttons are answers (data-answer): a tap while Talk listens never sends the half-heard words.
 function AddBox({ words, onAdd, onCancel, onPhoto }: { words: string | null; onAdd(text: string): void; onCancel(): void; onPhoto(): void }) {
   const [open, setOpen] = useState(words !== null);
@@ -102,7 +105,7 @@ function AddBox({ words, onAdd, onCancel, onPhoto }: { words: string | null; onA
   if (!open) {
     return (
       <button type="button" data-answer onClick={() => setOpen(true)} className="add-goal mt-2">
-        + Add a goal
+        + Add goal
       </button>
     );
   }

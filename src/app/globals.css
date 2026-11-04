@@ -1498,29 +1498,43 @@ button:active .tap {
 }
 
 /* ---------- The goals panel and the page around it (Nov 4, docs/PLAN-NOV4-GOALS.md) ----------
-   A laptop with a goal: the panel is the left column and main the right, under one header, with Talk centered under
-   main. A phone: the panel is the home, under the hello; a goal's desk takes the whole screen. */
+   A laptop with goals: the panel is the left column; an open goal takes the middle with "For this goal" on the right
+   (Vi, Nov 4), and any other screen the middle and the right, so the goals never move. One header over all three, Talk
+   centered under main. A phone: the panel is the home, under the hello; a goal's desk takes the whole screen. */
 :root {
-  --side: 300px;
-  --gap: 32px;
+  --side: 260px;
+  --aside: 260px;
+  --gap: 24px;
 }
 @media (min-width: 1280px) {
   :root {
-    --side: 340px;
-    --gap: 48px;
+    --side: 300px;
+    --aside: 300px;
+    --gap: 32px;
+  }
+}
+@media (min-width: 1440px) {
+  :root {
+    --gap: 40px;
   }
 }
 @media (min-width: 1024px) {
   .page[data-panel] {
     display: grid;
-    grid-template-columns: minmax(32px, 1fr) var(--side) var(--gap) minmax(0, 792px) minmax(32px, 1fr);
+    grid-template-columns: minmax(16px, 1fr) var(--side) var(--gap) minmax(0, 760px) var(--gap) var(--aside) minmax(16px, 1fr);
     grid-template-rows: auto 1fr auto;
   }
   .page[data-panel] > header,
   .page[data-panel] > .dock {
     grid-column: 1 / -1;
   }
+  .page[data-panel] > header {
+    max-width: calc(var(--side) + var(--aside) + var(--gap) * 2 + 760px + 64px);
+  }
   .page[data-panel] > main {
+    grid-column: 4 / 7;
+  }
+  .page[data-panel][data-ws] > main {
     grid-column: 4;
   }
   /* In view while the desk scrolls, with its own scroll that ends above the dock even under the header (80px), so a
@@ -1572,7 +1586,88 @@ button:active .tap {
   }
 }
 
-/* "+ Add a goal": a blank card's outline; a tap opens the box in place. */
+/* ---------- A goal open (Vi, Nov 4): the goals | the open goal | "For this goal" ----------
+   A laptop's third column holds everything for the goal (calendar, mail, links, apps, notes), in view while the desk
+   scrolls, with its own scroll that ends above the dock, as the goals do. Under the desk on a phone and a tablet. The
+   middle narrows, so its card writes smaller and its margin moves in. */
+.aside {
+  width: 100%;
+  max-width: 792px;
+  margin-inline: auto;
+  padding: 16px 16px 24px;
+}
+@media (min-width: 1024px) {
+  .page[data-panel][data-ws] > .aside {
+    grid-column: 6;
+    grid-row: 2;
+    align-self: start;
+    position: sticky;
+    top: 0;
+    max-width: none;
+    max-height: calc(100dvh - var(--dock) - 80px);
+    overflow-y: auto;
+    margin-inline: -8px;
+    padding: 24px 8px;
+    scrollbar-width: thin;
+    @variant short {
+      padding-top: 16px;
+    }
+  }
+  .page[data-panel][data-ws] > .dock {
+    padding-right: calc(var(--aside) + var(--gap));
+  }
+  /* The column is narrow: a mail row or a link's title wraps to a second line before it is cut. */
+  .page[data-ws] > .aside .truncate {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+  }
+  .page[data-ws] main .card {
+    --margin-x: 48px;
+    --pad-l: 80px;
+    --pad-r: 40px;
+  }
+  /* Start with Skip and Adjust beside it (Vi's sketch: "[ Start ]  Skip  Adjust"). */
+  .page[data-ws] .answers[data-row] {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    column-gap: 16px;
+  }
+  .page[data-ws] .answers[data-row] > .pill-big {
+    width: auto;
+    min-width: 240px;
+    padding-inline: 40px;
+  }
+}
+@media (min-width: 1024px) and (max-width: 1439px) {
+  .page[data-ws] main .card {
+    --fs: 36px;
+    --lh: 56px;
+    --fs2: 28px;
+  }
+  .page[data-ws] main .card[data-size="m"],
+  .page[data-ws] main .card[data-size="s"] {
+    --fs: 30px;
+    --lh: 48px;
+    --fs2: 24px;
+  }
+}
+
+/* The panel's "+ Add goal" stays at its foot on a laptop while the goals scroll. */
+@media (min-width: 1024px) {
+  .page[data-panel] > .panel .add {
+    position: sticky;
+    bottom: -24px;
+    z-index: 1;
+    margin-inline: -8px;
+    padding: 0 8px 24px;
+    background: var(--desk);
+  }
+}
+
+/* "+ Add goal": a blank card's outline; a tap opens the box in place. */
 .add-goal {
   display: flex;
   align-items: center;

@@ -391,7 +391,7 @@ function Deadlines({ deadlines, plans, onGoal, onDeadline }: { deadlines: Deadli
 
 // Only important mail reaches the desk, mail that asks her something first (Vi, Nov 3). A tap opens one email in place,
 // read in full from Gmail; its text lives only in this card's state, never stored or logged.
-function Mail({ today, onReply }: { today: Today; onReply?(email: DayEmail): void }) {
+export function Mail({ today, onReply }: { today: Today; onReply?(email: DayEmail): void }) {
   const { email } = today.sources;
   const gmail = httpsOnly(today.mailUrl)?.split("#")[0];
   const list = [...today.emails.filter((mail) => mail.asks), ...today.emails.filter((mail) => !mail.asks)].slice(0, 6);

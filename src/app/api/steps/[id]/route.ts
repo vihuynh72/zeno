@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import type { StepResponse, StepStatus } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
-import { changeStepStatus, isId } from "@/lib/goals";
+import { changeStepStatus, isId, moveStepLater } from "@/lib/goals";
 import { learnFromSteps } from "@/lib/patterns";
 import { progressFor } from "@/lib/progress";
 import { timeZoneFrom } from "@/lib/tz";
@@ -17,9 +17,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
   const email = session.user.email;
   const { id } = await params;
-  const body = (await request.json().catch(() => null)) as { status?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { status?: unknown; later?: unknown } | null;
   const status = body?.status;
-  if (!isId(id) || typeof status !== "string" || !STATUSES.includes(status)) {
+  // Body { later: true } is Skip (Vi, Nov 4): the step goes to the end of its goal, its status unchanged.
+  const later = body?.later === true;
+  if (!isId(id) || (!later && (typeof status !== "string" || !STATUSES.includes(status)))) {
     return NextResponse.json({ state: "bad-request" } satisfies StepResponse, { status: 400 });
   }
   if (!databaseConfigured()) {
@@ -28,6 +30,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const timeZone = timeZoneFrom((await cookies()).get("tz")?.value);
 
   try {
+    if (later) {
+      const goal = await moveStepLater(email, id);
+      return goal
+        ? NextResponse.json({ state: "ok", goal } satisfies StepResponse)
+        : NextResponse.json({ state: "not-found" } satisfies StepResponse, { status: 404 });
+    }
     const changed = await changeStepStatus(email, id, status as StepStatus);
     if (!changed) {
       return NextResponse.json({ state: "not-found" } satisfies StepResponse, { status: 404 });

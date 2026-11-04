@@ -1,21 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { CanvasBrief, MailResponse, Step } from "@/lib/day";
-import { goalLine, isEmailStep, isResearchStep, realMinutes, splitLater } from "@/components/day-flow";
-import { senderName } from "@/components/desk-rows";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import type { CanvasBrief, DayEmail, Goal, MailResponse, Step } from "@/lib/day";
+import { APP_NAMES, type AppItem } from "@/lib/connect";
+import BookingChip, { type Booking } from "@/components/booking-chip";
+import type { Today } from "@/components/day-view";
+import { goalLine, isEmailStep, isResearchStep, realMinutes, slotLabel, splitLater } from "@/components/day-flow";
+import { Mail } from "@/components/desk";
+import { dateLabel, senderName } from "@/components/desk-rows";
+import { forGoal, goalEvent } from "@/components/goal-match";
 import PrepPack from "@/components/prep-pack";
 
 // A goal's desk (Vi, Nov 3): the workstation around the step. The page draws the step card and its button between the
 // strip and the steps; nothing here writes anything.
 
-// What lies on the desk beside the step: the Canvas prompt, where she stopped, and the email a reply plan answers.
+// What lies on the desk beside the step: the Canvas prompt and the email a reply plan answers.
 // What she said about a step and Zeno's answer, kept on her device (round 3, Nov 4).
 export type Note = { you: string; zeno: string };
 
 export type Materials = {
   prompt?: { course: string; text: string; url?: string };
-  stopped?: string | null;
   mail?: { id: string; gmail?: string };
   sourcesOpen?: boolean; // the /preview gallery shows the links already found
   notes?: Record<string, Note[]>; // by step id
@@ -130,73 +134,129 @@ export function StepsList({ steps, marked, onPropose }: { steps: Step[]; marked?
 }
 
 const cut = (text: string, max: number) => (text.length > max ? `${text.slice(0, max).trimEnd()}…` : text);
+const HEAD = "text-[20px] leading-8 font-bold";
+const everyMinute = (onChange: () => void) => {
+  const id = setInterval(onChange, 60_000);
+  return () => clearInterval(id);
+};
 
-// "For this step" (Nov 4): each material a small card. Helpful links are laid out only for a step that reads or looks
-// things up; any other step offers them with a small "Find help online". They are searched only on a tap (each search is
-// billed), unless found before (key this by the step, so a new step starts with its button again). A reply is hers to
-// write: no links for an email step.
-type MaterialsProps = { materials?: Materials; step: Step | null; brief?: CanvasBrief; steps?: Step[] };
-export function DeskMaterials({ materials, step, brief, steps = [] }: MaterialsProps) {
+// "For this goal" (Vi, Nov 4: "On the right, everything for that goal: calendar times, related mail, links, files from
+// connected apps, your notes"): a laptop's right column, under the desk on a phone and a tablet. Each part shows only
+// when it has something, and nothing here writes without a tap. Links are laid out only for a step that reads or looks
+// things up; any other step offers "Find help online", searched only on a tap (each search is billed). A reply is hers to
+// write: no links for an email step. Key it by the step, so a new step starts with its button again.
+type AsideProps = {
+  goal: Goal;
+  step: Step | null;
+  materials?: Materials;
+  brief?: CanvasBrief;
+  today: Today | null;
+  offer?: Booking; // the next free time that fits the step, booked with one tap
+  apps?: AppItem[]; // what the person's connected apps have waiting (the connectors round fills it)
+  onBook(): void;
+  onUndo(): void;
+  onReply(email: DayEmail): void;
+};
+export function GoalAside({ goal, step, materials, brief, today, offer, apps = [], onBook, onUndo, onReply }: AsideProps) {
+  const now = useSyncExternalStore(everyMinute, () => Math.floor(Date.now() / 60_000) * 60_000, () => 0);
   const [links, setLinks] = useState(materials?.sourcesOpen ?? Boolean(step?.prep?.length));
-  const { prompt, stopped, mail } = materials ?? {};
+  const { prompt, mail } = materials ?? {};
   // This step's notes, else those of the step finished last, named, so a Done never hides them (round 5).
   const own = step ? (materials?.notes?.[step.id] ?? []) : [];
   const before = own.length
     ? undefined
-    : steps
+    : goal.steps
         .filter((one) => one.status === "done" && one.doneAt && (materials?.notes?.[one.id]?.length ?? 0) > 0)
         .sort((a, b) => Date.parse(b.doneAt ?? "") - Date.parse(a.doneAt ?? ""))[0];
   const notes = own.length ? own : before ? (materials?.notes?.[before.id] ?? []) : [];
+  // The calendar only once it is connected: the goal's next event, and free time that fits the step (once booked, the
+  // offer says so, so its event isn't listed twice).
+  const calendar = today?.sources.calendar === "ok";
+  const block = offer?.blocks[0];
+  const event = calendar && now ? goalEvent(goal, today.events, now) : null;
+  const next = event && !(offer?.state === "booked" && block?.start === event.start) ? event : null;
+  const slot = calendar && block?.start && block.end ? { start: block.start, end: block.end } : null;
+  const related =
+    today?.sources.email === "ok" ? forGoal(goal, today.emails.filter((one) => !mail || one.id !== mail.id), (one) => `${one.from} ${one.subject} ${one.snippet}`) : [];
+  const items = forGoal(goal, apps, (item) => `${item.title} ${item.detail ?? ""}`);
   const linkable = step !== null && !isEmailStep(step.title);
-  const card = linkable && (links || isResearchStep(step.title));
-  const find = linkable && !card && (
-    <button type="button" className="link -ml-1" onClick={() => setLinks(true)}>
-      Find help online
-    </button>
-  );
-  if (!mail && !prompt && !stopped && !card && notes.length === 0) return find ? <div className="mt-6 w-full max-w-[760px]">{find}</div> : null;
+  const when = (start: string, end: string) => <span className="font-mono">{slotLabel(start, end, zone(), new Date(now))}</span>;
+  const empty = !next && !slot && !mail && related.length === 0 && !linkable && !prompt && items.length === 0 && notes.length === 0;
   return (
-    <section aria-labelledby="desk-materials" className="mt-10 w-full max-w-[760px]">
-      <h2 id="desk-materials" className="text-[20px] leading-8 font-bold">
-        For this step
+    <aside aria-labelledby="goal-aside" className="aside">
+      <h2 id="goal-aside" className="text-[20px] leading-8 font-bold">
+        For this goal
       </h2>
-      {/* One column of whole cards on a phone: a card never runs past the screen's edge (live, Nov 3). */}
-      <div className="mt-2 grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
-        {mail && <MailCard id={mail.id} gmail={mail.gmail} />}
-        {prompt && (
-          <article className="mini">
-            <h3 className="font-bold text-ink-2">The prompt{prompt.course ? ` · ${prompt.course}` : ""}</h3>
-            {prompt.text && <p className="mt-1">{cut(prompt.text, 220)}</p>}
-            {prompt.url && (
-              <a href={prompt.url} target="_blank" rel="noopener noreferrer" className="link -ml-1">
-                Open in Canvas<span className="sr-only"> (opens in a new tab)</span>
-              </a>
-            )}
-          </article>
-        )}
-        {stopped && (
-          <article className="mini">
-            {/* The newest finished step (round 4: "Where you stopped" read as this step's place). */}
-            <h3 className="font-bold text-ink-2">Last done</h3>
-            <p className="mt-1">{stopped}</p>
-          </article>
-        )}
-        {notes.length > 0 && <NotesCard notes={notes} from={before?.title} />}
-        {card &&
-          (links ? (
-            <article className="mini">
-              <h3 className="font-bold text-ink-2">Helpful links</h3>
-              {/* Title in the key: a renamed step drops its links on the server, so the pack starts fresh too. */}
-              <PrepPack key={`${step.id}:${step.title}`} step={step} canvas={brief} />
-            </article>
-          ) : (
-            <button type="button" className="mini tool" onClick={() => setLinks(true)}>
-              Find helpful links
-            </button>
-          ))}
-      </div>
-      {find && <div className="mt-2">{find}</div>}
-    </section>
+      {empty ? (
+        <p className="mt-2 text-ink-2">Nothing for this goal yet.</p>
+      ) : (
+        <div className="mt-2 flex flex-col gap-4">
+          {(next || slot) && (
+            <section className="mini">
+              <h3 className={HEAD}>Calendar</h3>
+              {next && (
+                <p className="mt-1">
+                  {when(next.start, next.end)} {next.title}
+                </p>
+              )}
+              {slot && offer && (
+                <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <p>
+                    {when(slot.start, slot.end)}
+                    {offer.state === "booked" ? "" : " free"}
+                  </p>
+                  <BookingChip booking={offer} onBook={onBook} onUndo={onUndo} />
+                </div>
+              )}
+            </section>
+          )}
+          {mail && <MailCard id={mail.id} gmail={mail.gmail} />}
+          {today && related.length > 0 && <Mail today={{ ...today, emails: related, unreadEmail: 0 }} onReply={onReply} />}
+          {linkable && (
+            <section className="mini">
+              <h3 className={HEAD}>Links</h3>
+              {links || isResearchStep(step.title) ? (
+                // Title in the key: a renamed step drops its links on the server, so the pack starts fresh too.
+                <PrepPack key={`${step.id}:${step.title}`} step={step} canvas={brief} />
+              ) : (
+                <button type="button" className="link -ml-1" onClick={() => setLinks(true)}>
+                  Find help online
+                </button>
+              )}
+            </section>
+          )}
+          {(prompt || items.length > 0) && (
+            <section className="mini">
+              <h3 className={HEAD}>From your apps</h3>
+              {prompt && (
+                <div className="mt-1">
+                  <p className="font-bold">Canvas{prompt.course ? ` · ${prompt.course}` : ""}</p>
+                  {prompt.text && <p>{cut(prompt.text, 220)}</p>}
+                  {prompt.url && (
+                    <a href={prompt.url} target="_blank" rel="noopener noreferrer" className="link -ml-1">
+                      Open in Canvas<span className="sr-only"> (opens in a new tab)</span>
+                    </a>
+                  )}
+                </div>
+              )}
+              {items.map((item) => (
+                <p key={`${item.app}:${item.id}`} className="mt-1">
+                  <a href={item.url} target="_blank" rel="noopener noreferrer" className="font-bold underline underline-offset-4">
+                    {item.title}
+                    <span className="sr-only"> (opens in a new tab)</span>
+                  </a>
+                  <span className="block text-ink-2">
+                    {APP_NAMES[item.app]}
+                    {item.due ? ` · due ${dateLabel(item.due, { month: "short", day: "numeric" })}` : ""}
+                  </span>
+                </p>
+              ))}
+            </section>
+          )}
+          {notes.length > 0 && <NotesCard notes={notes} from={before?.title} />}
+        </div>
+      )}
+    </aside>
   );
 }
 
@@ -206,8 +266,8 @@ function NotesCard({ notes, from }: { notes: Note[]; from?: string }) {
   const [copied, setCopied] = useState(false);
   const text = notes.map((note) => `You: ${note.you}\nZeno: ${note.zeno}`).join("\n\n");
   return (
-    <article className="mini sm:col-span-2">
-      <h3 className="font-bold text-ink-2">{from ? `Your notes from "${from.replace(/[.!?]+$/, "")}"` : "Your notes"}</h3>
+    <article className="mini">
+      <h3 className={HEAD}>{from ? `Your notes from "${from.replace(/[.!?]+$/, "")}"` : "Your notes"}</h3>
       <ul className="mt-1 flex flex-col gap-3">
         {notes.map((note, i) => (
           <li key={i}>
@@ -251,8 +311,8 @@ function MailCard({ id, gmail }: { id: string; gmail?: string }) {
     </a>
   );
   return (
-    <article className="mini sm:col-span-2" aria-busy={!mail}>
-      <h3 className="font-bold text-ink-2">The email</h3>
+    <article className="mini" aria-busy={!mail}>
+      <h3 className={HEAD}>The email</h3>
       {!mail ? (
         <p className="mt-1 text-ink-2">Opening the email…</p>
       ) : mail.state !== "ok" ? (
