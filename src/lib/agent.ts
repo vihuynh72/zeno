@@ -9,6 +9,7 @@ import {
   type EmailDraft,
   type FreeSlot,
   type Goal,
+  type GoalSource,
   type GoalConfirm,
   type Memory,
   type MemoryGroup,
@@ -762,14 +763,15 @@ export async function readGoals(
 }
 
 // Saves read goals: the first becomes the current plan and the others wait, paused. A goal they already have open (the
-// same title) opens instead of a copy, and a date said now fills one it lacked.
-export async function saveGoals(email: string, goals: NewGoal[]): Promise<{ goal: Goal; others: Goal[] }> {
+// same title) opens instead of a copy, and a date said now fills one it lacked. source: the app item the words came
+// from, kept on the first new goal.
+export async function saveGoals(email: string, goals: NewGoal[], source: GoalSource | null = null): Promise<{ goal: Goal; others: Goal[] }> {
   const open = await openGoals(email);
   const saved: Goal[] = [];
   for (const [index, item] of goals.entries()) {
     const twin = open.find((goal) => titleKey(goal.title) === titleKey(item.title));
     if (!twin) {
-      saved.push(await setGoal(email, item.title, item.steps, item.due, { rhythm: item.rhythm, paused: index > 0 }));
+      saved.push(await setGoal(email, item.title, item.steps, item.due, { rhythm: item.rhythm, paused: index > 0, source: index === 0 ? source : null }));
       continue;
     }
     const dated = item.due && !twin.due ? ((await setGoalDue(email, twin.id, item.due)) ?? twin) : twin;

@@ -82,6 +82,8 @@ export async function ensureSchema() {
         sql`ALTER TABLE goals ADD COLUMN IF NOT EXISTS due DATE`,
         // A goal that keeps going ("3 runs a week", Nov 4): its steps are the next few sessions; null for one that ends.
         sql`ALTER TABLE goals ADD COLUMN IF NOT EXISTS rhythm TEXT`,
+        // The app item a goal was made from (Nov 4, src/lib/connect.ts): { app, id, url, title }, or null.
+        sql`ALTER TABLE goals ADD COLUMN IF NOT EXISTS source jsonb`,
         sql`
           CREATE TABLE IF NOT EXISTS user_state (
             user_email TEXT PRIMARY KEY,

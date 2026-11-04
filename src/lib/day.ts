@@ -3,6 +3,7 @@
 // GET and POST /api/memory, DELETE /api/memory/[id], POST /api/import, POST /api/prep,
 // GET /api/calendar/week, POST /api/calendar/free, POST and DELETE /api/calendar/book, POST /api/profile/scan.
 // docs/PLAN-NOV.md says what each one is for.
+import type { App } from "@/lib/connect";
 
 export type StepStatus = "todo" | "doing" | "done" | "skipped";
 
@@ -27,7 +28,10 @@ export type Step = {
 // rhythm marks a goal that keeps going (Vi, Nov 3: a rolling plan): a short line such as "3 runs a week". Its steps are
 // the next few only; when they are done, POST /api/goal/next plans the next few. It never finishes by running out of
 // steps: with none left it keeps its place in the goals lists until then. Null or missing: a project that ends.
-export type Goal = { id: string; title: string; steps: Step[]; due?: string | null; rhythm?: string | null };
+// source: the app item it was made from (Nov 4: "Make it a goal" in From your apps, or a Google Doc's link), so the item
+// leaves that list and shows under For this goal; null or missing for a goal made from her own words.
+export type Goal = { id: string; title: string; steps: Step[]; due?: string | null; rhythm?: string | null; source?: GoalSource | null };
+export type GoalSource = { app: App | "canvas"; id: string; url: string; title: string };
 
 // The grouped profile, in the order Memory shows it.
 export const MEMORY_GROUPS = ["about", "routines", "projects", "interests", "people", "work-style", "patterns"] as const;
@@ -348,10 +352,12 @@ export type CompanionNow =
 // goals that could not be worded without a private detail (Nov 4: titles are stored, so the detail stays out).
 // A goal too vague to plan well (one goal, no answers yet) answers "ask" with up to 2 questions of 2-3 tap answers each;
 // the page asks them one at a time and posts the same text again with `answers`, and that call never asks (Vi, Nov 4).
-export type AddGoalRequest = { text: string; answers?: PlanAnswer[] };
+// source: the app item the words come from, saved on the goal. A Google Doc's link in the words is read by the server
+// (shared "Anyone with the link"); one it can't open answers "doc-private".
+export type AddGoalRequest = { text: string; answers?: PlanAnswer[]; source?: GoalSource };
 export type PlanQuestion = { question: string; options: string[] };
 export type PlanAnswer = { question: string; answer: string };
-export type AddGoalResponse = GoalResponse | { state: "ask"; questions: PlanQuestion[] };
+export type AddGoalResponse = GoalResponse | { state: "ask"; questions: PlanQuestion[] } | { state: "doc-private" };
 
 // POST /api/goal/next body: a goal that keeps going (rhythm set) gets its next few steps from what is done so far.
 // Answers with GoalResponse. It never changes which goal is current: the goal comes back with its status as it was.

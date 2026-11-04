@@ -4,7 +4,9 @@ import { auth } from "@/auth";
 import { readGoals, saveGoals } from "@/lib/agent";
 import { aiConfigured } from "@/lib/ai";
 import { freeSlots } from "@/lib/calendar";
-import type { AddGoalResponse, FreeSlot, PlanAnswer } from "@/lib/day";
+import { APPS } from "@/lib/connect";
+import { docLink, readDoc } from "@/lib/connect-apps";
+import type { AddGoalResponse, FreeSlot, GoalSource, PlanAnswer } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
 import { timeZoneFrom } from "@/lib/tz";
 
@@ -24,7 +26,16 @@ function cleanAnswers(raw: unknown): PlanAnswer[] | undefined {
     .slice(0, 2);
 }
 
-// Body { text, answers? } (src/lib/day.ts AddGoalRequest): the person's own words become up to 5 goals in one Muse call
+// The app item a goal is made from, untrusted: a known app, an id, an https link and a title, or nothing.
+function cleanSource(raw: unknown): GoalSource | null {
+  const one = raw as Partial<Record<keyof GoalSource, unknown>> | null;
+  const fits = (value: unknown, max: number): value is string => typeof value === "string" && value.trim().length > 0 && value.length <= max;
+  if (!one || !fits(one.app, 20) || ![...APPS, "canvas"].includes(one.app) || !fits(one.id, 200) || !fits(one.url, 1000) || !fits(one.title, 300)) return null;
+  if (!one.url.startsWith("https://")) return null;
+  return { app: one.app as GoalSource["app"], id: one.id, url: one.url, title: one.title.trim().slice(0, 120) };
+}
+
+// Body { text, answers?, source? } (src/lib/day.ts AddGoalRequest): the person's own words become up to 5 goals in one Muse call
 // (readGoals in agent.ts): specific titles, due dates read in their time zone, a rhythm for a goal that keeps going, and
 // steps that finish the job, paced to this week's free time when their calendar gives it within a second. The first is
 // the current plan, the others wait paused in `others`, and `thinking` says what the plan rests on. One goal too vague to
@@ -36,13 +47,23 @@ export async function POST(request: Request) {
   if (!session?.user?.email) {
     return NextResponse.json({ state: "signed-out" } satisfies AddGoalResponse, { status: 401 });
   }
-  const body = (await request.json().catch(() => null)) as { text?: unknown; answers?: unknown } | null;
-  const text = typeof body?.text === "string" ? body.text.trim().slice(0, 2000) : "";
+  const body = (await request.json().catch(() => null)) as { text?: unknown; answers?: unknown; source?: unknown } | null;
+  let text = typeof body?.text === "string" ? body.text.trim().slice(0, 2000) : "";
   if (!text) {
     return NextResponse.json({ state: "bad-request" } satisfies AddGoalResponse, { status: 400 });
   }
   if (!databaseConfigured() || !aiConfigured()) {
     return NextResponse.json({ state: "error" } satisfies AddGoalResponse, { status: 503 });
+  }
+  let source = cleanSource(body?.source);
+  // A Google Doc's link (Nov 4): its title and first 6000 characters are what the goal is planned from.
+  const link = docLink(text);
+  if (link) {
+    const doc = await readDoc(link.id);
+    if (doc.state === "private") return NextResponse.json({ state: "doc-private" } satisfies AddGoalResponse, { status: 422 });
+    if (doc.state !== "ok") return NextResponse.json({ state: "error" } satisfies AddGoalResponse, { status: 502 });
+    text = `${text.replace(link.link, `the doc "${doc.title}"`)}\n\nThe doc "${doc.title}":\n${doc.text}`;
+    source ??= { app: "gdocs", id: link.id, url: doc.url, title: doc.title };
   }
 
   const timeZone = timeZoneFrom((await cookies()).get("tz")?.value);
@@ -69,7 +90,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ state: "bad-request" } satisfies AddGoalResponse, { status: 422 });
   }
   try {
-    const { goal, others } = await saveGoals(session.user.email, read.goals);
+    const { goal, others } = await saveGoals(session.user.email, read.goals, source);
     return NextResponse.json({ state: "ok", goal, others, thinking: read.thinking } satisfies AddGoalResponse);
   } catch (error) {
     console.error("Add goal save failed:", error instanceof Error ? error.message.slice(0, 120) : "unknown");
