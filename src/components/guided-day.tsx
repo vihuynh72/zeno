@@ -114,7 +114,7 @@ const SNAP_FAIL = "I couldn't find a to-do list in that photo.";
 // first run's line when there was nothing to read, which never apologizes.
 const ADD_FAIL = "I couldn't make that plan just now. Try again?";
 const NO_GOAL = "I couldn't find a goal in that. Try one thing you want to get done.";
-const FRONT_DOOR = "Tell me a goal. I'll break it into small steps and stay with you while you do them.";
+const FRONT_DOOR = "Tell me a goal. I'll help you do it, step by step.";
 const NOTHING_YET = "Nothing to read yet, so let's start with what you want to do.";
 const NEXT_FAIL = "I couldn't plan your next few just now. Try again?";
 // This browser can't open the file (an iPhone HEIC photo in Chrome): say so, never that the photo holds nothing.
@@ -1258,6 +1258,8 @@ export default function GuidedDay() {
   // with Undo for 6 s, or done.
   async function endGoal(id: string, title: string, how: GoalConfirm["how"]) {
     const current = latest.current.goal?.id === id;
+    // Undo opens it again only when its desk was open (a card's ✕ on the home puts it back in the list, Nov 4).
+    const onScreen = current && latest.current.view === "desk";
     setConfirm(null);
     setBusy(true);
     const res = await post<CloseGoalResponse>(`/api/goal/${how}`, { id } satisfies CloseGoalRequest);
@@ -1276,7 +1278,7 @@ export default function GuidedDay() {
     else if (latest.current.screen === "focus") quiet(FOCUS.calm);
     else setLine("");
     const name = title.replace(/[.!?]+$/, "");
-    showToast(how === "remove" ? { text: `Removed "${name}".`, undo: { id, current } } : { text: `"${name}" is done. Nice work.` }, how === "remove" ? 30_000 : 6000);
+    showToast(how === "remove" ? { text: `Removed "${name}".`, undo: { id, current: onScreen } } : { text: `"${name}" is done. Nice work.` }, how === "remove" ? 30_000 : 6000);
   }
 
   // The line over Talk stays `ms`, then until her next tap anywhere but its Undo (round 7: 4 of 6 lost a goal to a 6 s Undo).
@@ -2334,6 +2336,10 @@ export default function GuidedDay() {
             return setLine(said);
           }
           void endGoal(goal.id, goal.title, how);
+        },
+        // A goal card's ✕ in the goals panel, then Remove: any goal, open or not, with Undo (Vi, Nov 4).
+        removeGoal(id, title) {
+          if (fresh && !busy) void endGoal(id, title, "remove");
         },
         undo: () => void undoRemove(),
         unskip,

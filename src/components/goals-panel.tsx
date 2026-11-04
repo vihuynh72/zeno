@@ -3,15 +3,15 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { Goal, Step } from "@/lib/day";
 import { goalRow, panelGoals, type CardRow, type PanelRow } from "@/components/day-flow";
+import { Icon } from "@/components/icons";
 
 // The goals panel (Nov 4, docs/PLAN-NOV4-GOALS.md): every open goal by due date, "+ Add goal" under them, then
 // Suggestions. A laptop's left column beside the open goal's desk; a phone's home under the hello. Nothing here talks
 // to the server: the page's handlers do.
 
-// "Type your goal here" over an errand and a school example, each on one line of a 360px phone (round 5: three of ten
-// pressed Make a plan with the box empty; round 3: older and non-student testers read school-only examples as "for
-// young people").
-const EXAMPLES = "Type your goal here, like:\n– Call the bank this week\n– Study for Thursday's exam";
+// "Type a goal" over an errand and a school example, each on one line of a 360px phone (round 5: three of ten pressed
+// Make a plan with the box empty; round 3: older and non-student testers read school-only examples as "for young people").
+const EXAMPLES = "Type a goal, like:\n– Call the bank this week\n– Study for Thursday's exam";
 
 // Enter makes the plan, Shift+Enter starts a new line, Escape closes the box (the panel's only). In a box for a list
 // (`lines`, the front door: its examples are one goal a line), Enter starts a new line and Cmd or Ctrl+Enter makes the
@@ -44,6 +44,7 @@ type PanelProps = {
   onAdd(text: string): void;
   onCancel(): void;
   onOpen(goalId: string): void;
+  onRemove?(goalId: string, title: string): void; // a goal card's ✕, once she says Remove
   onSuggest(index: number): void;
   onHide(id: string): void;
   onKeep(id: string): void;
@@ -58,6 +59,15 @@ export default function GoalsPanel(props: PanelProps) {
   const { goals, suggestions, openId, proposed, today, words, onAdd, onCancel, onOpen, onSuggest, onPhoto, apps = [], onApp, onApps } = props;
   const [adding, setAdding] = useState(false);
   const [round, setRound] = useState(0); // a new box (closed) once an app's item became the goal
+  // The card asking 'Remove "…"?' (Vi, Nov 4: "a little X… I could just cancel"). It stays while the server removes the
+  // goal and closes once the list changes, so a goal brought back by Undo comes back as a plain card.
+  const [asking, setAsking] = useState<{ id: string; goals: Goal[] } | null>(null);
+  const askId = asking?.goals === goals ? asking.id : null;
+  const list = useRef<HTMLUListElement>(null);
+  const keep = (id: string) => {
+    setAsking(null);
+    requestAnimationFrame(() => list.current?.querySelector<HTMLElement>(`[data-x="${id}"]`)?.focus());
+  };
   const pickApp = (i: number) => {
     setRound((n) => n + 1);
     setAdding(false);
@@ -66,17 +76,19 @@ export default function GoalsPanel(props: PanelProps) {
   return (
     <aside aria-label="Goals" className="panel">
       <h2 className="text-[20px] leading-8 font-bold">Goals</h2>
-      <ul className="mt-2 flex flex-col gap-2">
+      <ul ref={list} className="mt-2 flex flex-col gap-2">
         {panelGoals(goals).map((goal) => {
           const open = goal.id === openId;
           const row = goalRow(goal, today, open ? proposed : null);
           const done = goal.steps.filter((step) => step.status === "done").length;
+          const ask = askId === goal.id;
           return (
-            <li key={goal.id}>
-              <button type="button" data-answer onClick={() => onOpen(goal.id)} aria-current={open || undefined} className="choice">
+            <li key={goal.id} className="relative">
+              {/* inert under the question, which covers it at its own size. */}
+              <button type="button" data-answer onClick={() => onOpen(goal.id)} aria-current={open || undefined} inert={ask} className="choice">
                 <span className="lines block">
                   {/* The count inside the title: a direct child of .lines is position: relative, so it would take a line. */}
-                  <span className="line-clamp-2 font-bold">
+                  <span className={`line-clamp-2 font-bold ${props.onRemove ? "pr-8" : ""}`}>
                     {row.title}
                     <span className="sr-only">
                       , {done} of {goal.steps.length} steps done.
@@ -94,6 +106,23 @@ export default function GoalsPanel(props: PanelProps) {
                   {row.when && <span className="line-clamp-2 text-[18px] text-ink-2">{row.when}</span>}
                 </span>
               </button>
+              {props.onRemove &&
+                (ask ? (
+                  <RemoveAsk title={row.title} onRemove={() => props.onRemove?.(goal.id, goal.title)} onKeep={() => keep(goal.id)} />
+                ) : (
+                  // On every card, never on hover only, so a touch laptop has it too; quiet grey, as Suggestions' ✕.
+                  <button
+                    type="button"
+                    data-answer
+                    data-x={goal.id}
+                    onClick={() => setAsking({ id: goal.id, goals })}
+                    className="hide"
+                    aria-label={`Remove "${row.title}"`}
+                    title={`Remove "${row.title}"`}
+                  >
+                    <Icon name="x" />
+                  </button>
+                ))}
             </li>
           );
         })}
@@ -103,8 +132,9 @@ export default function GoalsPanel(props: PanelProps) {
       <div className="add">
         <AddBox key={`${round}:${words ?? ""}`} words={words} onAdd={onAdd} onCancel={onCancel} onPhoto={onPhoto} onToggle={setAdding} />
         {onApps && (
-          <button type="button" data-answer onClick={onApps} className="link mt-1 text-ink-2">
-            Connect your apps
+          <button type="button" data-answer onClick={onApps} className="link mt-1 gap-2 text-ink-2">
+            <Icon name="apps" />
+            Connect apps
           </button>
         )}
       </div>
@@ -140,8 +170,9 @@ function AddBox({ words, onAdd, onCancel, onPhoto, onToggle }: AddBoxProps) {
   };
   if (!open) {
     return (
-      <button type="button" data-answer onClick={() => setOpen(true)} className="add-goal mt-2">
-        + Add goal
+      <button type="button" data-answer onClick={() => setOpen(true)} className="add-goal mt-2 gap-2">
+        <Icon name="plus" />
+        Add goal
       </button>
     );
   }
@@ -162,7 +193,7 @@ function AddBox({ words, onAdd, onCancel, onPhoto, onToggle }: AddBoxProps) {
             defaultValue={words ?? ""}
             className="write"
             aria-label="What do you want to get done?"
-            placeholder="What do you want to get done?"
+            placeholder="Type a goal"
             onKeyDown={(event) => onKeys(event, submit, close)}
           />
         </div>
@@ -171,9 +202,7 @@ function AddBox({ words, onAdd, onCancel, onPhoto, onToggle }: AddBoxProps) {
         Make a plan
       </button>
       <div className="links mt-1">
-        <button type="button" data-answer onClick={onPhoto} className="link">
-          Add from a photo
-        </button>
+        <PhotoLink onPhoto={onPhoto} />
         <span aria-hidden="true">·</span>
         <button type="button" data-answer onClick={close} className="link">
           Cancel
@@ -208,15 +237,13 @@ export function FrontDoor({ hello, line, words, note, onAdd, onPhoto, children }
           <p>
             <span className="hand">{line}</span>
           </p>
-          <p>
-            <label htmlFor="goal-words" className="hand font-bold">
-              What do you want to get done?
-            </label>
-          </p>
+          {/* Zeno's line asks already, and the box shows how (Vi, Nov 4: "don't put too much words"); the question stays
+              its name. Not a label: any child of .lines takes a rule, even a hidden one. */}
           <textarea
             key={words ?? ""}
             ref={box}
             id="goal-words"
+            aria-label="What do you want to get done?"
             enterKeyHint="enter"
             defaultValue={words ?? ""}
             data-retry={words !== null || undefined}
@@ -242,12 +269,53 @@ export function FrontDoor({ hello, line, words, note, onAdd, onPhoto, children }
           Make a plan
         </button>
         <div className="links">
-          <button type="button" data-answer onClick={onPhoto} className="link">
-            Add from a photo
-          </button>
+          <PhotoLink onPhoto={onPhoto} />
         </div>
       </div>
     </>
+  );
+}
+
+// "Add from a photo" as a camera and one word; the whole phrase is its name and tooltip.
+function PhotoLink({ onPhoto }: { onPhoto(): void }) {
+  return (
+    <button type="button" data-answer onClick={onPhoto} className="link gap-2" aria-label="Add from a photo" title="Add from a photo">
+      <Icon name="camera" />
+      Photo
+    </button>
+  );
+}
+
+// A goal card's own 'Remove "…"?' (Vi, Nov 4): two taps and no pop-up. It lies over the card at the card's size, its title
+// cut to one line with the quote and "?" kept; Keep or Esc puts the card back. A removed goal gets the dock's Undo.
+function RemoveAsk({ title, onRemove, onKeep }: { title: string; onRemove(): void; onKeep(): void }) {
+  const id = useId();
+  return (
+    <div
+      role="group"
+      aria-labelledby={id}
+      className="choice ask"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        onKeep();
+      }}
+    >
+      <p id={id} className="flex min-w-0 text-[18px] font-bold">
+        <span className="shrink-0">Remove &quot;</span>
+        <span className="truncate">{title}</span>
+        <span className="shrink-0">&quot;?</span>
+      </p>
+      <div className="flex items-center gap-2">
+        {/* She asked for this question with the ✕ a moment ago, so its answer takes focus. */}
+        <button type="button" data-answer autoFocus onClick={onRemove} className="pill pill-ink">
+          Remove
+        </button>
+        <button type="button" data-answer onClick={onKeep} className="link">
+          Keep
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -316,10 +384,9 @@ export function Suggestions({ rows, caughtUp, onPick, onHide, onKeep, onMemory }
                   onClick={() => leave(row.id, i, onHide)}
                   className="hide"
                   aria-label={row.noticed ? "Forget this" : `Hide ${row.title} for today`}
+                  title={row.noticed ? "Forget this" : "Hide for today"}
                 >
-                  <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <path d="M6 6l12 12M18 6L6 18" />
-                  </svg>
+                  <Icon name="x" />
                 </button>
               </div>
             </div>

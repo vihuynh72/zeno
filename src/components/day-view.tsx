@@ -10,6 +10,7 @@ import type { VoiceError, VoicePhase } from "@/lib/use-voice";
 import { barCaption, cardSize, clock, dueLine, openSteps, type CardRow, type Fact, type PanelRow, type Screen } from "@/components/day-flow";
 import AccountMenu from "@/components/account-menu";
 import GoalsPanel, { FrontDoor, Suggestions } from "@/components/goals-panel";
+import { Icon, type IconName } from "@/components/icons";
 import BookingChip, { type Booking } from "@/components/booking-chip";
 import CanvasSheet from "@/components/canvas-sheet";
 import Desk from "@/components/desk";
@@ -21,6 +22,22 @@ import MemorySheet from "@/components/memory-sheet";
 import StreakRow from "@/components/streak-row";
 import VoiceRing from "@/components/voice-ring";
 import YourApps from "@/components/your-apps";
+
+// An action's icon beside its word (Vi, Nov 4: "I like the idea of an icon… not too different from other apps"), by
+// the label the page gives it; an action not here keeps its word alone.
+const ICONS: Record<string, IconName> = {
+  Skip: "skip",
+  Adjust: "adjust",
+  Done: "check",
+  "Mark done": "check",
+  Remove: "trash",
+  "Remove this goal": "trash",
+  "Stuck?": "help",
+  "Stop for now": "pause",
+  "Back to my goals": "back",
+  "Keep going": "play",
+};
+const iconOf = (label: string): IconName | undefined => (/^Start\b/.test(label) ? "play" : ICONS[label]);
 
 // "week" opens the desk on its Week view.
 export type Sheet = "today" | "week" | "memory" | "canvas" | "apps" | null;
@@ -130,6 +147,7 @@ export type DayViewProps = {
     followUp?(to: string, subject: string): void; // "Waiting on": mail nobody answered becomes a 2-minute follow-up
     // The links by a desk's goal title (Nov 4): remove the goal or mark it done, and the toast's Undo for a removal.
     closeGoal?(how: "remove" | "finish"): void;
+    removeGoal?(goalId: string, title: string): void; // a goal card's ✕ in the goals panel, then Remove
     undo?(): void;
     unskip?(): void;
     // Connected apps (Nov 4): an item of From your apps becomes a goal; a token kept or dropped in Your apps; a doc's
@@ -360,13 +378,16 @@ export default function DayView(props: DayViewProps) {
           ) : (
             <div className="flex items-center gap-2 text-[24px] font-bold">{mark}</div>
           )}
+          {/* Words alone on a phone, where the icons would push the account button off the edge beside a streak. */}
           {signedIn && (
-            <button type="button" onClick={() => on.sheet("today")} className="link" data-lead>
+            <button type="button" onClick={() => on.sheet("today")} className="link gap-2" data-lead>
+              <Icon name="calendar" className="h-5 w-5 max-sm:hidden" />
               Today
             </button>
           )}
           {signedIn && (
-            <button type="button" onClick={() => on.sheet("apps")} className="link">
+            <button type="button" onClick={() => on.sheet("apps")} className="link gap-2">
+              <Icon name="apps" className="h-5 w-5 max-sm:hidden" />
               Apps
             </button>
           )}
@@ -450,8 +471,9 @@ export default function DayView(props: DayViewProps) {
             {desk && (
               <div className="mt-2 w-full max-w-[760px] sm:mt-4 short:mt-0">
                 {/* A phone's way back to the goals; a laptop's goals panel stands in for it. */}
-                <button type="button" onClick={goHome} className="back link -ml-1">
-                  ← Goals
+                <button type="button" onClick={goHome} className="back link -ml-1 gap-2">
+                  <Icon name="back" />
+                  Goals
                 </button>
               </div>
             )}
@@ -574,7 +596,8 @@ export default function DayView(props: DayViewProps) {
                     {props.lineUndo && (
                       <>
                         {" "}
-                        <button type="button" data-undo onClick={() => on.unskip?.()} className="link">
+                        <button type="button" data-undo onClick={() => on.unskip?.()} className="link gap-1.5 align-middle">
+                          <Icon name="undo" />
                           Undo
                         </button>
                       </>
@@ -602,6 +625,7 @@ export default function DayView(props: DayViewProps) {
           {big !== null && (
             // aria-disabled, not disabled, so a waiting button keeps keyboard focus.
             <button type="button" data-answer aria-disabled={props.busy} onClick={() => answer(0)} className="pill pill-ink pill-big">
+              {iconOf(big) && <Icon name={iconOf(big)!} />}
               {big}
             </button>
           )}
@@ -616,7 +640,9 @@ export default function DayView(props: DayViewProps) {
                       ·
                     </span>
                   )}
-                  <button type="button" data-answer aria-disabled={props.busy} onClick={() => answer(firstLink + i)} className="link">
+                  <button type="button" data-answer aria-disabled={props.busy} onClick={() => answer(firstLink + i)} className="link gap-1.5">
+                    {/* Words alone in Focus on a phone, so Pop out and Music stay on the one row. */}
+                    {iconOf(label) && <Icon name={iconOf(label)!} className={`h-5 w-5 ${screen === "focus" ? "max-sm:hidden" : ""}`} />}
                     {label}
                   </button>
                 </span>
@@ -650,10 +676,8 @@ export default function DayView(props: DayViewProps) {
           )}
         </div>
 
-        {/* A laptop's home points at the goals beside it, under Start when she is coming back. */}
-        {home && !frontDoor && panelOn && (
-          <p className="mt-6 text-center text-ink-2 max-lg:hidden">{props.resume ? "Or pick another goal on the left." : "Pick a goal on the left, or add one."}</p>
-        )}
+        {/* A laptop's home points at the goals beside it when nothing waits to start (Start alone says enough, Nov 4). */}
+        {home && !frontDoor && panelOn && !props.resume && <p className="mt-6 text-center text-ink-2 max-lg:hidden">Pick a goal on the left, or add one.</p>}
 
         {/* The steps and the materials stay below the step, in Focus too, and a quiet word on who made the steps. */}
         {desk && !planning && goal && (
@@ -722,6 +746,14 @@ export default function DayView(props: DayViewProps) {
           onAdd={addGoal}
           onCancel={() => on.closeAdd?.()}
           onOpen={openGoal}
+          onRemove={
+            on.removeGoal &&
+            ((goalId, title) => {
+              if (props.busy) return;
+              pressed.current = true;
+              on.removeGoal?.(goalId, title);
+            })
+          }
           onSuggest={choose}
           onHide={hide}
           onKeep={keep}
@@ -740,7 +772,8 @@ export default function DayView(props: DayViewProps) {
             <p role="status" className="mb-2 flex items-center gap-1 px-4 text-center text-ink-2">
               {props.toast.text}
               {props.toast.undo && (
-                <button type="button" data-answer data-lead data-undo onClick={() => on.undo?.()} className="link">
+                <button type="button" data-answer data-lead data-undo onClick={() => on.undo?.()} className="link gap-1.5">
+                  <Icon name="undo" />
                   Undo
                 </button>
               )}
@@ -769,6 +802,7 @@ export default function DayView(props: DayViewProps) {
               onClick={props.typing ? on.closeTyping : on.type}
               className="kbd"
               aria-label="Type to Zeno"
+              title="Type to Zeno"
               aria-expanded={props.typing}
               data-lead={blocked || undefined}
             >
