@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Privacy · Zeno",
@@ -10,8 +11,12 @@ export const metadata: Metadata = {
 export default function Privacy() {
   return (
     <main className="mx-auto max-w-[680px] px-4 py-12 text-[18px] leading-[1.6] text-ink">
-      <h1 className="text-[32px] font-bold leading-tight">Zeno and your data</h1>
-      <p className="mt-2 text-ink-2">Updated November 2, 2026</p>
+      {/* The installed app's window has no Back button. */}
+      <Link href="/" className="link -ml-1">
+        ← Zeno
+      </Link>
+      <h1 className="mt-4 text-[32px] font-bold leading-tight">Zeno and your data</h1>
+      <p className="mt-2 text-ink-2">Updated November 3, 2026</p>
 
       <h2 className="mt-10 text-[22px] font-bold">What Zeno reads</h2>
       <p className="mt-3">
@@ -22,6 +27,14 @@ export default function Privacy() {
         If you connect Canvas, Zeno reads your assignments for the next two weeks with an access token you create. The
         token stays only in this browser: Zeno&apos;s servers use it for that one request and never save it. Zeno never
         submits or changes anything in Canvas.
+      </p>
+      <p className="mt-3">
+        If you add an assignment from a photo, Meta&apos;s model reads the photo once to make a plan, and Zeno never keeps it.
+      </p>
+      <p className="mt-3">
+        If you make a token in Connect an app, the apps you give it to (Muse Code, Claude Code or the Zeno Mac clock) can see
+        and change your goals and steps, but never your mail, your calendar or what Zeno remembers. Zeno keeps only a one-way
+        fingerprint of the token, with your time zone, and Turn off stops it at once.
       </p>
 
       <h2 className="mt-10 text-[22px] font-bold">What Zeno keeps</h2>

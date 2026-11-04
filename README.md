@@ -45,6 +45,63 @@ Zeno can open in its own window, with its own icon:
 - **Safari on a Mac:** File → Add to Dock.
 - **iPhone:** sign in in Safari first, then Share → Add to Home Screen.
 
+**Add from a photo:** under your goals, snap an assignment handout and Zeno makes its plan. Meta's Muse model reads
+the photo once; Zeno never keeps it.
+
+## Zeno Clock (Mac menu bar)
+
+Zeno Clock keeps your running step in the Mac menu bar, counting up while you work ("12:31 · Outline the intro…"). Its menu shows the step and its goal ("2 of 5 done"), Done, Open Zeno, Set token… and Quit. It checks Zeno every 10 seconds and whenever you open the menu. It needs macOS 14 or later.
+
+Build and open it. You need Xcode or the Command Line Tools (`xcode-select --install`).
+
+```bash
+mac/make-app.sh
+open "mac/Zeno Clock.app"
+```
+
+For a quick try without the app bundle: `swift run --package-path mac`.
+
+**Connect it.** Zeno Clock never asks you to sign in with Google. It uses a token instead. In Zeno, open the account menu, choose Connect an app, then Make a token, and copy it. Then click Zeno in the menu bar, choose Set token…, paste the token and press Save. The token stays in your Mac's Keychain. Zeno shows a token only once, and a new token turns the old one off, so paste a new one into every app you connected.
+
+**Opening a copy built on another Mac.** Zeno Clock is ad-hoc signed but not notarized (there is no paid Apple developer account), so macOS says it can't check the app. On macOS 14, right-click the app, choose Open, then choose Open again. On macOS 15 and later, try to open it once, then go to System Settings → Privacy & Security and choose Open Anyway. An app you build yourself with `make-app.sh` opens without this prompt.
+
+**Try it without an account.**
+
+```bash
+python3 mac/mock-companion.py      # a fake Zeno on port 8790 with made-up steps
+ZENO_URL=http://127.0.0.1:8790 swift run --package-path mac
+```
+
+Set the token to `zeno_mock_token_for_local_tests`. `swift test --package-path mac` runs the checks. With a freshly started mock running, `ZENO_MOCK=http://127.0.0.1:8790 swift test --package-path mac` also runs the real calls. After a rebuild, macOS may ask once to let Zeno Clock use its Keychain item; choose Always Allow.
+
+## Connect an AI app
+
+Zeno is also an MCP server, so an AI app can see and update your goals and steps. It never sees your mail, your
+calendar or what Zeno remembers. In Zeno, open the account menu, choose **Connect an app**, then **Make a token**.
+Zeno shows the token once. Making a new one turns the old one off, and **Turn off** stops it.
+
+**Muse Code:** add Zeno to the `mcp_servers` block of `~/.config/muse/settings.json`:
+
+```json
+"mcp_servers": {
+  "zeno": {
+    "transport": "streamable_http",
+    "url": "https://zeno-sigma-topaz.vercel.app/api/mcp",
+    "headers": { "Authorization": "Bearer <token>" }
+  }
+}
+```
+
+**Claude Code:**
+
+```bash
+claude mcp add --transport http zeno https://zeno-sigma-topaz.vercel.app/api/mcp --header "Authorization: Bearer <token>"
+```
+
+The tools are `list_goals`, `next_step`, `plan_goal` (a title and an optional due date, at most 20 new plans a day),
+`start_step` and `finish_step`. The Zeno Mac clock uses the same token with `GET /api/companion/now` and
+`POST /api/companion/done`.
+
 ## Run locally
 
 ```bash
