@@ -4,19 +4,22 @@ import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 import { APP_NAMES, atlassianSite, type App } from "@/lib/connect";
 import type { ConnectStatus } from "@/lib/connect-config";
 import { clearToken, readApp, readToken, saveToken } from "@/lib/connect-store";
+import { Icon } from "@/components/icons";
 
-// Your apps (Vi, Nov 4: "there's no connector for other apps yet"): what each app brings, and Connect or Disconnect.
+// Apps (Vi, Nov 4: "there's no connector for other apps yet"): what each app brings in a few words, and Connect or
+// Disconnect.
 // Tokens stay on this device (src/lib/connect-store.ts). Opened from the header's Apps and from "Connect your apps"
 // under + Add goal. Jira and Confluence share one Atlassian sign-in: connecting or disconnecting one does both.
 
+// 3-5 words each (Vi, Nov 4: "don't overwhelm with words"); what they bring becomes goals.
 const BRINGS: Record<App, string> = {
-  notion: "Pages and tasks assigned to you become goals.",
-  gdocs: "Paste a doc's link in + Add goal. Share it as 'Anyone with the link' first.",
-  slack: "Messages that ask you something become goals.",
-  linear: "Issues assigned to you become goals.",
-  trello: "Cards you're on become goals.",
-  jira: "Issues assigned to you become goals.",
-  confluence: "Tasks assigned to you become goals.",
+  notion: "Your pages and tasks",
+  gdocs: "Docs shared by link",
+  slack: "Messages that ask you",
+  linear: "Issues assigned to you",
+  trello: "Cards you're on",
+  jira: "Issues assigned to you",
+  confluence: "Tasks assigned to you",
 };
 const ORDER: App[] = ["notion", "gdocs", "slack", "linear", "trello", "jira", "confluence"];
 const PASTED: App[] = ["linear", "jira", "confluence"]; // a key pasted here: nothing to set up on the server
@@ -70,15 +73,15 @@ export default function YourApps({ account, google, canvas, connected, onGoogle,
     if (busy || !account || !pasting || !field("token")) return;
     const linear = pasting === "linear";
     const site = linear ? null : atlassianSite(field("site"));
-    if (!linear && !site) return setNote("Use your Atlassian site's address, like your-team.atlassian.net.");
+    if (!linear && !site) return setNote("Use your site's address, like your-team.atlassian.net.");
     const token = linear ? field("token") : JSON.stringify({ site, email: field("email"), token: field("token") });
     setBusy(true);
     setNote("");
     const res = await readApp(pasting, token);
     setBusy(false);
     if (res.state !== "ok") {
-      if (linear) return setNote(res.state === "no-access" ? "Linear didn't accept that key. Make a new one and paste it again." : "Couldn't reach Linear. Try again.");
-      return setNote(res.state === "no-access" ? "Atlassian didn't accept that. Check your email and API token." : "Couldn't reach that site. Check the address and try again.");
+      if (linear) return setNote(res.state === "no-access" ? "Linear didn't accept that key." : "Couldn't reach Linear. Try again.");
+      return setNote(res.state === "no-access" ? "Check your email and token." : "Couldn't reach that site. Check the address.");
     }
     saveToken(pasting, account, token);
     reread();
@@ -97,14 +100,14 @@ export default function YourApps({ account, google, canvas, connected, onGoogle,
   }
 
   const action = (app: App) => {
-    if (app === "gdocs") return <span className="text-ink-2">By link</span>;
+    if (app === "gdocs") return <span className="text-ink-2">Paste a link</span>;
     if (tokens.has(app))
       return (
         <button type="button" onClick={() => disconnect(app)} className="quiet-x">
           Disconnect
         </button>
       );
-    if (!PASTED.includes(app) && !status?.[app]) return <span className="text-ink-2">Not set up yet</span>;
+    if (!PASTED.includes(app) && !status?.[app]) return <span className="text-ink-2">Soon</span>;
     return (
       <button
         type="button"
@@ -118,11 +121,11 @@ export default function YourApps({ account, google, canvas, connected, onGoogle,
   };
 
   const rows: { name: string; brings: string; action: ReactNode; app?: App }[] = [
-    { name: "Gmail", brings: "Mail that asks you something becomes a suggestion.", action: google.mail ? <span className="text-ink-2">Connected</span> : <ConnectGoogle onClick={onGoogle} /> },
-    { name: "Google Calendar", brings: "Free time for your steps, and steps on your calendar.", action: google.calendar ? <span className="text-ink-2">Connected</span> : <ConnectGoogle onClick={onGoogle} /> },
+    { name: "Gmail", brings: "Mail that asks you", action: google.mail ? <span className="text-ink-2">Connected</span> : <ConnectGoogle onClick={onGoogle} /> },
+    { name: "Google Calendar", brings: "Free time for your steps", action: google.calendar ? <span className="text-ink-2">Connected</span> : <ConnectGoogle onClick={onGoogle} /> },
     {
       name: "Canvas",
-      brings: "Assignments and their due dates become goals.",
+      brings: "Assignments and due dates",
       action: (
         <button type="button" onClick={onCanvas} className={canvas ? "quiet-x" : "pill pill-small"}>
           {canvas ? "Open" : "Connect"}
@@ -173,7 +176,7 @@ export default function YourApps({ account, google, canvas, connected, onGoogle,
                   </>
                 )}
                 <label className="flex flex-col">
-                  <span className="font-bold">{pasting === "linear" ? "Personal API key" : "API token"}</span>
+                  <span className="font-bold">{pasting === "linear" ? "API key" : "API token"}</span>
                   {/* Text, not a password field, so the browser never offers to save the key to a synced password manager. */}
                   <input
                     name="token"
@@ -188,21 +191,15 @@ export default function YourApps({ account, google, canvas, connected, onGoogle,
                     data-lpignore="true"
                   />
                 </label>
-                {pasting === "linear" ? (
-                  <p className="text-ink-2">
-                    In Linear: Settings → Security &amp; access → New API key. It stays on this device.{" "}
-                    <a href={LINEAR_KEYS} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">
-                      Open Linear&apos;s API keys<span className="sr-only"> (opens in a new tab)</span>
-                    </a>
-                  </p>
-                ) : (
-                  <p className="text-ink-2">
-                    One token connects Jira and Confluence. It stays on this device.{" "}
-                    <a href={ATLASSIAN_TOKENS} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">
-                      Make an API token<span className="sr-only"> (opens in a new tab)</span>
-                    </a>
-                  </p>
-                )}
+                {/* Where to make one, and the privacy fact: kept on this device only. */}
+                <p className="flex flex-wrap items-center gap-x-4 text-ink-2">
+                  <a href={pasting === "linear" ? LINEAR_KEYS : ATLASSIAN_TOKENS} target="_blank" rel="noopener noreferrer" className="link -ml-1 gap-1.5">
+                    {pasting === "linear" ? "Get a key" : "Get a token"}
+                    <Icon name="external" className="h-[18px] w-[18px]" />
+                    <span className="sr-only"> (opens in a new tab)</span>
+                  </a>
+                  <span>{pasting === "linear" ? "Stays on this device." : "One for Jira and Confluence. Stays on this device."}</span>
+                </p>
                 <button type="submit" aria-disabled={busy} className="pill pill-ink">
                   {busy ? "Connecting…" : `Connect ${APP_NAMES[pasting]}`}
                 </button>
@@ -231,14 +228,15 @@ function McpBlock() {
   const url = `${window.location.origin}/api/mcp`;
   return (
     <section className="mini mt-2">
-      <h3 className="font-bold">Use Zeno in Claude or ChatGPT</h3>
-      <p>Add a custom connector with this address, then sign in and tap Allow.</p>
-      <p className="text-ink-2">It can see your goals and steps, add goals and mark steps done. Never your mail, your calendar or what Zeno remembers.</p>
+      <h3 className="font-bold">Claude or ChatGPT</h3>
+      <p>Add Zeno as a custom connector:</p>
       <div className="mt-2 flex items-center justify-between gap-4">
         <code className="min-w-0 font-mono break-all">{url}</code>
         <button
           type="button"
-          className="quiet-x shrink-0"
+          aria-label="Copy address"
+          title="Copy"
+          className="icon-btn"
           onClick={() =>
             void navigator.clipboard?.writeText(url).then(
               () => setCopied("Copied."),
@@ -246,9 +244,10 @@ function McpBlock() {
             )
           }
         >
-          Copy
+          <Icon name="copy" />
         </button>
       </div>
+      <p className="text-ink-2">Goals and steps only. Never mail, calendar or memory.</p>
       <p role="status" className="text-ink-2 empty:hidden">
         {copied}
       </p>

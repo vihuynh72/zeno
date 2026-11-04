@@ -86,42 +86,48 @@ export default function WeekGoals({ now, goals, done, calendar: connected, onGoa
       .flatMap((week) => (week.state === "ok" ? week.days.flatMap((day) => day.events) : []))
       .map((event) => [`${event.id}:${event.start}`, event]),
   );
+  const days = planWeek(goals, [...events.values()], done, today, zone);
   return (
     // The home card's width, so a laptop's lines stay short enough to read.
     <section className="mini max-w-[760px]">
       <h2 className="sr-only">Your week</h2>
-      <ol className="lines">
-        {planWeek(goals, [...events.values()], done, today, zone).map(({ date, items }) => (
-          <Fragment key={date}>
-            {date === today && (
-              <li aria-hidden="true" className="flex items-center gap-3 text-ink-2">
-                today
-                <span className="h-px flex-1 bg-current" />
-              </li>
-            )}
-            <li data-mark={date === today ? "now" : undefined} className={`sm:flex sm:gap-4 ${date < today ? "text-ink-2" : ""}`}>
-              <h3 className="shrink-0 font-bold sm:w-20">
-                <span aria-hidden="true">
-                  {dateLabel(date, { weekday: "short" })} {Number(date.slice(8))}
-                </span>
-                <span className="sr-only">
-                  {date === today ? "Today, " : ""}
-                  {dateLabel(date, { weekday: "long", month: "long", day: "numeric" })}
-                </span>
-              </h3>
-              {items.length > 0 && (
-                <ul className="min-w-0 flex-1">
-                  {items.map((item, i) => (
-                    <li key={i}>
-                      <Line item={item} onGoal={onGoal} />
-                    </li>
-                  ))}
-                </ul>
+      {/* A week with nothing in it is one short line, not a column of empty days (UX round, Nov 4). */}
+      {days.every((day) => day.items.length === 0) ? (
+        <p className="lines text-ink-2">Nothing planned this week.</p>
+      ) : (
+        <ol className="lines">
+          {days.map(({ date, items }) => (
+            <Fragment key={date}>
+              {date === today && (
+                <li aria-hidden="true" className="flex items-center gap-3 text-ink-2">
+                  today
+                  <span className="h-px flex-1 bg-current" />
+                </li>
               )}
-            </li>
-          </Fragment>
-        ))}
-      </ol>
+              <li data-mark={date === today ? "now" : undefined} className={`sm:flex sm:gap-4 ${date < today ? "text-ink-2" : ""}`}>
+                <h3 className="shrink-0 font-bold sm:w-20">
+                  <span aria-hidden="true">
+                    {dateLabel(date, { weekday: "short" })} {Number(date.slice(8))}
+                  </span>
+                  <span className="sr-only">
+                    {date === today ? "Today, " : ""}
+                    {dateLabel(date, { weekday: "long", month: "long", day: "numeric" })}
+                  </span>
+                </h3>
+                {items.length > 0 && (
+                  <ul className="min-w-0 flex-1">
+                    {items.map((item, i) => (
+                      <li key={i}>
+                        <Line item={item} onGoal={onGoal} same={i > 0 && goalOf(items[i - 1]) === goalOf(item)} />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            </Fragment>
+          ))}
+        </ol>
+      )}
     </section>
   );
 }
@@ -129,15 +135,19 @@ export default function WeekGoals({ now, goals, done, calendar: connected, onGoa
 // " · 20m", kept on the line with the word before it (a phone wrapped the minutes alone).
 const Minutes = ({ minutes }: { minutes: number | null }) => (minutes ? <span className="whitespace-nowrap">{` · ${mins(minutes)}`}</span> : null);
 
+// The goal a line belongs to (an event belongs to none).
+const goalOf = (item: PlanItem) => (item.kind === "event" ? null : item.kind === "done" ? item.goal : item.goal.title);
+
 // One line of a day: a finished step ticked, an event at its time, a rest day, or a planned step or due goal that opens
-// its goal. Only the plan is in ink; what is done and what the calendar holds stay quiet.
-function Line({ item, onGoal }: { item: PlanItem; onGoal?(goalId: string): void }) {
+// its goal. Only the plan is in ink; what is done and what the calendar holds stay quiet. same: the line above names the
+// same goal, so this one is just the step (UX round, Nov 4: a phone repeated the goal's title on every line).
+function Line({ item, onGoal, same = false }: { item: PlanItem; onGoal?(goalId: string): void; same?: boolean }) {
   if (item.kind === "done") {
     return (
       <span className="text-ink-2">
         <span aria-hidden="true">✓ </span>
         <span className="sr-only">Done: </span>
-        {stepLabel(item.goal, item.title)}
+        {same ? item.title : stepLabel(item.goal, item.title)}
         <Minutes minutes={item.minutes} />
       </span>
     );
@@ -162,7 +172,7 @@ function Line({ item, onGoal }: { item: PlanItem; onGoal?(goalId: string): void 
       ) : (
         <>
           <span className="sr-only">Planned: </span>
-          {stepLabel(item.goal.title, item.step.title)}
+          {same ? item.step.title : stepLabel(item.goal.title, item.step.title)}
           <Minutes minutes={item.step.minutes} />
         </>
       )}

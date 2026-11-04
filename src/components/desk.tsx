@@ -7,12 +7,18 @@ import { browserZone, composeUrl, freeGaps, gmailRow, httpsOnly, markEvents, sen
 import { deskPlans, doneCaption, doneSteps, dueShort, duration, mergeDone, nextCaption, sameGoal } from "@/components/goal-rows";
 import WeekGoals, { GoalLines } from "@/components/week-goals";
 import WeekGrid from "@/components/week-grid";
+import { Icon } from "@/components/icons";
 import { formatTime, localDate } from "@/lib/tz";
 
 // An open email's own rules scroll with its words, on card stock so the card's fixed rules don't show through.
 const RULED: CSSProperties = {
   background: "linear-gradient(var(--rule) 1px, transparent 1px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100% var(--lh) local, var(--card)",
 };
+
+// A mail action on the card's rules: an icon and one word (Vi, Nov 4), a 44px tap target that keeps the 32px rule.
+const ACT = "-my-1.5 inline-flex items-center gap-1.5 py-1.5 underline underline-offset-4";
+// Icons in dense rows are 18px (20px in body).
+const SMALL = "h-[18px] w-[18px]";
 
 // A card whose source was never connected doesn't show at all (Nov 4); its quiet "Connect" line does.
 const SOURCE_NOTE: Record<Exclude<SourceState, "ok">, (name: string) => string> = {
@@ -169,19 +175,14 @@ function DeskBody({ tab: opensOn = "today", today, goal, goals, onSignIn, onGoal
             </button>
           ))}
         </div>
-        <button type="button" onClick={(event) => event.currentTarget.closest("dialog")?.close()} className="pill pill-small">
-          <svg
-            viewBox="0 0 24 24"
-            className="h-6 w-6 shrink-0"
-            aria-hidden="true"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-          >
-            <path d="M6 6l12 12M18 6L6 18" />
-          </svg>
-          Close
+        <button
+          type="button"
+          onClick={(event) => event.currentTarget.closest("dialog")?.close()}
+          aria-label="Close"
+          title="Close"
+          className="pill pill-small pill-icon"
+        >
+          <Icon name="x" />
         </button>
       </div>
 
@@ -223,10 +224,10 @@ function DeskBody({ tab: opensOn = "today", today, goal, goals, onSignIn, onGoal
             {deadlines.length > 0 && <Deadlines deadlines={deadlines} plans={plans} onGoal={onGoal} onDeadline={onDeadline} />}
             {today && calendarOn && <Calendar today={today} now={now} booked={booked} />}
           </div>
-          {!today && <p className="text-ink-2">I couldn&apos;t load today just now. Reload the page to try again.</p>}
+          {!today && <p className="text-ink-2">Couldn&apos;t load today. Reload to try again.</p>}
           {connect && (
             <button type="button" onClick={onSignIn} className="link -ml-1 self-start underline">
-              Connect your {connect} (optional)
+              Connect {connect}
             </button>
           )}
         </div>
@@ -569,7 +570,11 @@ export function Mail({ today, goals = [], onAdd, onStep, onFollowUp, all = false
   return (
     <section className="mini lg:col-start-2 lg:row-span-3 lg:row-start-1">
       <div className="flex items-baseline justify-between gap-4">
-        <h3 className="text-[20px] leading-8 font-bold">Mail</h3>
+        {/* The icon inline, so the heading keeps its text baseline for "2 unread" beside it. */}
+        <h3 className="text-[20px] leading-8 font-bold">
+          <Icon name="mail" className="mr-2 inline h-5 w-5 align-[-3px]" />
+          Mail
+        </h3>
         {email === "ok" && today.unreadEmail > 0 && (
           <p className="text-ink-2">
             <span className="font-mono">{today.unreadEmail}</span> unread
@@ -642,8 +647,9 @@ export function Mail({ today, goals = [], onAdd, onStep, onFollowUp, all = false
           ))}
         {gmail && (
           <p>
-            <a href={gmail} target="_blank" rel="noopener noreferrer" className="text-ink-2 underline underline-offset-4">
-              Open Gmail
+            <a href={gmail} target="_blank" rel="noopener noreferrer" title="Open Gmail" className={`${ACT} text-ink-2`}>
+              Gmail
+              <Icon name="external" className={SMALL} />
               <span className="sr-only"> (opens in a new tab)</span>
             </a>
           </p>
@@ -685,23 +691,40 @@ export function MailActions({ mail, line, text, gmail, goals = [], onAdd, onStep
     <>
       <p className="flex flex-wrap gap-x-4">
         {!written && (
-          <button type="button" onClick={() => void write()} className={`underline underline-offset-4 ${mail.asks ? "font-bold" : "text-ink-2"}`}>
-            Draft a reply
+          <button type="button" onClick={() => void write()} aria-label="Draft a reply" title="Draft a reply" className={`${ACT} ${mail.asks ? "font-bold" : "text-ink-2"}`}>
+            <Icon name="reply" className={SMALL} />
+            Reply
           </button>
         )}
         {onAdd && (
-          <button type="button" onClick={() => onAdd(`${ask}${ask.includes(mail.subject) ? "" : ` (${name}'s email "${mail.subject}")`}`)} className="text-ink-2 underline underline-offset-4">
-            Make it a goal
+          <button
+            type="button"
+            onClick={() => onAdd(`${ask}${ask.includes(mail.subject) ? "" : ` (${name}'s email "${mail.subject}")`}`)}
+            aria-label="Make it a goal"
+            title="Make it a goal"
+            className={`${ACT} text-ink-2`}
+          >
+            <Icon name="flag" className={SMALL} />
+            Goal
           </button>
         )}
         {onStep && goals.length > 0 && (
-          <button type="button" onClick={() => setPicking((was) => !was)} aria-expanded={picking} className="text-ink-2 underline underline-offset-4">
-            Add as a step
+          <button
+            type="button"
+            onClick={() => setPicking((was) => !was)}
+            aria-expanded={picking}
+            aria-label="Add as a step"
+            title="Add as a step"
+            className={`${ACT} text-ink-2`}
+          >
+            <Icon name="listAdd" className={SMALL} />
+            Step
           </button>
         )}
         {gmail && !written && (
-          <a href={`${gmail}#inbox/${encodeURIComponent(mail.id)}`} target="_blank" rel="noopener noreferrer" className="text-ink-2 underline underline-offset-4">
-            Open in Gmail
+          <a href={`${gmail}#inbox/${encodeURIComponent(mail.id)}`} target="_blank" rel="noopener noreferrer" title="Open in Gmail" className={`${ACT} text-ink-2`}>
+            Gmail
+            <Icon name="external" className={SMALL} />
             <span className="sr-only"> (opens in a new tab)</span>
           </a>
         )}
@@ -738,8 +761,9 @@ export function MailActions({ mail, line, text, gmail, goals = [], onAdd, onStep
           <textarea id={`reply-${mail.id}`} value={words} onChange={(event) => setWords(event.target.value)} className="write [--fs2:var(--fs)]" />
           <p className="flex flex-wrap gap-x-4">
             {gmail && (
-              <a href={composeUrl(gmail, written.to, written.subject, words)} target="_blank" rel="noopener noreferrer" className="font-bold underline underline-offset-4">
-                Open in Gmail
+              <a href={composeUrl(gmail, written.to, written.subject, words)} target="_blank" rel="noopener noreferrer" title="Open in Gmail" className={`${ACT} font-bold`}>
+                Gmail
+                <Icon name="external" className={SMALL} />
                 <span className="sr-only"> (a new email with this reply, in a new tab)</span>
               </a>
             )}

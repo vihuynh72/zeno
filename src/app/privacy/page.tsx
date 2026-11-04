@@ -32,10 +32,10 @@ export default function Privacy() {
         If you add an assignment from a photo, Meta&apos;s model reads the photo once to make a plan, and Zeno never keeps it.
       </p>
       <p className="mt-3">
-        If you make a token in Connect an app, or let Claude, ChatGPT or another AI app use Zeno, those apps (and the Zeno Mac
+        If you make an app token (in the account menu), or let Claude, ChatGPT or another AI app use Zeno, those apps (and the Zeno Mac
         clock) can see and change your goals and steps, but never your mail, your calendar or what Zeno remembers. Zeno keeps
-        only a one-way fingerprint of each token, with your time zone and which app it&apos;s for, and Turn off in Connect an
-        app stops all of them at once.
+        only a one-way fingerprint of each token, with your time zone and which app it&apos;s for, and Turn off under App token
+        stops all of them at once.
       </p>
 
       <h2 className="mt-10 text-[22px] font-bold">What Zeno keeps</h2>

@@ -11,6 +11,7 @@ import { Mail, MailActions } from "@/components/desk";
 import { dateLabel, senderName } from "@/components/desk-rows";
 import { forGoal, goalEvent } from "@/components/goal-match";
 import PrepPack from "@/components/prep-pack";
+import { Icon } from "@/components/icons";
 
 // A goal's desk (Vi, Nov 3): the workstation around the step. The page draws the step card and its button between the
 // strip and the steps; nothing here writes anything.
@@ -202,7 +203,10 @@ export function GoalAside({ goal, step, materials, brief, today, offer, apps = [
         <div className="mt-2 flex flex-col gap-4">
           {why.length > 0 && (
             <section className="mini">
-              <h3 className={HEAD}>Why this plan</h3>
+              <h3 className={`${HEAD} flex items-center gap-1.5`}>
+                <Icon name="sparkle" className="h-[18px] w-[18px]" />
+                Why this plan
+              </h3>
               <ul className="mt-1 flex flex-col gap-1">
                 {why.map((line, index) => (
                   <li key={index}>{line}</li>
@@ -246,34 +250,27 @@ export function GoalAside({ goal, step, materials, brief, today, offer, apps = [
                   <p className="font-bold">Canvas{prompt.course ? ` · ${prompt.course}` : ""}</p>
                   {prompt.text && <p>{cut(prompt.text, 220)}</p>}
                   {prompt.url && (
-                    <a href={prompt.url} target="_blank" rel="noopener noreferrer" className="link -ml-1">
-                      Open in Canvas<span className="sr-only"> (opens in a new tab)</span>
+                    <a href={prompt.url} target="_blank" rel="noopener noreferrer" title="Open in Canvas" className="link -ml-1 gap-1.5">
+                      Open
+                      <Icon name="external" className="h-[18px] w-[18px]" />
+                      <span className="sr-only"> in Canvas (opens in a new tab)</span>
                     </a>
                   )}
                 </div>
               )}
-              {items.map((item) =>
-                item.app === "web" ? (
-                  <p key={`web:${item.id}`} className="mt-1">
-                    From the web:{" "}
-                    <a href={item.url} target="_blank" rel="noopener noreferrer" className="font-bold underline underline-offset-4">
-                      {item.title}
-                      <span className="sr-only"> (opens in a new tab)</span>
-                    </a>
-                  </p>
-                ) : (
-                  <p key={`${item.app}:${item.id}`} className="mt-1">
-                    <a href={item.url} target="_blank" rel="noopener noreferrer" className="font-bold underline underline-offset-4">
-                      {item.title}
-                      <span className="sr-only"> (opens in a new tab)</span>
-                    </a>
-                    <span className="block text-ink-2">
-                      {APP_NAMES[item.app]}
-                      {item.due ? ` · due ${dateLabel(item.due, { month: "short", day: "numeric" })}` : ""}
-                    </span>
-                  </p>
-                ),
-              )}
+              {items.map((item) => (
+                <p key={`${item.app}:${item.id}`} className="mt-1">
+                  <a href={item.url} target="_blank" rel="noopener noreferrer" className="font-bold underline underline-offset-4">
+                    {item.title}
+                    <Icon name="external" className="ml-1.5 inline h-[18px] w-[18px] align-[-3px]" />
+                    <span className="sr-only"> (opens in a new tab)</span>
+                  </a>
+                  <span className="block text-ink-2">
+                    {item.app === "web" ? "From the web" : APP_NAMES[item.app]}
+                    {item.due ? ` · due ${dateLabel(item.due, { month: "short", day: "numeric" })}` : ""}
+                  </span>
+                </p>
+              ))}
               {onAddDoc && <AddDoc key={goal.id} onAdd={onAddDoc} />}
             </section>
           )}
@@ -283,8 +280,9 @@ export function GoalAside({ goal, step, materials, brief, today, offer, apps = [
       {(findHelp || addDoc) && (
         <div className={`${empty ? "mt-1" : "mt-3"} flex flex-col items-start`}>
           {findHelp && (
-            <button type="button" className="link -ml-1" onClick={() => setLinks(true)}>
-              Find help online
+            <button type="button" className="link -ml-1 gap-1.5" onClick={() => setLinks(true)}>
+              <Icon name="search" />
+              Find help
             </button>
           )}
           {addDoc && <AddDoc key={goal.id} onAdd={onAddDoc} />}
@@ -301,8 +299,9 @@ function AddDoc({ onAdd }: { onAdd(url: string): Promise<string> }) {
   const [why, setWhy] = useState("");
   if (!open)
     return (
-      <button type="button" className="link -ml-1 mt-1" onClick={() => setOpen(true)}>
-        Add a doc
+      <button type="button" className="link -ml-1 mt-1 gap-1.5" onClick={() => setOpen(true)}>
+        <Icon name="doc" />
+        Add doc
       </button>
     );
   return (
@@ -320,7 +319,7 @@ function AddDoc({ onAdd }: { onAdd(url: string): Promise<string> }) {
       }}
     >
       <label className="flex flex-col">
-        <span className="font-bold">A Google Doc&apos;s link</span>
+        <span className="font-bold">Google Doc link</span>
         <input name="doc" required autoFocus inputMode="url" autoComplete="off" spellCheck={false} className="add" placeholder="docs.google.com/document/d/…" />
       </label>
       <div className="flex flex-wrap items-center gap-x-4">
@@ -345,7 +344,20 @@ function NotesCard({ notes, from }: { notes: Note[]; from?: string }) {
   const text = notes.map((note) => `You: ${note.you}\nZeno: ${note.zeno}`).join("\n\n");
   return (
     <article className="mini">
-      <h3 className={HEAD}>{from ? `Your notes from "${from.replace(/[.!?]+$/, "")}"` : "Your notes"}</h3>
+      <div className="flex items-start justify-between gap-2">
+        <h3 className={HEAD}>{from ? `Your notes from "${from.replace(/[.!?]+$/, "")}"` : "Your notes"}</h3>
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label={copied ? "Copied" : "Copy notes"}
+          title={copied ? "Copied" : "Copy"}
+          onClick={() => {
+            void navigator.clipboard?.writeText(text).then(() => setCopied(true), () => setCopied(false));
+          }}
+        >
+          <Icon name={copied ? "check" : "copy"} />
+        </button>
+      </div>
       <ul className="mt-1 flex flex-col gap-3">
         {notes.map((note, i) => (
           <li key={i}>
@@ -354,15 +366,6 @@ function NotesCard({ notes, from }: { notes: Note[]; from?: string }) {
           </li>
         ))}
       </ul>
-      <button
-        type="button"
-        className="link -ml-1 mt-2"
-        onClick={() => {
-          void navigator.clipboard?.writeText(text).then(() => setCopied(true), () => setCopied(false));
-        }}
-      >
-        {copied ? "Copied" : "Copy notes"}
-      </button>
     </article>
   );
 }
@@ -384,8 +387,10 @@ function MailCard({ id, gmail }: { id: string; gmail?: string }) {
     };
   }, [id]);
   const open = gmail && (
-    <a href={gmail} target="_blank" rel="noopener noreferrer" className="link -ml-1">
-      Open in Gmail<span className="sr-only"> (opens in a new tab)</span>
+    <a href={gmail} target="_blank" rel="noopener noreferrer" title="Open in Gmail" className="link -ml-1 gap-1.5">
+      Gmail
+      <Icon name="external" className="h-[18px] w-[18px]" />
+      <span className="sr-only"> (opens in a new tab)</span>
     </a>
   );
   return (

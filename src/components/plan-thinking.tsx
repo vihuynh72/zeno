@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { PlanQuestion, WebMatch } from "@/lib/day";
+import { Icon } from "@/components/icons";
 
 // Vi's planning flow (Nov 4): for a goal too vague to plan well, Zeno asks one or two tap questions, one at a time; then
 // "Muse is planning…" shows only what is really happening while it plans, and, once the plan is back, Muse's own lines
@@ -69,7 +70,7 @@ export function PlanAsk({ question, onAnswer }: { question: PlanQuestion; onAnsw
 }
 
 // "Is this the one?" (Vi, Nov 4; the card asks it): what the web has for the real thing her goal names, with its source's
-// site (opens in a new tab), then her answers. "A different one" (onOther, only before a second search) opens a box for a
+// site (opens in a new tab), then her answers. "Different one" (onOther, only before a second search) opens a box for a
 // detail that is searched once more, or plans without the web (onSkip). Its buttons are answers (data-answer).
 export function PlanMatch({ match, onYes, onOther, onSkip }: { match: WebMatch; onYes(): void; onOther?: (detail: string) => void; onSkip(): void }) {
   const [typing, setTyping] = useState(false);
@@ -80,9 +81,10 @@ export function PlanMatch({ match, onYes, onOther, onSkip }: { match: WebMatch; 
         <p className="font-bold">{match.title}</p>
         {match.when && <p>{match.when}</p>}
         {match.line && <p className="text-ink-2">{match.line}</p>}
-        <a href={match.url} target="_blank" rel="noopener noreferrer" className="link -ml-1">
-          Source: {match.site}
-          <span className="sr-only"> (opens in a new tab)</span>
+        <a href={match.url} target="_blank" rel="noopener noreferrer" className="link -ml-1 gap-1.5">
+          {match.site}
+          <Icon name="external" className="h-[18px] w-[18px]" />
+          <span className="sr-only"> (the source, opens in a new tab)</span>
         </a>
       </div>
       {typing && onOther ? (
@@ -121,11 +123,11 @@ export function PlanMatch({ match, onYes, onOther, onSkip }: { match: WebMatch; 
       ) : (
         <div role="group" aria-label="Is this the one?" className="flex flex-wrap justify-center gap-2">
           <button type="button" data-answer onClick={onYes} className="pill pill-small pill-ink">
-            Yes, that&apos;s it
+            Yes
           </button>
           {onOther && (
             <button type="button" data-answer onClick={() => setTyping(true)} className="pill pill-small">
-              A different one
+              Different one
             </button>
           )}
           <button type="button" data-answer onClick={onSkip} className="pill pill-small">

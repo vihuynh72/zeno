@@ -152,7 +152,7 @@ export default function WeekGrid({ now, onSignIn }: { now: number; onSignIn(): v
       <div className="flex flex-col items-start gap-4">
         <section className="mini self-stretch">
           <ul className="lines">
-            <li>{noAccess ? "Connect your calendar to see your week here." : "Zeno couldn't read your calendar just now."}</li>
+            <li>{noAccess ? "No calendar yet." : "Couldn't read your calendar."}</li>
           </ul>
         </section>
         {noAccess ? (

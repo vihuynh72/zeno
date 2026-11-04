@@ -542,6 +542,11 @@ button:active .tap {
     font-size: 18px;
   }
 }
+/* An icon-only pill (a sheet's Close): a 52px circle, its word in aria-label and title. After the phone rule, so it wins. */
+.pill-icon {
+  width: 52px;
+  padding: 0;
+}
 /* The screen's one big button (Vi, Nov 2): the ink pill, as wide as the card. */
 .pill-big {
   width: 100%;
@@ -650,7 +655,9 @@ button:active .tap {
   text-decoration: underline;
   text-underline-offset: 4px;
 }
-.forget {
+/* Forget, and the icon-only Copy buttons: a 44px round tap target around a word or an icon. */
+.forget,
+.icon-btn {
   display: grid;
   flex-shrink: 0;
   place-items: center;
@@ -665,7 +672,8 @@ button:active .tap {
   text-underline-offset: 4px;
 }
 @media (hover: hover) {
-  .forget:hover {
+  .forget:hover,
+  .icon-btn:hover {
     background: var(--desk);
     color: var(--ink);
   }

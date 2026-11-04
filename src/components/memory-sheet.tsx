@@ -4,12 +4,13 @@ import { useRef, useState } from "react";
 import type { Memory } from "@/lib/day";
 import type { VaultFact } from "@/lib/vault";
 import { groupFacts, type Fact } from "@/components/day-flow";
+import { Icon } from "@/components/icons";
 
 // A stand-in fact, so Projects & deadlines shows even when Canvas deadlines are all it holds.
 const CANVAS = "canvas";
 
-// What Zeno remembers, grouped, with this device's private facts in their groups. Forget is a word on each row (Vi, Nov
-// 4: easy to find and delete).
+// What Zeno remembers, grouped, with this device's private facts in their groups. Forget is a trash can on each row (Vi,
+// Nov 4: easy to find and delete; an icon since the UX round).
 // Canvas deadlines fold into one line at the end of Projects & deadlines, which opens them there, one line each.
 export default function MemorySheet({
   memories,
@@ -41,8 +42,8 @@ export default function MemorySheet({
         {fact.text}
         {fact.device && <span className="block text-[18px] text-ink-2">Only on this device</span>}
       </p>
-      <button type="button" onClick={() => onForget(fact)} className="forget" aria-label={`Forget: ${fact.text}`}>
-        Forget
+      <button type="button" onClick={() => onForget(fact)} className="forget" aria-label={`Forget: ${fact.text}`} title="Forget">
+        <Icon name="trash" />
       </button>
     </li>
   );
@@ -59,7 +60,6 @@ export default function MemorySheet({
 
   return (
     <>
-      <p className="text-ink-2">What Zeno remembers about you. Forget anything, any time.</p>
       <form
         className="mini flex items-center gap-2"
         onSubmit={(event) => {
@@ -90,14 +90,14 @@ export default function MemorySheet({
         <p className="text-ink-2">Loading…</p>
       ) : memories === "error" && facts.length === 0 ? (
         <div className="flex flex-col items-start gap-4">
-          <p>I couldn&apos;t load what I remember just now.</p>
+          <p>Couldn&apos;t load this.</p>
           <button type="button" onClick={onRetry} className="pill pill-small">
             Try again
           </button>
         </div>
       ) : facts.length === 0 ? (
         <p className="mini">
-          <span className="lines block">Nothing yet. As you use Zeno, what it learns shows up here.</span>
+          <span className="lines block">Nothing yet.</span>
         </p>
       ) : (
         // One ruled card per group, a fact per line, like Today's cards.

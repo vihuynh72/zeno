@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { AppTokenResponse } from "@/lib/day";
+import { Icon } from "@/components/icons";
 
-// Connect an app, from the account menu (docs/PLAN-NOV3-APPS.md): a personal token for MCP clients (Muse Code, Claude
-// Code) and the Zeno Mac clock. The sheet is day-view's SheetPanel, kept here so the menu needs nothing from the page.
+// App token ("Connect an app" until Nov 4), from the account menu (docs/PLAN-NOV3-APPS.md): a personal token for MCP
+// clients (Muse Code, Claude Code) and the Zeno Mac clock. The sheet is day-view's SheetPanel, kept here so the menu
+// needs nothing from the page.
 export default function AppsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -21,7 +23,7 @@ export default function AppsSheet({ open, onClose }: { open: boolean; onClose: (
   return (
     <dialog
       ref={ref}
-      aria-label="Connect an app"
+      aria-label="App token"
       className="sheet"
       onClose={onClose}
       onClick={(event) => event.target === event.currentTarget && onClose()}
@@ -29,22 +31,10 @@ export default function AppsSheet({ open, onClose }: { open: boolean; onClose: (
       <div className="flex min-h-full flex-col gap-4 p-6">
         <div className="flex items-center justify-between gap-4">
           <h2 tabIndex={-1} className="text-[28px] leading-10 font-bold">
-            Connect an app
+            App token
           </h2>
-          <button type="button" onClick={onClose} className="pill pill-small">
-            <svg
-              viewBox="0 0 24 24"
-              className="h-6 w-6 shrink-0"
-              aria-hidden="true"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-            Close
+          <button type="button" onClick={onClose} aria-label="Close" title="Close" className="pill pill-small pill-icon">
+            <Icon name="x" />
           </button>
         </div>
         {/* Mounted only while open: closing the sheet forgets the token. */}
@@ -115,19 +105,19 @@ function Connect() {
   return (
     <>
       <p className="text-ink-2">
-        Lets Muse Code, Claude Code or the Zeno Mac clock see and update your goals and steps. Never your mail, your calendar or
-        what Zeno remembers. Making a token turns off the one you made before.
+        For Muse Code, Claude Code and the Zeno Mac clock. Goals and steps only, never mail, calendar or memory. One token at
+        a time.
       </p>
       {rows ? (
         <>
-          <p>Copy it now: Zeno shows it once. A new token turns this one off.</p>
+          <p>Shown once. Copy it now.</p>
           <div className="mini flex flex-col gap-4">
             {rows.map((row) => (
               <div key={row.label}>
                 <div className="flex items-center justify-between gap-4">
                   <h3 className="font-bold">{row.label}</h3>
-                  <button type="button" onClick={() => copy(row.text)} aria-label={`Copy ${row.label}`} className="quiet-x">
-                    Copy
+                  <button type="button" onClick={() => copy(row.text)} aria-label={`Copy ${row.label}`} title="Copy" className="icon-btn">
+                    <Icon name="copy" />
                   </button>
                 </div>
                 <code className="block font-mono break-all whitespace-pre-wrap">{row.text}</code>
@@ -137,7 +127,7 @@ function Connect() {
         </>
       ) : (
         <button type="button" onClick={make} aria-disabled={busy} className="pill pill-ink">
-          {busy ? "Making a token…" : "Make a token"}
+          {busy ? "Making…" : "Make a token"}
         </button>
       )}
       <button type="button" onClick={turnOff} aria-disabled={busy} className="quiet-x self-start">

@@ -21,6 +21,7 @@ import MemorySheet from "@/components/memory-sheet";
 import StreakRow from "@/components/streak-row";
 import VoiceRing from "@/components/voice-ring";
 import YourApps from "@/components/your-apps";
+import { Icon } from "@/components/icons";
 
 // "week" opens the desk on its Week view.
 export type Sheet = "today" | "week" | "memory" | "canvas" | "apps" | null;
@@ -808,7 +809,7 @@ export default function DayView(props: DayViewProps) {
       <SheetPanel open={props.sheet === "canvas"} title="Canvas" onClose={() => on.sheet(null)}>
         {props.sheet === "canvas" && props.canvas && <CanvasSheet account={props.canvas.account} onSynced={on.canvasSynced} />}
       </SheetPanel>
-      <SheetPanel open={props.sheet === "apps"} title="Your apps" onClose={() => on.sheet(null)}>
+      <SheetPanel open={props.sheet === "apps"} title="Apps" onClose={() => on.sheet(null)}>
         {props.sheet === "apps" && (
           <YourApps
             key={props.canvas?.account ?? ""}
@@ -959,20 +960,8 @@ function SheetPanel({ open, title, onClose, children }: { open: boolean; title: 
           <h2 tabIndex={-1} className="text-[28px] leading-10 font-bold">
             {title}
           </h2>
-          <button type="button" onClick={onClose} className="pill pill-small">
-            <svg
-              viewBox="0 0 24 24"
-              className="h-6 w-6 shrink-0"
-              aria-hidden="true"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-            Close
+          <button type="button" onClick={onClose} aria-label="Close" title="Close" className="pill pill-small pill-icon">
+            <Icon name="x" />
           </button>
         </div>
         {children}

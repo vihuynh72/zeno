@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import AppsSheet from "@/components/apps-sheet";
+import { Icon } from "@/components/icons";
 
 // The person's initial in the top bar opens Memory, Sound, Privacy and Sign out, then under a small "Connections"
-// heading Canvas and Connect an app (Nov 4: those scared people who are not students or developers). canvas is null
+// heading Canvas and App token (Nov 4: those scared people who are not students or developers; "Connect an app" until
+// the UX round, which read as the header's Apps). canvas is null
 // until the page knows whose account it is (the link is kept per account), true once Canvas is linked on this device.
 // onCalendar is set only when they unticked calendar access on Google's consent screen, so a block they ask for has a
-// way through. Connect an app opens its own sheet (apps-sheet.tsx).
+// way through. App token opens its own sheet (apps-sheet.tsx).
 export default function AccountMenu({
   initial,
   muted,
@@ -54,6 +56,7 @@ export default function AccountMenu({
           }}
           className="pill pill-small pill-quiet w-full"
         >
+          <Icon name="memory" />
           Memory
         </button>
         {/* The menu stays open, so the switch shows what it did. */}
@@ -96,7 +99,7 @@ export default function AccountMenu({
             }}
             className="pill pill-small pill-quiet w-full"
           >
-            Connect an app
+            App token
           </button>
         </div>
       </div>
