@@ -8,10 +8,10 @@ import { goalRow, panelGoals, type PanelRow } from "@/components/day-flow";
 // Suggestions. A laptop's left column beside the open goal's desk; a phone's home under the hello. Nothing here talks
 // to the server: the page's handlers do.
 
-// Errands, health and school, each on one line of a 360px phone (the plan's longer ones wrapped and read as five
-// examples); a dash starts each, so one that still wraps reads as one. Round 3: the older and the non-student testers
-// read the first set as "for young people".
-const EXAMPLES = "Type your goal here, like:\n– Call the bank this week\n– Run a 5K by January\n– Study for Thursday's exam";
+// "Type your goal here" over an errand and a school example, each on one line of a 360px phone (round 5: three of ten
+// pressed Make a plan with the box empty; round 3: older and non-student testers read school-only examples as "for
+// young people").
+const EXAMPLES = "Type your goal here, like:\n– Call the bank this week\n– Study for Thursday's exam";
 
 // Enter makes the plan, Shift+Enter starts a new line, Escape closes the box (the panel's only). In a box for a list
 // (`lines`, the front door: its examples are one goal a line), Enter starts a new line and Cmd or Ctrl+Enter makes the

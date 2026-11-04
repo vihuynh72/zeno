@@ -1620,12 +1620,13 @@ button:active .tap {
   background: var(--ink);
 }
 
-/* The front door's box: four rules to write a goal on, "Type your goal here" and examples in pencil until then. */
+/* The front door's box: three rules to write a goal on, "Type your goal here" and two examples in pencil until then
+   (a fourth rule pushed Make a plan under the dock on a short screen). */
 .door label {
   font-weight: 700;
 }
 .door .write {
-  min-height: calc(var(--lh) * 4);
+  min-height: calc(var(--lh) * 3);
 }
 
 /* The text box: one slip of card docked above Talk, never on or over the card. */
