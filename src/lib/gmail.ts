@@ -110,6 +110,33 @@ export async function getRecentEmail(accessToken: string, all = false): Promise<
     .slice(0, all ? 20 : 6);
 }
 
+// Mail she sent 3 to 14 days ago that nobody answered ("Waiting on", Nov 4): the threads of the newest 10 she sent in
+// that window, each read once for its headers; a thread whose last message is still hers, 3+ days old, to someone else
+// and not a no-reply address, waits. At most 3, newest first. self: her own address.
+export type Waiting = { id: string; to: string; subject: string; sentAt: string };
+export async function getWaiting(accessToken: string, self: string, now = Date.now()): Promise<Waiting[]> {
+  const query = { maxResults: "10", q: "in:sent older_than:3d newer_than:14d" };
+  const list = (await gmailFetch(accessToken, `messages?${new URLSearchParams(query)}`)) as { messages?: { threadId?: string }[] };
+  const threads = [...new Set((list.messages ?? []).flatMap((item) => (item.threadId ? [item.threadId] : [])))].slice(0, 6);
+  const read = await Promise.all(
+    threads.map((id) =>
+      (gmailFetch(accessToken, `threads/${encodeURIComponent(id)}?format=metadata&metadataHeaders=To&metadataHeaders=Subject`) as Promise<{ messages?: GmailMessage[] }>).catch(() => null),
+    ),
+  );
+  return read
+    .flatMap((thread) => {
+      const last = thread?.messages?.at(-1);
+      const at = Number(last?.internalDate);
+      // The first recipient: a quoted name may hold a comma ("Patel, Ana" <ana@school.edu>).
+      const to = ((last ? header(last, "To") : "").match(/(?:"[^"]*"|[^,])+/)?.[0] ?? "").trim();
+      const mine = last?.labelIds?.includes("SENT") && now - at >= 3 * 86_400_000;
+      if (!last?.id || !mine || !to || NO_REPLY.test(to) || addressOf(to) === self.toLowerCase()) return [];
+      return [{ id: last.id, to, subject: header(last, "Subject") || "(no subject)", sentAt: new Date(at).toISOString() }];
+    })
+    .sort((a, b) => Date.parse(b.sentAt) - Date.parse(a.sentAt))
+    .slice(0, 3);
+}
+
 // One email read in full for the Desk (GET /api/mail/[id]) with the person's own token: cleaned and capped at 6,000
 // characters in memory, and never stored, logged or sent to the model. Gmail's 404 throws as a GmailError with status 404.
 export async function readMessage(

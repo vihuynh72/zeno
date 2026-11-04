@@ -330,6 +330,10 @@ export type DraftResponse =
 // GET /api/mail ("Show all mail"): the newest 20 emails from every inbox tab, as the day's rows.
 export type MailListResponse = { state: "ok"; emails: DayEmail[] } | { state: "signed-out" | "error" };
 
+// GET /api/mail/waiting ("Waiting on"): up to 3 emails she sent 3+ days ago with no reply; to is the To header. Code and
+// bank mail is left out.
+export type WaitingResponse = { state: "ok"; waiting: { id: string; to: string; subject: string; sentAt: string }[] } | { state: "signed-out" | "error" };
+
 // POST /api/goal/step body ("Add as a step"): one step from an email for one of her goals. Answers with GoalResponse.
 export type AddStepRequest = { goalId: string; title: string };
 

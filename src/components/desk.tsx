@@ -1,7 +1,7 @@
 "use client";
 
 import { type CSSProperties, type KeyboardEvent, type MouseEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { DayEmail, DayEvent, Deadline, DoneStep, DraftResponse, Goal, MailLinesResponse, MailListResponse, MailResponse, Progress, SourceState } from "@/lib/day";
+import type { DayEmail, DayEvent, Deadline, DoneStep, DraftResponse, Goal, MailLinesResponse, MailListResponse, MailResponse, Progress, SourceState, WaitingResponse } from "@/lib/day";
 import type { Today } from "@/components/day-view";
 import { browserZone, composeUrl, freeGaps, gmailRow, httpsOnly, markEvents, senderName, snippetLine, timeRange } from "@/components/desk-rows";
 import { deskPlans, doneCaption, doneSteps, dueShort, duration, mergeDone, nextCaption, sameGoal } from "@/components/goal-rows";
@@ -50,6 +50,7 @@ type DeskProps = {
   onDeadline?(deadline: Deadline): void;
   onAdd?(text: string): void;
   onStep?(goalId: string, title: string): Promise<boolean>;
+  onFollowUp?(to: string, subject: string): void;
 };
 
 // Only the backdrop: a click on the dialog's own scrollbar lands inside its box.
@@ -122,7 +123,7 @@ function unfold(dialog: HTMLDialogElement, from: DOMRect | undefined) {
   dialog.firstElementChild?.animate([{ opacity: 0.4 }, { opacity: 1 }], { duration: 120, easing: "ease-out" });
 }
 
-function DeskBody({ tab: opensOn = "today", today, goal, goals, progress, onSignIn, onGoal, onDeadline, onAdd, onStep, booked = [] }: Omit<DeskProps, "open" | "onClose">) {
+function DeskBody({ tab: opensOn = "today", today, goal, goals, progress, onSignIn, onGoal, onDeadline, onAdd, onStep, onFollowUp, booked = [] }: Omit<DeskProps, "open" | "onClose">) {
   // Wall clock to the minute; 0 on the server, so nothing is marked before the browser knows the time.
   const now = useSyncExternalStore(everyHalfMinute, () => Math.floor(Date.now() / 60_000) * 60_000, () => 0);
   const [tab, setTab] = useState(opensOn);
@@ -227,7 +228,7 @@ function DeskBody({ tab: opensOn = "today", today, goal, goals, progress, onSign
           <div className={`grid grid-cols-1 items-start gap-6 ${mailOn ? "lg:grid-cols-2 lg:grid-rows-[auto_auto_1fr]" : "max-w-[760px]"}`}>
             <Goals plans={plans} date={date} hint={deadlines.length > 0} failed={Boolean(today && today.sources.goals !== "ok")} onGoal={onGoal} />
             <DoneToday done={done} date={date} />
-            {today && mailOn && <Mail today={today} goals={plans} onAdd={onAdd} onStep={onStep} all />}
+            {today && mailOn && <Mail today={today} goals={plans} onAdd={onAdd} onStep={onStep} onFollowUp={onFollowUp} all />}
             {deadlines.length > 0 && <Deadlines deadlines={deadlines} plans={plans} onGoal={onGoal} onDeadline={onDeadline} />}
             {today && calendarOn && <Calendar today={today} now={now} booked={booked} />}
           </div>
@@ -407,13 +408,14 @@ type MailProps = {
   goals?: Goal[]; // her open goals, the chips for "Add as a step"
   onAdd?(text: string): void; // "Make it a goal": the page plans these words (POST /api/goal/add)
   onStep?(goalId: string, title: string): Promise<boolean>; // "Add as a step": false when it wasn't saved
-  all?: boolean; // the Desk's card: "Show all mail" under the important ones
+  all?: boolean; // the Desk's card: "Waiting on", and "Show all mail" under the important ones
+  onFollowUp?(to: string, subject: string): void; // "Waiting on"'s Follow up: a 2-minute goal
 };
 
 // Only important mail reaches the desk, mail that asks her something first (Vi, Nov 3), each with one line on what it
 // asks and by when (Nov 4), and the rest of her mail one tap away. A tap opens one email in place, read in full from
 // Gmail; its text lives only in this card's state, never stored or logged.
-export function Mail({ today, goals = [], onAdd, onStep, all = false }: MailProps) {
+export function Mail({ today, goals = [], onAdd, onStep, onFollowUp, all = false }: MailProps) {
   const { email } = today.sources;
   const gmail = httpsOnly(today.mailUrl)?.split("#")[0];
   const list = [...today.emails.filter((mail) => mail.asks), ...today.emails.filter((mail) => !mail.asks)].slice(0, 6);
@@ -424,6 +426,7 @@ export function Mail({ today, goals = [], onAdd, onStep, all = false }: MailProp
   const [lines, setLines] = useState(() => readLines(localDate(browserZone())));
   const asked = useRef(new Set<string>());
   const [more, setMore] = useState<MailListResponse | "loading" | null>(null);
+  const [waiting, setWaiting] = useState<Extract<WaitingResponse, { state: "ok" }>["waiting"]>([]);
   // Code and bank mail is never summed up: the page never opens it.
   const summed = email === "ok" ? list.flatMap((mail) => (mail.id && !mail.sensitive ? [mail.id] : [])).join(",") : "";
 
@@ -460,6 +463,19 @@ export function Mail({ today, goals = [], onAdd, onStep, all = false }: MailProp
       })
       .catch(() => {});
   }, [summed]);
+
+  // Mail she sent 3+ days ago that nobody answered (Nov 4), on the Desk only; none or a failed read shows nothing.
+  useEffect(() => {
+    if (!all || email !== "ok") return;
+    const stop = new AbortController();
+    fetch("/api/mail/waiting", { signal: stop.signal, cache: "no-store" })
+      .then((response) => response.json() as Promise<WaitingResponse>)
+      .then((res) => {
+        if (!stop.signal.aborted && res.state === "ok" && Array.isArray(res.waiting)) setWaiting(res.waiting.slice(0, 3));
+      })
+      .catch(() => {});
+    return () => stop.abort();
+  }, [all, email]);
 
   // One email open at a time; closing one drops its text.
   function toggle(id: string) {
@@ -588,6 +604,30 @@ export function Mail({ today, goals = [], onAdd, onStep, all = false }: MailProp
                 <ul>{other.map(row)}</ul>
               </>
             )}
+          </>
+        )}
+        {waiting.length > 0 && (
+          <>
+            <h4 className="font-bold text-ink-2">Waiting on</h4>
+            <ul>
+              {waiting.map((item) => (
+                <li key={item.id} className="flex items-baseline gap-4">
+                  <span className="min-w-0 flex-1 truncate">
+                    {senderName(item.to)}
+                    <span className="px-2 text-ink-2" aria-hidden="true">
+                      ·
+                    </span>
+                    <span className="sr-only">: </span>
+                    {item.subject}
+                  </span>
+                  {onFollowUp && (
+                    <button type="button" onClick={() => onFollowUp(item.to, item.subject)} className="shrink-0 underline underline-offset-4">
+                      Follow up<span className="sr-only"> with {senderName(item.to)}</span>
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
           </>
         )}
         {/* The rest of her recent mail, under the important ones (Vi, Nov 4: "show more than important"). */}

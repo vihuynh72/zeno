@@ -11,7 +11,7 @@ const flow = await import("./day-flow.ts");
 const { addHeard, asks, canvasFor, cardSize, checkinMinute, clock, dayPart, doneLine, dueLabel, FOCUS, foundLine, greeting, groupFacts } = flow;
 const { isEmailStep, isNotes, laterBlock, laterMinutes, nextScreen, openingReusable, openingSig, openSteps, quickReplies } = flow;
 const { replanOnCanvas, slotLabel, soonEvent, streakLine, withStatus } = flow;
-const { addedStep, barCaption, duration, goalRow, mailPlan, namedStep, nextProposal, openPlans, proposedStep, realMinutes, resumePlan, runningStep } = flow;
+const { addedStep, barCaption, duration, followPlan, goalRow, mailPlan, namedStep, nextProposal, openPlans, proposedStep, realMinutes, resumePlan, runningStep } = flow;
 const { sameTitle, spoken, stoppedLine, todayLine, untilNext } = flow;
 const { asksBig, extraReplies, goalLine, isResearchStep, keepClock, nextFewLine, splitLater } = flow;
 
@@ -100,9 +100,16 @@ for (const title of [
   // An asking email's plan (mailPlan) gets it too.
   mailPlan({ from: "Prof. Lin <lin@school.edu>", subject: "Office hours?", snippet: "", unread: true }).steps[0].title,
   mailPlan(null).steps[0].title,
+  // And a follow-up for mail nobody answered (followPlan, Nov 4).
+  followPlan('"Patel, Ana" <ana@school.edu>', "Lab 3 slides").steps[0].title,
 ]) {
   assert.equal(isEmailStep(title), true, title);
 }
+assert.deepEqual(followPlan('"Patel, Ana" <ana@school.edu>', "Lab 3 slides"), {
+  title: "Follow up with Patel, Ana",
+  steps: [{ title: "Email Patel, Ana to follow up on Lab 3 slides", minutes: 2 }],
+});
+assert.deepEqual(followPlan("dana@school.edu", "").steps, [{ title: "Email dana to follow up", minutes: 2 }]);
 for (const title of ["Read the email from Dana", "Emailing list cleanup", "Draft the methods section", "Messages"]) assert.equal(isEmailStep(title), false, title);
 // Helpful links are laid out for a step that reads or looks things up, never for a run or a reply.
 for (const title of ["Find two course readings with page numbers", "Look up Etsy fees", "Research venues near home", "Read chapter 3", "Find examples of toasts", "Compare 3 album sizes"]) {

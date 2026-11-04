@@ -118,6 +118,7 @@ export type DayViewProps = {
     openDeadline(deadline: Deadline): void;
     mailGoal?(text: string): void;
     addStep?(goalId: string, title: string): Promise<boolean>;
+    followUp?(to: string, subject: string): void; // "Waiting on": mail nobody answered becomes a 2-minute follow-up
     // The links by a desk's goal title (Nov 4): remove the goal or mark it done, and the toast's Undo for a removal.
     closeGoal?(how: "remove" | "finish"): void;
     undo?(): void;
@@ -751,6 +752,7 @@ export default function DayView(props: DayViewProps) {
         onDeadline={on.openDeadline}
         onAdd={on.mailGoal}
         onStep={on.addStep}
+        onFollowUp={on.followUp}
       />
       <SheetPanel open={props.sheet === "memory"} title="Memory" onClose={() => on.sheet(null)}>
         {props.sheet === "memory" && (

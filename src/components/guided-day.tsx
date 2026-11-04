@@ -64,6 +64,7 @@ import {
   keepClock,
   laterBlock,
   laterMinutes,
+  followPlan,
   mailPlan,
   namedStep,
   nextFewLine,
@@ -1255,8 +1256,9 @@ export default function GuidedDay() {
   }
 
   // An email that asks something: a plan with one 2-minute reply (plain words when the API refuses its sender or
-  // subject), its email remembered by id for the desk. One that already has an open plan opens it.
-  async function answerMail(email: DayEmail) {
+  // subject), its email remembered by id for the desk. One that already has an open plan opens it. words: another
+  // 2-minute plan, as for a follow-up on mail nobody answered (followPlan, Nov 4).
+  async function answerMail(email: DayEmail, words = mailPlan(email)) {
     const known = Object.entries(mailGoals).find(([, id]) => id === email.id)?.[0];
     const plan = known ? openPlans(latest.current.goal, latest.current.goals).find((one) => one.id === known) : undefined;
     if (plan) return openPlan(plan);
@@ -1264,7 +1266,6 @@ export default function GuidedDay() {
     if (making.current.has(key)) return;
     making.current.add(key);
     const ticket = openDesk();
-    const words = mailPlan(email);
     setPlanning({ title: words.title, due: null, line: "Getting it ready…" });
     let res = await post<GoalResponse>("/api/goal", words);
     if (res.state === "bad-request") res = await post<GoalResponse>("/api/goal", mailPlan(null));
@@ -2058,6 +2059,11 @@ export default function GuidedDay() {
           if (fresh) void addGoal(text);
         },
         addStep,
+        followUp(to, subject) {
+          setSheet(null);
+          // No id: the follow-up's desk shows no email card (hers would draft a reply to herself).
+          if (fresh) void answerMail({ from: to, subject, snippet: "", unread: false }, followPlan(to, subject));
+        },
         // The desk's goal is the page's current one.
         closeGoal(how) {
           if (goal && fresh && !busy) void endGoal(goal.id, goal.title, how);
