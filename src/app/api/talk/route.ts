@@ -1,13 +1,13 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { cleanCanvas, cleanHistory, talk } from "@/lib/agent";
+import { cleanCanvas, cleanHistory, DEFERRED, DEFERS, talk } from "@/lib/agent";
 import { aiConfigured } from "@/lib/ai";
 import { freeSlots } from "@/lib/calendar";
 import { loadUserContext } from "@/lib/context";
 import type { TalkResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
-import { openGoals } from "@/lib/goals";
+import { currentGoal, openGoals } from "@/lib/goals";
 import { timeZoneFrom } from "@/lib/tz";
 import { cleanPrivate } from "@/lib/vault";
 
@@ -32,6 +32,14 @@ export async function POST(request: Request) {
   const message = typeof body?.message === "string" ? body.message.trim().slice(0, 2000) : "";
   if (!message) {
     return NextResponse.json({ state: "bad-request" } satisfies TalkResponse, { status: 400 });
+  }
+  // "Not now" or "Not yet" alone changes nothing, so it is answered at once with the current goal as it is; a failed read
+  // goes the usual way, so the page never loses its goal.
+  if (DEFERS.test(message) && databaseConfigured()) {
+    const goal = await currentGoal(session.user.email).catch(() => undefined);
+    if (goal !== undefined) {
+      return NextResponse.json({ state: "ok", reply: DEFERRED, goal, actions: [], options: [], proposal: [] } satisfies TalkResponse);
+    }
   }
 
   const timeZone = timeZoneFrom((await cookies()).get("tz")?.value);

@@ -63,6 +63,10 @@ assert.deepEqual(snapFrom(reply(), TODAY), {
   ],
 });
 assert.equal(snapFrom(reply({ due: TODAY }), TODAY)?.due, TODAY, "due today stays");
+// Small steps from a photo too (round 2: "Write the 900 to 1200 word paper · 45"): up to 12, each capped to 25 minutes.
+const big = [{ title: "Pick one app", minutes: 3 }, { title: "Write the 900 to 1200 word paper", minutes: 45 }, ...Array.from({ length: 12 }, (_, i) => ({ title: `Write part ${i + 1}`, minutes: 20 }))];
+const bigPlan = snapFrom(reply({ steps: big }), TODAY)?.steps ?? [];
+assert.deepEqual([bigPlan.length, bigPlan[0].minutes, bigPlan[1].minutes, bigPlan[2].minutes], [12, 3, 25, 20]);
 for (const due of ["2026-11-02", "2026-02-30", "", "Friday", "11/06/2026", null, 20261106]) {
   assert.equal(snapFrom(reply({ due }), TODAY)?.due, null, `due ${due} becomes none`);
 }
@@ -121,6 +125,13 @@ assert.match(String(body.messages[0].content), /The first step takes at most 5 m
 // Any list, letter or handout, for anyone (Nov 4: an accountant's list came back "no assignment"), and the last step finishes.
 assert.match(String(body.messages[0].content), /found is true when it shows something to get done: a to-do list, a letter, a bill, an email, a form, a flyer, a handout or an assignment\./);
 assert.match(String(body.messages[0].content), /the last one finishes the job/);
+// Small steps, planned backward from the due date (round 2).
+assert.match(
+  String(body.messages[0].content),
+  /steps: 3 to 12 in the order to do them[^.]*from 2 to 25\.[\s\S]*No step is longer than 25 minutes: split bigger work into parts[\s\S]*plan only its first part toward a clear milestone[\s\S]*Plan backward from the due date: what other people need time for comes first/,
+);
+assert.equal((body.response_format.json_schema.schema as unknown as { properties: { steps: { maxItems: number } } }).properties.steps.maxItems, 12);
+assert.match(String(body.messages[0].content), /Write a number range with 'to', like '900 to 1200 words', never with a dash\./);
 assert.doesNotMatch(String(body.messages[0].content), /student/);
 assert.ok(!String(body.messages[0].content).includes("base64"), "the photo is only in the image part");
 
