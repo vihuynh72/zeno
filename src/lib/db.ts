@@ -92,6 +92,15 @@ export async function ensureSchema() {
         sql`ALTER TABLE user_state ADD COLUMN IF NOT EXISTS forgotten jsonb`,
         // A deadline memory's last day plus one: listMemories hides it from then on, addMemory deletes it.
         sql`ALTER TABLE memories ADD COLUMN IF NOT EXISTS expires_on DATE`,
+        // Connected apps (src/lib/app-token.ts): one token per person, kept only as its SHA-256 hash.
+        sql`
+          CREATE TABLE IF NOT EXISTS app_tokens (
+            user_email TEXT PRIMARY KEY,
+            token_hash TEXT UNIQUE NOT NULL,
+            time_zone TEXT NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT now()
+          )
+        `,
       ])
       .then(() => undefined)
       .catch((error) => {

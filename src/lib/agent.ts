@@ -1,4 +1,4 @@
-import { askModel, askWithTools, NEVER_KEEP, ZENO_VOICE_PROMPT, type AgentMessage, type ChatMessage, type ToolCall } from "@/lib/ai";
+import { aiConfigured, askModel, askWithTools, NEVER_KEEP, ZENO_VOICE_PROMPT, type AgentMessage, type ChatMessage, type ToolCall } from "@/lib/ai";
 import { freeLine } from "@/lib/brief";
 import { nextDate } from "@/lib/calendar";
 import { dayToText, type UserContext } from "@/lib/context";
@@ -19,14 +19,17 @@ import {
 } from "@/lib/day";
 import { addressOf } from "@/lib/gmail";
 import {
+  activateGoal,
   addMemory,
   changeStepStatus,
   deadlineMemory,
   dueDay,
   forgetMemory,
   isId,
+  openGoals,
   replaceRemainingSteps,
   setGoal,
+  titleKey,
   todoMemory,
   type NewStep,
 } from "@/lib/goals";
@@ -335,6 +338,22 @@ export async function planDeadline(plan: PlanRequest, today: string): Promise<Ne
   // Never the reply in the error: it can quote the instructions.
   if (!steps) throw new Error("Plan reply held no 3 to 7 fitting steps");
   return steps;
+}
+
+// POST /api/goal/plan and the MCP tool plan_goal: a checked PlanRequest becomes the current plan, in Muse's steps or the
+// rule plan when the model fails or refuses. Saving pauses the old current plan, as POST /api/goal does. Throws only when
+// the save fails.
+export async function savePlan(email: string, plan: PlanRequest, today: string): Promise<Goal> {
+  const steps = aiConfigured()
+    ? await planDeadline(plan, today).catch((error) => {
+        // The message only: a reply can quote the instructions, and the error never carries one.
+        console.error("Plan model call failed:", error instanceof Error ? error.message.slice(0, 120) : "unknown");
+        return null;
+      })
+    : null;
+  // A second tap, or two at once, while this plan was being made: the plan already saved opens, never a copy.
+  const twin = (await openGoals(email)).find((goal) => titleKey(goal.title) === titleKey(plan.title));
+  return twin ? ((await activateGoal(email, twin.id)) ?? twin) : setGoal(email, plan.title, steps ?? rulePlan(plan.title), plan.due);
 }
 
 // The line under the home's greeting: strict JSON with options, which Talk shows. The model picks nothing since Nov 3.
