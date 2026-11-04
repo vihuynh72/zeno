@@ -49,13 +49,18 @@ export function openSteps(goal: Goal | null): Step[] {
 }
 
 // Where a reply from /api/talk leaves the person: a plan made or changed shows as the card (its first step, ready to
-// start); talking during focus keeps the timer's card while a step is open; anything else is talk.
-export function nextScreen(screen: Screen, actions: TalkAction[], goal: Goal | null): Screen {
+// start); talking during focus keeps the timer's card while a step is open, even through a change to the steps after it
+// (Nov 4: nothing stops a running clock), and talking on a goal's desk (`desk`) keeps its card, with Zeno's line under
+// it; anything else is talk.
+export function nextScreen(screen: Screen, actions: TalkAction[], goal: Goal | null, desk = false): Screen {
   const did = (type: TalkAction["type"]) => actions.some((a) => a.type === type);
-  if (did("step-started") && goal?.steps.some((s) => s.status === "doing")) return "focus";
+  const running = goal?.steps.some((s) => s.status === "doing");
+  if (did("step-started") && running) return "focus";
+  if (screen === "focus" && running && !did("step-finished")) return "focus";
   if ((did("goal-set") || did("roadmap-changed")) && openSteps(goal).length > 0) return "ready";
   if (did("step-finished")) return "checkin";
-  return screen === "focus" && openSteps(goal).length > 0 ? "focus" : "talk";
+  const open = openSteps(goal).length > 0;
+  return screen === "focus" && open ? "focus" : desk && open ? "ready" : "talk";
 }
 
 // A saved line comes back only on the same date and part of the day, so a morning line never greets the evening.
@@ -83,6 +88,22 @@ export function quickReplies(options: unknown, offered = false): string[] {
     // Chips are keyed by label and the card adds its own "Something else", so no label may repeat.
     .filter((o, i, all) => all.indexOf(o) === i && !/^something else\W*$/i.test(o) && !(offered && onlyYes(o)))
     .slice(0, offered ? 2 : 3);
+}
+
+// Zeno's tap answers on a step's screen, less the ones its own buttons already are or that only put it off (Nov 4): a
+// second Start reset a running clock, and a second Done or Stop for now read as another action (live, Nov 3). A bare
+// "Yes" stays: it answers the question.
+const ECHOES = new Set(
+  ["start", "start now", "start it", "begin", "go", "go ahead", "ready", "im ready", "lets go", "lets start", "lets do it", "lets do this", "do it",
+    "do it now", "not now", "not yet", "not today", "later", "maybe later", "pause", "take a break", "help", "need help", "i need help", "stuck",
+    "im stuck", "did it", "i did it", "all done", "im done"],
+);
+export function extraReplies(options: string[]): string[] {
+  return options.filter((option) => {
+    const words = option.toLowerCase().replace(/['’]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+    const rest = words.replace(/^(yes|yeah|yep|ok|okay|sure)\b ?/, "");
+    return rest === "" || !(ECHOES.has(rest) || /^(done|finished|stop)\b/.test(rest));
+  });
 }
 
 // Whether a spoken line asks something, so hands-free listening opens the mic after it.
@@ -168,7 +189,8 @@ export function choiceCard(choice: Choice, currentId: string | null, today: stri
   return {
     title: goal.title,
     minutes: next?.minutes ?? null,
-    meta: [`${done} of ${goal.steps.length} done`, goal.due ? dueLabel(goal.due, today, "short") : ""].filter(Boolean).join(" · "),
+    // No count of 0: the font's slashed zero read as "Ø" (Nov 3).
+    meta: [done ? `${done} of ${goal.steps.length} done` : "not started", goal.due ? dueLabel(goal.due, today, "short") : ""].filter(Boolean).join(" · "),
     last: resumes ? "Picks up where you stopped." : next ? `Next: ${next.title}` : "",
   };
 }
@@ -195,9 +217,18 @@ export function nextProposal(goal: Goal | null, id: string | null): string | nul
   return open[(Math.max(0, open.findIndex((step) => step.id === id)) + 1) % open.length].id;
 }
 
-// The first todo step a plan change added ("Something smaller"'s first piece), so the desk proposes it; null for none.
+// The first todo step a plan change added or reworded, in plan order ("Make it smaller"'s first piece, even when Zeno
+// renamed the step into it rather than adding one: live, Nov 3, the bigger rest was proposed); null for none.
 export const addedStep = (before: Goal | null, after: Goal | null) =>
-  after?.steps.find((step) => step.status === "todo" && !before?.steps.some((old) => old.id === step.id))?.id ?? null;
+  after?.steps.find((step) => step.status === "todo" && !before?.steps.some((old) => old.id === step.id && old.title === step.title))?.id ?? null;
+
+// The desk's steps list (Nov 4): every done or skipped step and the next `room` open ones (more when the marked one is
+// further on); the open steps after those wait under "Later (N)".
+export function splitLater(steps: Step[], marked?: string, room = 5): { shown: Step[]; later: number } {
+  const open = steps.filter((step) => step.status === "todo" || step.status === "doing");
+  const hidden = new Set(open.slice(Math.max(room, open.findIndex((step) => step.id === marked) + 1)).map((step) => step.id));
+  return { shown: steps.filter((step) => !hidden.has(step.id)), later: hidden.size };
+}
 
 // A step left running when the page opens, so it goes straight to Focus; one started 3 hours ago or more (a tab closed
 // mid-step yesterday) opens on the home instead.
@@ -222,8 +253,15 @@ export function duration(minutes: number) {
 }
 
 // The goal strip's caption: "3 of 7 done", and right after a Done, once more than half is done, "4 of 7 · over halfway".
+// None done is said in words: the font's slashed zero read as "Ø of 5 done" (Nov 3).
 export const barCaption = (done: number, total: number, justDone = false) =>
-  justDone && done * 2 > total && done < total ? `${done} of ${total} · over halfway` : `${done} of ${total} done`;
+  done === 0
+    ? total === 1
+      ? "Not done yet"
+      : `None of ${total} done yet`
+    : justDone && done * 2 > total && done < total
+      ? `${done} of ${total} · over halfway`
+      : `${done} of ${total} done`;
 
 const localDay = (iso: string, timeZone: string) => localDate(timeZone, new Date(iso));
 
@@ -317,11 +355,23 @@ export function canvasFor<T extends { title: string; course?: string }>(plan: Go
 export const replanOnCanvas = (screen: Screen | null, linked: boolean, found: Pick<CanvasAssignment, "submitted">[]) =>
   screen === "ready" && (!linked || found.some((item) => !item.submitted));
 
-// What the screen after Done, or after a skip said in Focus, says: the next step, or that the plan is finished.
+// What the screen after Done, or after a skip said in Focus, says: the next step, or that the plan is finished. A goal
+// that keeps going (rhythm) is never finished: its next few are being planned (POST /api/goal/next).
 export function doneLine(goal: Goal | null, skipped = false): string {
   const next = openSteps(goal)[0];
+  if (!next && goal?.rhythm) return `${skipped ? "Skipped." : "Nice."} Planning your next few…`;
   if (!next) return `${skipped ? "Skipped. " : ""}That's all of ${goal?.title.replace(/[.!?]+$/, "") || "it"}.`;
   return `${skipped ? "Skipped." : "Nice."} Next: ${next.title.replace(/\.+$/, "")}${next.minutes ? `, ${next.minutes} min` : ""}.`;
+}
+
+// After a goal that keeps going got its next few steps: "Planned your next few: A, B and C." (three named at most).
+export function nextFewLine(before: Goal | null, after: Goal): string {
+  const added = after.steps
+    .filter((step) => step.status === "todo" && !before?.steps.some((old) => old.id === step.id))
+    .map((step) => step.title.replace(/[.!?]+$/, ""));
+  const named = added.length > 3 ? [...added.slice(0, 3), `${added.length - 3} more`] : added;
+  if (named.length === 0) return "Planned your next few.";
+  return `Planned your next few: ${named.length === 1 ? named[0] : `${named.slice(0, -1).join(", ")} and ${named.at(-1)}`}.`;
 }
 
 // A line as Zeno says it: "15 min" is "15 minutes" and "1 h" is "1 hour".
@@ -336,6 +386,13 @@ export const spoken = (line: string) =>
 // one to read ("Read the email from Dana").
 export const isEmailStep = (title: string) =>
   /^(e-?mail|write to|reply to|message)\b|\b(draft|write|send|compose|answer)\b.*\be-?mail\b|\bby e-?mail\b/i.test(title.trim());
+
+// A step that reads or looks things up, so the desk lays out Helpful links for it (Nov 4: never for "Put shoes out"
+// or a landlord reply; any step still gets them on a tap).
+export const isResearchStep = (title: string) =>
+  /\b(read|reading|readings|research|look up|look into|search|sources?|articles?|papers?|studies|references?|citations?|examples?|compare|learn about)\b/i.test(
+    title,
+  );
 
 // One step's new status, as the server will save it, so a tap shows at once.
 export function withStatus(goal: Goal, stepId: string, status: StepStatus, now: Date): Goal {
@@ -352,6 +409,15 @@ export function withStatus(goal: Goal, stepId: string, status: StepStatus, now: 
   };
 }
 
+// Nothing resets a running clock (Nov 4): when `next` runs the same step as `before` from a later start (a save's
+// answer, a start said again, or a smaller first piece carrying on its step's clock), the earlier start stays.
+export function keepClock(before: Goal | null, next: Goal | null): Goal | null {
+  const was = before?.steps.find((step) => step.status === "doing");
+  const now = next?.steps.find((step) => step.status === "doing" && step.id === was?.id);
+  if (!next || !now?.startedAt || !was?.startedAt || !(Date.parse(was.startedAt) < Date.parse(now.startedAt))) return next;
+  return { ...next, steps: next.steps.map((step) => (step === now ? { ...step, startedAt: was.startedAt } : step)) };
+}
+
 // "due Friday" style (or "due Fri"), from YYYY-MM-DD dates; "" before the browser's clock.
 export function dueLabel(due: string, today: string, weekday: "long" | "short" = "long"): string {
   const days = Math.round((Date.parse(due) - Date.parse(today)) / 86_400_000);
@@ -360,6 +426,23 @@ export function dueLabel(due: string, today: string, weekday: "long" | "short" =
   const named = date.toLocaleDateString("en-US", { timeZone: "UTC", ...(days > 0 && days < 7 ? { weekday } : { month: "short", day: "numeric" }) });
   if (days < 0) return `was due ${named}`;
   return days === 0 ? "due today" : days === 1 ? "due tomorrow" : `due ${named}`;
+}
+
+// The goal strip's line under the title (Nov 4): "due Thu Nov 12 · 9 days left"; for a goal that keeps going, its rhythm
+// and week, counted in Monday weeks from its first finished step ("3 runs a week · week 2"), with the days left when it
+// also has a due date. "" before the browser's clock.
+export function goalLine(goal: Pick<Goal, "due" | "rhythm" | "steps">, today: string, timeZone: string): string {
+  const days = goal.due ? daysFrom(today, goal.due) : NaN;
+  if (!today || (goal.due && Number.isNaN(days))) return "";
+  const date = goal.due ? new Date(`${goal.due}T12:00:00Z`) : null;
+  const named = date?.toLocaleDateString("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" }).replace(",", "");
+  const left = days < 0 ? `was due ${named}` : days === 0 ? "due today" : days === 1 ? "due tomorrow" : `${days} days left`;
+  const rhythm = goal.rhythm?.trim();
+  if (!rhythm) return goal.due ? (days > 1 ? `due ${named} · ${left}` : left) : "";
+  const monday = (day: string) => Date.parse(day) - ((new Date(day).getUTCDay() + 6) % 7) * DAY_MS;
+  const first = goal.steps.flatMap((step) => (step.status === "done" && step.doneAt ? [localDate(timeZone, new Date(step.doneAt))] : [])).sort()[0];
+  const week = first ? Math.max(1, Math.round((monday(today) - monday(first)) / (7 * DAY_MS)) + 1) : 1;
+  return [rhythm, `week ${week}`, goal.due ? left : ""].filter(Boolean).join(" · ");
 }
 
 // ---------- Calendar ----------
