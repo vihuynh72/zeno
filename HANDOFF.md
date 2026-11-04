@@ -41,7 +41,7 @@ then review fixes, Claude's own Chrome test, round 2 of the simulation and its f
   date by typing, a goal named mid-step, Show me how, Stop for now, words with no goal, a rolling goal planning its
   next few, a money goal reworded, coming back.
 - **The 10-person simulation (same ten personas each round, fresh users, a local production build):** round 1 (Nov 3
-  evening) 2.8 of 5; round 2 (1 AM) 3.2; round 3 (2:30 AM) 3.3; round 4 (3:30 AM) 3.5; round 5 (4:15 AM) ROUND5. Reports and syntheses in the
+  evening) 2.8 of 5; round 2 (1 AM) 3.2; round 3 (2:30 AM) 3.3; round 4 (3:30 AM) 3.5; round 5 (4:15 AM) 3.45 (flat: what is left is bigger builds or Vi's calls, below). Reports and syntheses in the
   scratchpad (`sim/synthesis-round2.json` to `-round5.json`).
 - **After round 2:** coming back offers "Pick up where you left off" (the current goal's next step, one Start); sending
   from the docked box brings the step and the reply into view; a first run with nothing to read opens straight on the
@@ -59,8 +59,16 @@ then review fixes, Claude's own Chrome test, round 2 of the simulation and its f
   today) stay silent unless hands-free, while the opening and heads-ups are still spoken; Done stays above the dock
   after long replies on a phone; notes skip taps; "Last done" replaces "Where you stopped"; the Week says "Due · N steps
   left" on a deadline's day; no plan opens on "pick your days"; Zeno never says it tracks or keeps things.
-- **Production:** deployed six times overnight (`64043a5`, `65edf91`, `2b3377f`, `33cec97`, then the latest); no
-  runtime errors. Each deploy passed all 31 checks, tsc, eslint and the build.
+- **After round 5:** coming back's Start works when the card's goal is already the current one (a one-goal account; it
+  did nothing in `7ae25a2`); on the desk, Start starts the step Zeno's line names; Zeno says it can't set reminders.
+- **Production:** `bf171f8`, deployed eight times overnight (`64043a5`, `65edf91`, `2b3377f`, `2a91a12`, `33cec97`,
+  `7ae25a2`, `3e612ea`, `bf171f8`); no runtime errors in production. Each deploy passed all 31 checks, tsc, eslint and
+  the build.
+- **Questions for Vi (from the simulation):** Make it smaller: keep the inserted piece (your design) or split the step
+  so the plan never grows (7 of 10 asked)? Coming back: keep "a goal due within 2 days leads" (Claude's call tonight)?
+  Taps silent (Claude's call; say "done" aloud for Zeno's voice on camera)? A Remove / Mark done for goals? The Week as a
+  light plan (steps spread before the due date), and day picking for habits, after the video? One tap question before
+  planning when the plan hinges on it? Where the "Muse, Meta's AI" credit lives?
 - **Known gaps:** Make it smaller adds a piece before the step (Vi's design; testers in three rounds asked for a split
   instead); habits run as a checklist (no day picker or rest days); the Week doesn't place future steps on days; some
   adds and talk turns take 10-25 s; voice not tested by ear; no Google-connected account tested tonight.
