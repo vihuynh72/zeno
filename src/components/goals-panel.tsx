@@ -73,7 +73,8 @@ export default function GoalsPanel({ goals, suggestions, openId, proposed, today
                     ))}
                   </span>
                   {row.line && <span className="line-clamp-2 text-[18px]">{row.line}</span>}
-                  {row.when && <span className="block truncate text-[18px] text-ink-2">{row.when}</span>}
+                  {/* Wraps: "3 runs a week · due Fri Jan 1 · 58 days left" was cut on a phone (Nov 4). */}
+                  {row.when && <span className="line-clamp-2 text-[18px] text-ink-2">{row.when}</span>}
                 </span>
               </button>
             </li>

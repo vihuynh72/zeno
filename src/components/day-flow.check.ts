@@ -13,7 +13,7 @@ const { isEmailStep, isNotes, laterBlock, laterMinutes, nextScreen, openingReusa
 const { replanOnCanvas, slotLabel, soonEvent, streakLine, withStatus } = flow;
 const { addedStep, barCaption, duration, goalRow, mailPlan, nextProposal, openPlans, proposedStep, realMinutes, runningStep } = flow;
 const { sameTitle, spoken, stoppedLine, todayLine, untilNext } = flow;
-const { extraReplies, goalLine, isResearchStep, keepClock, nextFewLine, splitLater } = flow;
+const { asksBig, extraReplies, goalLine, isResearchStep, keepClock, nextFewLine, splitLater } = flow;
 
 const step = (id: string, status: Step["status"], extra: Partial<Step> = {}): Step => ({
   id,
@@ -142,7 +142,12 @@ assert.deepEqual(
 );
 assert.deepEqual(extraReplies(["Found one", "TikTok", "Yes", "Help me pick one", "Later tonight", "Skip it"]), ["Found one", "TikTok", "Yes", "Help me pick one", "Later tonight", "Skip it"]);
 assert.deepEqual(extraReplies(["Start with the intro", "OK, start", "Okay"]), ["Start with the intro", "Okay"], "a choice that begins with start stays");
-// Focus asked "Done?": the big Done is the answer, so a bare yes (a second Done) and finish or restart words go (review, Nov 4).
+// The big button is the yes ("Done?" in Focus, "Start now?" on the desk): a bare yes would be a second one (Nov 4).
+assert.equal(asksBig("Nice paragraph. Done?", true), true);
+assert.equal(asksBig("Done. Friday is the line. Find the number next. Start now?", false), true);
+assert.equal(asksBig("Want me to add a step for the playlist?", false), false);
+assert.equal(asksBig("Start with the intro. It's short.", false), false, "no question");
+assert.equal(asksBig("Ready to start?", true), false, "Focus's big button is Done");
 assert.deepEqual(extraReplies(["Yes", "Not yet", "One more paragraph"], true), ["One more paragraph"]);
 assert.deepEqual(extraReplies(["I'm finished", "Mark it done", "Let's begin", "Start over", "Restart"]), []);
 

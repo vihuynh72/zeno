@@ -42,6 +42,7 @@ import {
   addedStep,
   addHeard,
   asks,
+  asksBig,
   canvasFor,
   checkinMinute,
   dayPart,
@@ -1136,7 +1137,13 @@ export default function GuidedDay() {
       return;
     }
     setPlanning(null);
-    if (res.state === "ok") return changeGoal(res.goal);
+    if (res.state === "ok") {
+      changeGoal(res.goal);
+      // More goals from the same words are in the list now, and the line says so (live, Nov 4: one just appeared there).
+      const titles = others.map((one) => one.title.replace(/[.!?]+$/, ""));
+      if (titles.length > 0) setLine(`Also added to your goals: ${titles.join(" and ")}.`);
+      return;
+    }
     goHome();
     setAddWords(words);
     setNote(res.state === "bad-request" ? NO_GOAL : ADD_FAIL);
@@ -1533,7 +1540,7 @@ export default function GuidedDay() {
     }
     // Zeno's answers to what it just said, on a step's screen only when they add something (Nov 4: never a second Start,
     // Done or Stop for now).
-    const asked = extraReplies(options, screen === "focus" && /\bdone\?/i.test(line)).map((option) => say(option, () => tap(option)));
+    const asked = extraReplies(options, asksBig(line, screen === "focus")).map((option) => say(option, () => tap(option)));
     if (screen === "ready" && onDesk) {
       // Saved answers wait for /api/day; a plan being made has no Start yet.
       if (!fresh || planning || !proposed) return [];

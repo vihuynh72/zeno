@@ -92,23 +92,30 @@ export function quickReplies(options: unknown, offered = false): string[] {
 
 // Zeno's tap answers on a step's screen, less the ones its own buttons already are or that only put it off (Nov 4): a
 // second Start reset a running clock, and a second Done or Stop for now read as another action (live, Nov 3). A bare
-// "Yes" stays, as it answers the question, unless the question is "Done?" (`askedDone`): the big Done answers that.
+// "Yes" stays, as it answers the question, unless the big button is the yes (`yesIsBig`: "Done?" in Focus, "Start now?"
+// on the desk; live, Nov 4: "Yes" sat beside Start).
 const ECHOES = new Set(
   ["start", "start now", "start it", "begin", "begin now", "lets begin", "start over", "start again", "restart", "go", "go ahead", "ready", "im ready",
     "lets go", "lets start", "lets do it", "lets do this", "do it", "do it now", "not now", "not yet", "not today", "later", "maybe later", "pause",
     "take a break", "help", "need help", "i need help", "stuck", "im stuck", "did it", "i did it", "all done", "im done", "im finished", "i finished",
     "i finished it", "mark it done", "mark done"],
 );
-export function extraReplies(options: string[], askedDone = false): string[] {
+export function extraReplies(options: string[], yesIsBig = false): string[] {
   return options.filter((option) => {
     const words = option.toLowerCase().replace(/['’]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
     const rest = words.replace(/^(yes|yeah|yep|ok|okay|sure)\b ?/, "");
-    return rest === "" ? !askedDone : !(ECHOES.has(rest) || /^(done|finished|stop)\b/.test(rest));
+    return rest === "" ? !yesIsBig : !(ECHOES.has(rest) || /^(done|finished|stop)\b/.test(rest));
   });
 }
 
 // Whether a spoken line asks something, so hands-free listening opens the mic after it.
 export const asks = (line: string) => /\?["'”’)]*$/.test(line.trim());
+
+// Whether Zeno's line ends by asking what the screen's big button does: "Done?" in Focus, "Start now?" on the desk.
+export function asksBig(line: string, focus: boolean): boolean {
+  const last = line.trim().split(/(?<=[.!?])\s+/).at(-1) ?? "";
+  return asks(last) && (focus ? /\b(done|finished)\b/i : /\b(start|begin)\b/i).test(last);
+}
 
 // Longer lines get a smaller hand so a reply still fits the card.
 export function cardSize(text: string): "l" | "m" | "s" {
