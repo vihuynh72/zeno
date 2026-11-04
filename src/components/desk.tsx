@@ -1,7 +1,7 @@
 "use client";
 
 import { type CSSProperties, type KeyboardEvent, type MouseEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { DayEmail, DayEvent, Deadline, Goal, MailResponse, Progress, SourceState } from "@/lib/day";
+import type { DayEmail, DayEvent, Deadline, DoneStep, Goal, MailResponse, Progress, SourceState } from "@/lib/day";
 import type { Today } from "@/components/day-view";
 import { browserZone, freeGaps, httpsOnly, markEvents, senderName, snippetLine, timeRange } from "@/components/desk-rows";
 import { deskPlans, doneCaption, dueShort, sameGoal } from "@/components/goal-rows";
@@ -14,8 +14,9 @@ const RULED: CSSProperties = {
   background: "linear-gradient(var(--rule) 1px, transparent 1px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100% var(--lh) local, var(--card)",
 };
 
+// A card whose source was never connected doesn't show at all (Nov 4); its quiet "Connect" line does.
 const SOURCE_NOTE: Record<Exclude<SourceState, "ok">, (name: string) => string> = {
-  "no-access": (name) => `Zeno can't see your ${name} right now. Sign in again to allow it.`,
+  "no-access": (name) => `Connect your ${name} to see it here.`,
   error: (name) => `Zeno couldn't read your ${name} just now.`,
   "not-configured": (name) => `Your ${name} isn't connected yet.`,
 };
@@ -31,11 +32,12 @@ type DeskTab = "today" | "week";
 const TABS: Record<DeskTab, string> = { today: "Today", week: "Week" };
 
 // tab is the view it opens on; the person switches between Today and Week inside. booked is what the card booked since
-// the day loaded, which Today shows. Nothing here writes to the calendar.
+// the day loaded, which Today shows. Nothing here writes to the calendar. today's doneThisWeek is the day's (GET /api/day)
+// steps finished this week, for the Week; without it the Week reads them off the open plans.
 type DeskProps = {
   open: boolean;
   tab?: DeskTab;
-  today: Today | null;
+  today: (Today & { doneThisWeek?: DoneStep[] }) | null;
   goal: Goal | null;
   booked?: DayEvent[];
   onClose(): void;
@@ -56,7 +58,8 @@ function onBackdrop(event: MouseEvent<HTMLDialogElement>) {
   return event.target === event.currentTarget && outside;
 }
 
-// The Desk, unfolded from the card: Today's working cards (goals, mail, deadlines, the day) and the Week's goals.
+// The Today sheet (the Desk until Nov 4), unfolded from the card: Today's working cards (goals, mail, deadlines, the day)
+// and the Week's goals.
 export default function Desk({ open, onClose, ...rest }: DeskProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const downOnBackdrop = useRef(false);
@@ -78,7 +81,8 @@ export default function Desk({ open, onClose, ...rest }: DeskProps) {
   return (
     <dialog
       ref={ref}
-      aria-label="Desk"
+      // Named as the header's link that opens it (Nov 4: "Desk" became "Today").
+      aria-label="Today"
       className="desk"
       // Every way out (Esc, Close, the backdrop) closes the dialog itself, which tells the page here.
       onClose={onClose}
@@ -122,11 +126,14 @@ function DeskBody({ tab: opensOn = "today", today, goal, goals, progress, onSign
   const now = useSyncExternalStore(everyHalfMinute, () => Math.floor(Date.now() / 60_000) * 60_000, () => 0);
   const [tab, setTab] = useState(opensOn);
   const [view, setView] = useState<"goals" | "calendar">("goals"); // the Week's two views
-  const noAccess = today && (today.sources.calendar === "no-access" || today.sources.email === "no-access");
+  // Mail or a calendar never connected is no card and no error, only one quiet optional line (Nov 4).
+  const calendarOn = Boolean(today && today.sources.calendar !== "no-access");
+  const mailOn = Boolean(today && today.sources.email !== "no-access");
+  const connect = today && [!calendarOn && "calendar", !mailOn && "mail"].filter(Boolean).join(" and ");
   const plans = deskPlans(goal, goals);
   const deadlines = today?.sources.calendar === "ok" ? (today.deadlines ?? []) : [];
   const date = now ? localDate(browserZone(), new Date(now)) : "";
-  const grid = tab === "week" && view === "calendar";
+  const grid = tab === "week" && view === "calendar" && calendarOn;
 
   // Arrow keys move between the two views, as a tab list does.
   function onTabKey(event: KeyboardEvent<HTMLDivElement>) {
@@ -141,7 +148,7 @@ function DeskBody({ tab: opensOn = "today", today, goal, goals, progress, onSign
     // Fills the dialog, so a click inside never reads as a backdrop click.
     <div className={`wrap-break-word ${grid ? "flex h-full flex-col" : "min-h-full"}`} data-view={tab}>
       <div className="sticky top-0 z-10 flex items-center justify-between gap-4 bg-desk px-4 pt-6 pb-4 sm:px-8">
-        <div role="tablist" aria-label="Desk" className="flex gap-6" onKeyDown={onTabKey}>
+        <div role="tablist" aria-label="Today and Week" className="flex gap-6" onKeyDown={onTabKey}>
           {(Object.keys(TABS) as DeskTab[]).map((name) => (
             <button
               key={name}
@@ -181,36 +188,47 @@ function DeskBody({ tab: opensOn = "today", today, goal, goals, progress, onSign
           aria-labelledby="desk-tab-week"
           className={`flex flex-col gap-4 px-4 sm:px-8 ${grid ? "min-h-0 flex-1 pb-4 sm:pb-8" : "pb-8"}`}
         >
-          {/* Goals across the week first (Vi, Nov 3); the calendar grid one tap away. */}
-          <div className="-ml-1 flex items-center gap-2 text-ink-2">
-            <button type="button" onClick={() => setView("goals")} aria-pressed={!grid} data-lead={!grid || undefined} className="link">
-              Goals
-            </button>
-            <span aria-hidden="true">·</span>
-            <button type="button" onClick={() => setView("calendar")} aria-pressed={grid} data-lead={grid || undefined} className="link">
-              Calendar
-            </button>
-          </div>
+          {/* Goals across the week first (Vi, Nov 3); the calendar grid one tap away, once there is a calendar to show. */}
+          {calendarOn && (
+            <div className="-ml-1 flex items-center gap-2 text-ink-2">
+              <button type="button" onClick={() => setView("goals")} aria-pressed={!grid} data-lead={!grid || undefined} className="link">
+                Goals
+              </button>
+              <span aria-hidden="true">·</span>
+              <button type="button" onClick={() => setView("calendar")} aria-pressed={grid} data-lead={grid || undefined} className="link">
+                Calendar
+              </button>
+            </div>
+          )}
           {grid ? (
             <WeekGrid now={now} onSignIn={onSignIn} />
           ) : (
-            <WeekGoals now={now} goals={plans} deadlines={deadlines} progress={progress} onGoal={onGoal} onDeadline={onDeadline} />
+            <WeekGoals
+              now={now}
+              goals={plans}
+              deadlines={deadlines}
+              done={today?.doneThisWeek}
+              progress={progress}
+              onGoal={onGoal}
+              onDeadline={onDeadline}
+            />
           )}
         </div>
       ) : (
         <div id="desk-today" role="tabpanel" aria-labelledby="desk-tab-today" className="flex flex-col gap-6 px-4 pb-8 sm:px-8">
           <h2 className="sr-only">Today</h2>
-          {/* Goals, Mail, Deadlines, Today (Vi, Nov 3): one column on phones; on a laptop the mail takes the right side. */}
-          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2 lg:grid-rows-[auto_auto_1fr]">
+          {/* Goals, Mail, Deadlines, Today (Vi, Nov 3): one column on phones; on a laptop the mail takes the right side.
+              Without mail, one column the home card's width. */}
+          <div className={`grid grid-cols-1 items-start gap-6 ${mailOn ? "lg:grid-cols-2 lg:grid-rows-[auto_auto_1fr]" : "max-w-[760px]"}`}>
             <Goals plans={plans} date={date} hint={deadlines.length > 0} failed={Boolean(today && today.sources.goals !== "ok")} onGoal={onGoal} />
-            {today && <Mail today={today} onReply={onReply} />}
+            {today && mailOn && <Mail today={today} onReply={onReply} />}
             {deadlines.length > 0 && <Deadlines deadlines={deadlines} plans={plans} onGoal={onGoal} onDeadline={onDeadline} />}
-            {today && <Calendar today={today} now={now} booked={booked} />}
+            {today && calendarOn && <Calendar today={today} now={now} booked={booked} />}
           </div>
           {!today && <p className="text-ink-2">I couldn&apos;t load today just now. Reload the page to try again.</p>}
-          {noAccess && (
-            <button type="button" onClick={onSignIn} className="pill pill-small self-start">
-              Sign in again
+          {connect && (
+            <button type="button" onClick={onSignIn} className="link -ml-1 self-start underline">
+              Connect your {connect} (optional)
             </button>
           )}
         </div>
@@ -226,12 +244,19 @@ function Goals({ plans, date, hint, failed, onGoal }: { plans: Goal[]; date: str
       <h3 className="text-[20px] leading-8 font-bold">Goals</h3>
       <ul className="lines mt-2">
         {plans.length === 0 ? (
-          <li className="text-ink-2">{failed ? "Zeno couldn't read your plans just now." : `No plans yet.${hint ? " Pick a deadline below." : ""}`}</li>
+          <li className="text-ink-2">{failed ? "Zeno couldn't read your goals just now." : `No goals yet.${hint ? " Pick a deadline below." : ""}`}</li>
         ) : (
           plans.map((plan) => (
             <li key={plan.id}>
               <button type="button" onClick={() => onGoal?.(plan.id)} className="group block w-full text-left active:opacity-60">
-                <GoalLines title={plan.title} bold aside={plan.due && date ? dueShort(plan.due, date) : undefined} goal={plan} caption={doneCaption(plan)} />
+                {/* Its due date, or for a goal that keeps going, its rhythm ("3 runs a week"). */}
+                <GoalLines
+                  title={plan.title}
+                  bold
+                  aside={plan.due && date ? dueShort(plan.due, date) : (plan.rhythm ?? undefined)}
+                  goal={plan}
+                  caption={doneCaption(plan)}
+                />
               </button>
             </li>
           ))
