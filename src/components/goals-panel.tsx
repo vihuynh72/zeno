@@ -197,7 +197,8 @@ export function FrontDoor({ hello, line, words, note, onAdd, onPhoto, children }
           {children}
         </div>
       </article>
-      <div className="mt-4 flex w-full max-w-[760px] flex-col items-center gap-2 sm:mt-6 short:mt-4">
+      {/* data-answers: kept clear of the dock when it grows (day-view.tsx). */}
+      <div data-answers className="mt-4 flex w-full max-w-[760px] flex-col items-center gap-2 sm:mt-6 short:mt-4">
         <button ref={make} type="button" data-answer onClick={submit} className="pill pill-ink pill-big">
           Make a plan
         </button>

@@ -316,6 +316,13 @@ assert.equal((checkCall(call("add_step", { title: "Run 3 miles", minutes: 40 }),
 // switch_goal (round 2: Dana's tapped "Score first" switched nothing): a title to match among their open goals in talk().
 assert.deepEqual(checkCall(call("switch_goal", { title: " Score the submissions " }), goal, refs), { name: "switch", title: "Score the submissions" });
 for (const title of ["", "  ", 3, undefined]) assert.ok(errorOf("switch_goal", { title }), String(title));
+// remove_goal and finish_goal (Nov 4, Vi: "no simple delete goal") only name the goal to offer; talk() matches it.
+assert.deepEqual(checkCall(call("remove_goal", { title: " Run a 5K " }), goal, refs), { name: "confirm", how: "remove", title: "Run a 5K" });
+assert.deepEqual(checkCall(call("finish_goal", { title: "History essay" }), null, refs), { name: "confirm", how: "finish", title: "History essay" });
+for (const title of ["", "  ", 3, undefined]) assert.ok(errorOf("remove_goal", { title }) && errorOf("finish_goal", { title }), String(title));
+for (const name of ["remove_goal", "finish_goal"]) {
+  assert.match(TOOLS.find((tool) => tool.function.name === name)?.function.description ?? "", /Nothing changes here: they tap/, name);
+}
 // set_due: the current goal's date, from the person's today on, or cleared.
 assert.deepEqual(checkCall(call("set_due", { due: "2030-01-10" }), goal, refs), { name: "set_due", goalId: "goal-1", due: "2030-01-10" });
 assert.deepEqual(checkCall(call("set_due", { due: "" }), goal, refs), { name: "set_due", goalId: "goal-1", due: null }, "cleared");
@@ -1501,6 +1508,37 @@ replies.push(tools(call("switch_goal", { title: "Score all 40 hackathon submissi
 await talk(idle, null, [], "Score first, and the history essay", false, [], [scoring]);
 assert.deepEqual(calls, ["activateGoal g-score"]);
 assert.match(results()[1].error, /"History essay" is already one of their goals/);
+// Remove and Mark done are only offered (Nov 4): talk changes nothing, and the page's tap does it. The goal is matched as
+// switch_goal matches it, among the current goal and the waiting ones; the reply says exactly what the tap will do and
+// carries no other options; a name that matches no goal, or a second goal in one turn, is sent back.
+for (const [said, name, title, confirm] of [
+  ["drop the 5K goal", "remove_goal", "5K", { id: "g-run", title: "Run", how: "remove" }],
+  ["stop this goal", "remove_goal", "History essay", { id: "goal-1", title: "History essay", how: "remove" }],
+  ["I finished the paper", "finish_goal", "Score all 40 hackathon submissions.", { id: "g-score", title: "Score all 40 hackathon submissions", how: "finish" }],
+] as const) {
+  reset();
+  replies.push(tools(call(name, { title })), { content: JSON.stringify({ say: "Done, it's gone.", options: ["Yes", "No"] }) });
+  const offer = await talk(idle, null, [], said, false, [], [{ ...run, title: name === "remove_goal" && title === "5K" ? "Run a 5K" : "Run" }, scoring]);
+  const expected = title === "5K" ? { ...confirm, title: "Run a 5K" } : confirm;
+  assert.deepEqual([calls, offer.actions, offer.confirm, offer.options], [[], [], expected, []], said);
+  assert.equal(offer.reply, expected.how === "remove" ? `Remove "${expected.title}"?` : `Mark "${expected.title}" done?`, said);
+  assert.match(results()[0].note, /^Not (removed|done) yet: they see a button and tap it to confirm\./, said);
+}
+reset();
+replies.push(tools(call("remove_goal", { title: "Learn piano" })), say("Which goal?"));
+turn = await talk(idle, null, [], "drop the piano goal", false, [], [scoring]);
+assert.deepEqual([calls, turn.confirm], [[], null]);
+assert.match(results()[0].error, /^"Learn piano" is not one of their goals/);
+reset();
+replies.push(tools(call("remove_goal", { title: "History essay" }, "c1"), call("finish_goal", { title: "Score all 40 hackathon submissions" }, "c2")), say("Okay."));
+turn = await talk(idle, null, [], "drop the essay and the scoring is done", false, [], [scoring]);
+assert.deepEqual(turn.confirm, { id: "goal-1", title: "History essay", how: "remove" });
+assert.match(results()[1].error, /^one goal at a time/);
+// A model that fails after the offer still returns it, with its words.
+reset();
+replies.push(tools(call("finish_goal", { title: "History essay" })));
+turn = await talk(idle, null, [], "I finished the essay");
+assert.deepEqual([turn.confirm?.how, turn.reply], ["finish", 'Mark "History essay" done?']);
 // The goal they are on is changed, never made twice (round 3: Jordan's "I can do 4 hours a day" saved his job hunt again,
 // waiting as a second goal): set_goal naming it is sent back, edit_goal changes it in place, and the page hears
 // roadmap-changed under its new title. A goal of its own still waits in their list.

@@ -1,5 +1,5 @@
 // Pure rules behind the desk's rows and the week grid. Only tz.ts besides types, so the checks run in plain node.
-import type { CalendarBlock, DayEvent } from "@/lib/day";
+import type { CalendarBlock, DayEmail, DayEvent } from "@/lib/day";
 import { formatTime, localDate, localIso } from "@/lib/tz";
 
 export type Mark = "past" | "now" | "next" | null;
@@ -44,6 +44,14 @@ export const snippetLine = (snippet: string) =>
 
 // Links from the routes (Google's event pages, the Gmail inbox) open only as https pages, never as script URLs.
 export const httpsOnly = (url?: string | null) => (url?.startsWith("https://") ? url : undefined);
+
+// Every mail row opens (Nov 4, Vi: "certain emails you can't even click on"). Where, when Zeno doesn't open it in place:
+// code or bank mail at its message in Gmail, never in Zeno, and a row with no id (a day saved before Nov 3) as Gmail's
+// search for its subject. null: Zeno opens it. gmail is this account's inbox (the day's mailUrl, without its hash).
+export function gmailRow(mail: Pick<DayEmail, "id" | "subject" | "sensitive">, gmail = "https://mail.google.com/mail/"): string | null {
+  if (!mail.id) return `${gmail}#search/${encodeURIComponent(`subject:"${mail.subject}"`)}`;
+  return mail.sensitive ? `${gmail}#inbox/${encodeURIComponent(mail.id)}` : null;
+}
 
 // "https://SJSU.instructure.com/courses/1" reads as sjsu.instructure.com.
 export const canvasHost = (base: string) => base.trim().replace(/^https?:\/\//i, "").split(/[/?#]/)[0].toLowerCase();

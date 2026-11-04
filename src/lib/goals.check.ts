@@ -646,4 +646,48 @@ try {
   await sql`DELETE FROM goals WHERE user_email = ${switchEmail}`;
 }
 
+// Remove and Mark done (Nov 4, Vi: "no simple delete goal"), each on a tap only. A removed goal leaves every list and
+// count, can't be opened or changed, and Undo brings it back as it was. Removing or finishing the current goal makes the
+// most recently paused one current. Mark done finishes a goal that keeps going too, and closes its open steps without
+// counting them as done or as skips.
+const { closeGoal, restoreGoal, todoMemory } = await import("./goals.ts");
+const closing = `goals-check-${crypto.randomUUID()}@zeno.local`;
+try {
+  const zone = "America/Los_Angeles";
+  const running = await setGoal(closing, "Run a 5K", [{ title: "Walk 5 minutes", minutes: 5 }, { title: "Run 1 mile", minutes: 20 }], null, { rhythm: "3 runs a week" });
+  const paper = await setGoal(closing, "Write the paper", [{ title: "Pick a thesis", minutes: 10 }, { title: "Write the intro", minutes: 20 }]);
+  await changeStepStatus(closing, paper.steps[0].id, "done");
+  await changeStepStatus(closing, paper.steps[1].id, "doing");
+  assert.equal(await closeGoal("someone-else@zeno.local", paper.id, "removed"), undefined, "another person's goal");
+  assert.equal((await closeGoal(closing, paper.id, "removed"))?.current?.id, running.id, "the paused goal becomes current");
+  assert.deepEqual((await openGoals(closing)).map((goal) => goal.id), [running.id], "gone from the lists");
+  assert.equal(await activateGoal(closing, paper.id), null, "a removed goal never opens");
+  assert.equal(await changeStepStatus(closing, paper.steps[1].id, "done"), null, "nor changes from a stale page or an app");
+  assert.deepEqual(await finishedDays(closing, zone), {}, "its finished step counts nowhere");
+  assert.deepEqual(await stepsDoneSince(closing, new Date(Date.now() - 86_400_000)), []);
+  assert.equal(await closeGoal(closing, paper.id, "removed"), undefined, "removed twice");
+  // Undo: back in the list, paused, its running step back in line.
+  const back = await restoreGoal(closing, paper.id);
+  assert.deepEqual([back?.goal.id, back?.current?.id, back?.goal.steps.map((step) => step.status)], [paper.id, running.id, ["done", "todo"]]);
+  assert.equal(await restoreGoal(closing, paper.id), null, "only a removed goal comes back");
+  assert.equal(Object.values(await finishedDays(closing, zone)).reduce((a, b) => a + b, 0), 1, "its finished step counts again");
+  // Mark done on the current goal, one that keeps going: done, its pasted to-do gone, its open steps closed with no
+  // done_at, and the paper current.
+  await addMemory(closing, todoMemory("Run a 5K"));
+  await changeStepStatus(closing, running.steps[0].id, "doing");
+  assert.equal((await closeGoal(closing, running.id, "done"))?.current?.id, paper.id);
+  assert.equal((await sql`SELECT status FROM goals WHERE id = ${running.id}`)[0]?.status, "done");
+  assert.deepEqual((await getGoal(closing, running.id))?.steps.map((step) => [step.status, step.doneAt]), [["skipped", null], ["skipped", null]]);
+  assert.deepEqual(await listMemories(closing), [], "the to-do it came from is finished");
+  assert.equal((await recentSteps(closing)).length, 1, "closed steps are never read as skips");
+  assert.equal(await closeGoal(closing, running.id, "done"), undefined, "finished twice");
+  assert.equal(await restoreGoal(closing, running.id), null, "Undo is for a removed goal only");
+  // The last open goal removed leaves none current; its Undo makes it current again.
+  assert.equal((await closeGoal(closing, paper.id, "removed"))?.current, null);
+  assert.equal((await restoreGoal(closing, paper.id))?.current?.id, paper.id);
+} finally {
+  await sql`DELETE FROM goals WHERE user_email = ${closing}`;
+  await sql`DELETE FROM memories WHERE user_email = ${closing}`;
+}
+
 console.log("goals self-check passed");

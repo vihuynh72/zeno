@@ -8,12 +8,15 @@ import type {
   BookResponse,
   CalendarBlock,
   CanvasAssignment,
+  CloseGoalRequest,
+  CloseGoalResponse,
   DayEmail,
   DayResponse,
   Deadline,
   EmailDraft,
   FreeResponse,
   Goal,
+  GoalConfirm,
   GoalResponse,
   ImportResponse,
   Memory,
@@ -360,6 +363,11 @@ export default function GuidedDay() {
   const [addWords, setAddWords] = useState<string | null>(null); // words whose plan couldn't be made, back in the box
   // The goal she just switched away from: the home offers every other current goal's next step (coming back, Nov 4).
   const [leftId, setLeftId] = useState<string | null>(null);
+  // Talk's offer to remove a goal or mark it done, shown only while its line is Zeno's line (Nov 4); and the short line
+  // over Talk after either, with Undo for a removal, for 6 s.
+  const [confirm, setConfirm] = useState<(GoalConfirm & { line: string }) | null>(null);
+  const [toast, setToast] = useState<{ text: string; undo?: { id: string; current: boolean } } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const today = useToday();
   // The goals panel (Nov 4): every open plan, and as Suggestions the deadlines and asking email with no plan yet.
   const plans = openPlans(goal, goals);
@@ -829,8 +837,9 @@ export default function GuidedDay() {
     const done = now.screen === "focus" && next === "checkin" ? openSteps(now.goal)[0] : undefined;
     // A skip said in Focus leaves it this way too, so only a step really marked done gets the stamp, the sound and "Nice".
     const status = done ? res.goal?.steps.find((one) => one.id === done.id)?.status : undefined;
-    // After a Done, said or tapped, Zeno says what is next.
-    const said = next === "checkin" ? afterDone(res.goal, status === "skipped") : res.reply;
+    // After a Done, said or tapped, Zeno says what is next, unless it offers to remove a goal or mark it done (Nov 4).
+    const offered = res.confirm && typeof res.confirm.id === "string" && ["remove", "finish"].includes(res.confirm.how) ? res.confirm : null;
+    const said = next === "checkin" && !offered ? afterDone(res.goal, status === "skipped") : res.reply;
     if (now.screen === "focus" && next === "focus") answered.current = said;
     if (next === "checkin") setCelebrate(Boolean(res.progress));
     // A step's timer ends with its focus.
@@ -878,6 +887,7 @@ export default function GuidedDay() {
     }
     const drafted = gmailDraft(res.draft);
     setDraft(drafted);
+    setConfirm(offered && { ...offered, line: said });
     // A draft and the screen after Done have their own answers; everywhere else a question's answers show (Nov 4).
     replied.current = !drafted && next !== "checkin" ? quickReplies(res.options, proposal.length > 0) : [];
     setOptions(replied.current);
@@ -1095,6 +1105,49 @@ export default function GuidedDay() {
     if (others.length === 1) return void openPlan(others[0]);
     leaveForHome();
     setLeftId(current?.id ?? null);
+  }
+
+  // Remove and Mark done (Nov 4, Vi: "no simple delete goal"): a link by the desk's goal title or a tap on Zeno's offer,
+  // never a browser dialog. The goal leaves the lists and the server's current goal is the page's. The goal on screen
+  // gives way to the goals (another one, named in talk, leaves her where she is), with a short line over Talk: Removed,
+  // with Undo for 6 s, or done.
+  async function endGoal(id: string, title: string, how: GoalConfirm["how"]) {
+    const current = latest.current.goal?.id === id;
+    setConfirm(null);
+    setBusy(true);
+    const res = await post<CloseGoalResponse>(`/api/goal/${how}`, { id } satisfies CloseGoalRequest);
+    setBusy(false);
+    if (res.state === "signed-out") return showSignedOut();
+    if (res.state !== "ok") return setNote(SAVE_FAIL);
+    // A saved opening may name the goal, so a reload asks for a new one.
+    expireOpening();
+    const list = latest.current.goals.filter((one) => one.id !== id);
+    setGoals(list);
+    latest.current.goals = list;
+    changeGoal(res.current);
+    // The server put the goal's running step back in line (Remove) or closed it (Mark done).
+    if (current) setTimer(null);
+    if (current || latest.current.screen === "talk") goHome();
+    else if (latest.current.screen === "focus") quiet(FOCUS.calm);
+    else setLine("");
+    const name = title.replace(/[.!?]+$/, "");
+    clearTimeout(toastTimer.current);
+    setToast(how === "remove" ? { text: `Removed "${name}".`, undo: { id, current } } : { text: `"${name}" is done. Nice work.` });
+    toastTimer.current = setTimeout(() => setToast(null), 6000);
+  }
+
+  // Undo puts a removed goal back as it was: in the list, and open again when it was the goal on screen.
+  async function undoRemove() {
+    const undo = toast?.undo;
+    if (!undo) return;
+    clearTimeout(toastTimer.current);
+    setToast(null);
+    const res = await post<CloseGoalResponse>("/api/goal/remove", { id: undo.id, undo: true } satisfies CloseGoalRequest);
+    if (res.state === "signed-out") return showSignedOut();
+    if (res.state !== "ok" || !res.goal) return setNote("I couldn't undo that just now.");
+    takeGoal(res.goal);
+    if (undo.current) void openPlan(res.goal);
+    else if (res.current?.id === res.goal.id) changeGoal(res.goal);
   }
 
   // ---------- A goal's desk (Vi, Nov 3: she picks the goal, Zeno picks the step) ----------
@@ -1680,6 +1733,17 @@ export default function GuidedDay() {
         say("Not now", () => back("Okay, not now.")),
       ];
     }
+    // Zeno's offer to remove a goal or mark it done, while its line shows: only this tap does it (Nov 4).
+    if (confirm && confirm.line === line) {
+      const { id, title, how } = confirm;
+      return [
+        say(how === "remove" ? "Remove" : "Mark done", () => void endGoal(id, title, how)),
+        say(how === "remove" ? "Keep it" : "Not yet", () => {
+          setConfirm(null);
+          setLine("Okay.");
+        }),
+      ];
+    }
     // Zeno's answers to what it just said, on a step's screen only when they add something (Nov 4: never a second Start,
     // Done or Stop for now).
     const asked = extraReplies(options, asksBig(line, screen === "focus")).map((option) => say(option, () => tap(option)));
@@ -1813,6 +1877,7 @@ export default function GuidedDay() {
       stamping={stamping}
       leaving={leaving}
       note={note}
+      toast={toast && { text: toast.text, undo: Boolean(toast.undo) }}
       signInFailed={signInFailed}
       busy={busy || voice.phase === "thinking" || (screen === "ready" && !fresh)}
       chips={answers.map((one) => one.label)}
@@ -1897,6 +1962,11 @@ export default function GuidedDay() {
           setSheet(null);
           if (fresh) void answerMail(email);
         },
+        // The desk's goal is the page's current one.
+        closeGoal(how) {
+          if (goal && fresh && !busy) void endGoal(goal.id, goal.title, how);
+        },
+        undo: () => void undoRemove(),
       }}
     />
   );

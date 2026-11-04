@@ -25,9 +25,11 @@ const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 // The title with its due date or rhythm, one bar segment per step, and the caption. Only finished steps fill (in ink);
 // the proposed or running one is outlined, never filled, since a red fill read as progress (Nov 3). Progress in view
-// keeps the goal close (goal gradient).
-export function GoalStrip(props: { title: string; due?: string | null; rhythm?: string | null; steps: Step[]; marked?: string; caption: string; today: string }) {
-  const { title, steps, marked, caption, today } = props;
+// keeps the goal close (goal gradient). With onClose, two quiet links beside the caption: Mark done and Remove (Nov 4,
+// Vi: "no simple delete goal"), each one tap, never a browser dialog.
+type StripProps = { title: string; due?: string | null; rhythm?: string | null; steps: Step[]; marked?: string; caption: string; today: string };
+export function GoalStrip(props: StripProps & { onClose?(how: "remove" | "finish"): void }) {
+  const { title, steps, marked, caption, today, onClose } = props;
   const when = goalLine({ due: props.due, rhythm: props.rhythm, steps }, today, zone());
   return (
     <section aria-label="Goal">
@@ -49,7 +51,21 @@ export function GoalStrip(props: { title: string; due?: string | null; rhythm?: 
               />
             ))}
           </ol>
-          <p className="mt-2 text-ink-2">{caption}</p>
+          <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-4">
+            <p className="text-ink-2">{caption}</p>
+            {/* 44px tap targets that keep the caption's own line height, so the sticky strip stays as short. */}
+            {onClose && (
+              <p className="-mx-1 -my-2.5 flex items-center gap-1 text-ink-2">
+                <button type="button" data-answer onClick={() => onClose("finish")} className="link">
+                  Mark done
+                </button>
+                <span aria-hidden="true">·</span>
+                <button type="button" data-answer onClick={() => onClose("remove")} className="link">
+                  Remove
+                </button>
+              </p>
+            )}
+          </div>
         </>
       )}
     </section>

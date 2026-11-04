@@ -88,13 +88,14 @@ export async function getRecentEmail(accessToken: string): Promise<EmailSummary[
   );
 
   return messages
-    .flatMap((message) => {
+    .flatMap((message, i) => {
       const from = header(message, "From");
       const labels = message.labelIds ?? [];
       if (!from || NO_REPLY.test(from) || labels.some((label) => BULK.test(label))) return [];
       return [
         {
-          id: message.id ?? crypto.randomUUID(),
+          // The id it was read by: a made-up one could never open (Nov 4).
+          id: message.id ?? ids[i],
           from,
           subject: header(message, "Subject") || "(no subject)",
           snippet: (message.snippet ?? "").slice(0, 160),
@@ -218,10 +219,20 @@ const SIGNATURE_START = [/^-- ?$/m, /^(Sent from my \w+|Get Outlook for \w+)/im]
 const SIGN_OFF =
   /^(best|thanks|thank you|thanks so much|many thanks|cheers|regards|best regards|kind regards|warm regards|warmly|sincerely|all the best|take care)[ \t]*[,.!]?[ \t]*$/gim;
 const GREETING = /^(hi|hey|hello|dear|good (morning|afternoon|evening))\b[^\n]*$/i;
+// Where a forward's message starts: Gmail's and Outlook's marker lines, or Outlook's header block on its own.
+const FORWARD = /^[ \t]*(?:-{2,} *(?:Original Message|Forwarded message) *-{2,}|_{10,})[ \t]*$|^(?=From: [^\n]+\n(?:Sent|Date): )/im;
+const HEADER = /^(?:(?:From|Sent|Date|To|Cc|Subject): |[ \t]+\S)/i;
 
-// The new words of one email, at most `max` characters: no quoted replies, signatures, markup, links or long numbers.
+// The new words of one email, at most `max` characters: no quoted replies, signatures, markup, links or long numbers. A
+// forward with no words of its own but a greeting gives the message it carries instead (Nov 4: it opened as "This email
+// has no text."): that message's From and Subject lines, then its own words, cleaned the same way.
+// shortcut: an HTML-only forward still opens empty (htmlToText drops Gmail's quote block); read that block if one shows up.
 export function cleanBody(raw: string, html = false, max = 1500): string {
-  let text = (html ? htmlToText(raw) : raw).replace(/\r\n?/g, "\n");
+  return [...newWords((html ? htmlToText(raw) : raw).replace(/\r\n?/g, "\n"))].slice(0, max).join("");
+}
+
+function newWords(full: string): string {
+  let text = full;
   for (const marker of [...QUOTE_START, ...SIGNATURE_START]) {
     const found = marker.exec(text);
     if (found) text = text.slice(0, found.index);
@@ -240,7 +251,17 @@ export function cleanBody(raw: string, html = false, max = 1500): string {
       break;
     }
   }
-  const clean = text
+  const own = tidy(text);
+  const forward = !own || GREETING.test(own) ? FORWARD.exec(full) : null;
+  if (!forward) return own;
+  const lines = full.slice(forward.index + forward[0].length).replace(/^\s+/, "").split("\n");
+  const head = lines.findIndex((line) => !HEADER.test(line));
+  const header = lines.slice(0, head < 0 ? lines.length : head).filter((line) => /^(From|Subject): /i.test(line));
+  return [tidy(header.join("\n")), newWords(head < 0 ? "" : lines.slice(head).join("\n"))].filter(Boolean).join("\n\n") || own;
+}
+
+const tidy = (text: string) =>
+  text
     // Verification links and codes never reach the model.
     .replace(/https?:\/\/\S+|www\.\S+/gi, "[link]")
     .replace(/\b\d{6,}\b/g, "[number]")
@@ -248,5 +269,3 @@ export function cleanBody(raw: string, html = false, max = 1500): string {
     .replace(/ *\n */g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return [...clean].slice(0, max).join("");
-}

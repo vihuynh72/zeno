@@ -114,7 +114,7 @@ export async function openGoals(email: string): Promise<Goal[]> {
 }
 
 // Opening a plan makes it the current one (Vi, Nov 3). One transaction pauses the current plan, when it is another one,
-// and activates this one; a goal that is not this person's or is done changes nothing and returns null.
+// and activates this one; a goal that is not this person's, is done or was removed changes nothing and returns null.
 export async function activateGoal(email: string, goalId: string): Promise<Goal | null> {
   await ensureSchema();
   const sql = getSql();
@@ -123,20 +123,67 @@ export async function activateGoal(email: string, goalId: string): Promise<Goal 
     sql`
       UPDATE steps SET status = 'todo', started_at = NULL
       WHERE user_email = ${email} AND status = 'doing' AND goal_id <> ${goalId}
-        AND EXISTS (SELECT 1 FROM goals WHERE id = ${goalId} AND user_email = ${email} AND status <> 'done')
+        AND EXISTS (SELECT 1 FROM goals WHERE id = ${goalId} AND user_email = ${email} AND status IN ('active', 'paused'))
     `,
     sql`
       UPDATE goals SET status = 'paused', updated_at = now()
       WHERE user_email = ${email} AND status = 'active' AND id <> ${goalId}
-        AND EXISTS (SELECT 1 FROM goals WHERE id = ${goalId} AND user_email = ${email} AND status <> 'done')
+        AND EXISTS (SELECT 1 FROM goals WHERE id = ${goalId} AND user_email = ${email} AND status IN ('active', 'paused'))
     `,
-    sql`UPDATE goals SET status = 'active', updated_at = now() WHERE id = ${goalId} AND user_email = ${email} AND status <> 'done' RETURNING id`,
+    sql`UPDATE goals SET status = 'active', updated_at = now() WHERE id = ${goalId} AND user_email = ${email} AND status IN ('active', 'paused') RETURNING id`,
     goalQuery(email, goalId),
   ]);
   return results[2].length > 0 ? goalFrom(results[3]) : null;
 }
 
-// Any goal at all, paused and done ones included.
+// With no goal left active, the most recently paused one comes back where it was left.
+const wakeLatest = (email: string) => getSql()`
+  UPDATE goals SET status = 'active', updated_at = now()
+  WHERE id = (
+    SELECT id FROM goals WHERE user_email = ${email} AND status = 'paused'
+    ORDER BY updated_at DESC, created_at DESC LIMIT 1
+  ) AND NOT EXISTS (SELECT 1 FROM goals WHERE user_email = ${email} AND status = 'active')
+`;
+
+// Remove and Mark done (Nov 4, Vi: "no simple delete goal"), each only on the person's tap. Remove keeps the goal as
+// 'removed', out of every list and count, so Undo (restoreGoal) brings it back as it was; a step running in it goes back
+// in line. Mark done finishes it, a goal that keeps going too, and closes its open steps as skipped with no done_at, so
+// no pattern reads them as skips. Either way, when it was the current goal the most recently paused one becomes current,
+// as when a goal's last step finishes it. Returns the current goal after; undefined when the goal is not theirs or open.
+export async function closeGoal(email: string, goalId: string, how: "removed" | "done"): Promise<{ current: Goal | null } | undefined> {
+  await ensureSchema();
+  const sql = getSql();
+  const [, closed] = await sql.transaction([
+    how === "done"
+      ? sql`
+          UPDATE steps SET status = 'skipped', done_at = NULL
+          WHERE goal_id = ${goalId} AND user_email = ${email} AND status IN ('todo', 'doing')
+            AND EXISTS (SELECT 1 FROM goals WHERE id = ${goalId} AND user_email = ${email} AND status IN ('active', 'paused'))
+        `
+      : sql`UPDATE steps SET status = 'todo', started_at = NULL WHERE goal_id = ${goalId} AND user_email = ${email} AND status = 'doing'`,
+    sql`UPDATE goals SET status = ${how}, updated_at = now() WHERE id = ${goalId} AND user_email = ${email} AND status IN ('active', 'paused') RETURNING title`,
+    wakeLatest(email),
+  ]);
+  if (closed.length === 0) return undefined;
+  if (how === "done") await dropTodoOf(email, String(closed[0].title));
+  return { current: await currentGoal(email) };
+}
+
+// Undo for Remove: the goal is back in their lists, paused, with its steps as they were, and current when no goal is.
+// null when it is not theirs or was not removed.
+export async function restoreGoal(email: string, goalId: string): Promise<{ goal: Goal; current: Goal | null } | null> {
+  await ensureSchema();
+  const sql = getSql();
+  const [restored, , rows] = await sql.transaction([
+    sql`UPDATE goals SET status = 'paused', updated_at = now() WHERE id = ${goalId} AND user_email = ${email} AND status = 'removed' RETURNING id`,
+    wakeLatest(email),
+    goalQuery(email, goalId),
+  ]);
+  const goal = restored.length > 0 ? goalFrom(rows) : null;
+  return goal && { goal, current: await currentGoal(email) };
+}
+
+// Any goal at all, paused, done and removed ones included.
 export async function hasAnyGoal(email: string): Promise<boolean> {
   await ensureSchema();
   return (await getSql()`SELECT 1 FROM goals WHERE user_email = ${email} LIMIT 1`).length > 0;
@@ -302,7 +349,7 @@ export async function stepsDoneSince(email: string, since: Date): Promise<DoneSt
   await ensureSchema();
   const rows = await getSql()`
     SELECT s.title, g.title AS goal, s.started_at, s.done_at
-    FROM steps s JOIN goals g ON g.id = s.goal_id AND g.user_email = ${email}
+    FROM steps s JOIN goals g ON g.id = s.goal_id AND g.user_email = ${email} AND g.status <> 'removed'
     WHERE s.user_email = ${email} AND s.status = 'done' AND s.done_at >= ${since.toISOString()} AND s.done_at <= now()
     ORDER BY s.done_at DESC LIMIT 50
   `;
@@ -325,7 +372,11 @@ export async function changeStepStatus(
 ): Promise<{ goal: Goal; before: StepStatus } | null> {
   await ensureSchema();
   const sql = getSql();
-  const [step] = await sql`SELECT goal_id, status FROM steps WHERE id = ${stepId} AND user_email = ${email}`;
+  // A removed goal's steps wait as they are for an Undo: a stale page or an app never changes them, or brings it back.
+  const [step] = await sql`
+    SELECT s.goal_id, s.status FROM steps s JOIN goals g ON g.id = s.goal_id
+    WHERE s.id = ${stepId} AND s.user_email = ${email} AND g.status <> 'removed'
+  `;
   if (!step) return null;
   const goalId = String(step.goal_id);
   const results = await sql.transaction([
@@ -368,25 +419,22 @@ export async function changeStepStatus(
           ELSE now() END
       WHERE id = ${goalId} AND user_email = ${email}
     `,
-    // With no goal left active, the most recently paused one comes back where it was left.
-    sql`
-      UPDATE goals SET status = 'active', updated_at = now()
-      WHERE id = (
-        SELECT id FROM goals WHERE user_email = ${email} AND status = 'paused'
-        ORDER BY updated_at DESC, created_at DESC LIMIT 1
-      ) AND NOT EXISTS (SELECT 1 FROM goals WHERE user_email = ${email} AND status = 'active')
-    `,
+    wakeLatest(email),
     goalQuery(email, goalId),
   ]);
   const goal = goalFrom(results[results.length - 1]);
-  // Its last step done finishes the pasted to-do it came from: one the plan's title says all of, never a longer one
-  // ("Email Prof Patel" finishes neither "…about an extension" nor "…my project group"). A goal that keeps going never
-  // finishes.
+  // A goal that keeps going never finishes by its steps.
   if (goal && !goal.rhythm && status === "done" && goal.steps.every((one) => one.status === "done" || one.status === "skipped")) {
-    const todos = await sql`SELECT id, text FROM memories WHERE user_email = ${email} AND text LIKE 'To do: %'`;
-    await dropMemories(email, todos.filter((row) => within(String(row.text), todoMemory(goal.title))).map((row) => String(row.id)));
+    await dropTodoOf(email, goal.title);
   }
   return goal && { goal, before: step.status as StepStatus };
+}
+
+// A finished plan finishes the pasted to-do it came from: one the plan's title says all of, never a longer one ("Email
+// Prof Patel" finishes neither "…about an extension" nor "…my project group").
+async function dropTodoOf(email: string, title: string) {
+  const todos = await getSql()`SELECT id, text FROM memories WHERE user_email = ${email} AND text LIKE 'To do: %'`;
+  await dropMemories(email, todos.filter((row) => within(String(row.text), todoMemory(title))).map((row) => String(row.id)));
 }
 
 // Links a step to its block on the Zeno calendar (the event id and the block's start); nulls clear the link.
@@ -614,13 +662,15 @@ export async function scannedSince(email: string, since: Date): Promise<Memory[]
   return rows.map(memoryFrom);
 }
 
-// Titles of steps marked done in [start, end), oldest first.
+// Titles of steps marked done in [start, end), oldest first. Here and below, a removed goal's steps count nowhere, as if
+// it were deleted, until an Undo.
 export async function stepsFinishedBetween(email: string, start: Date, end: Date): Promise<string[]> {
   await ensureSchema();
   const rows = await getSql()`
     SELECT title FROM steps
     WHERE user_email = ${email} AND status = 'done'
       AND done_at >= ${start.toISOString()} AND done_at < ${end.toISOString()}
+      AND goal_id NOT IN (SELECT id FROM goals WHERE user_email = ${email} AND status = 'removed')
     ORDER BY done_at
   `;
   return rows.map((row) => String(row.title));
@@ -640,6 +690,7 @@ export async function finishedDays(email: string, timeZone: string): Promise<Rec
   const rows = await getSql()`
     SELECT to_char(done_at AT TIME ZONE ${timeZone}, 'YYYY-MM-DD') AS day, count(*) AS steps FROM steps
     WHERE user_email = ${email} AND status = 'done' AND done_at <= now()
+      AND goal_id NOT IN (SELECT id FROM goals WHERE user_email = ${email} AND status = 'removed')
     GROUP BY 1
   `;
   return Object.fromEntries(rows.map((row) => [String(row.day), Number(row.steps)]));
@@ -654,6 +705,7 @@ export async function recentSteps(email: string): Promise<StepRecord[]> {
   const rows = await getSql()`
     SELECT status, minutes, started_at, done_at FROM steps
     WHERE user_email = ${email} AND status IN ('done', 'skipped') AND done_at > now() - interval '30 days'
+      AND goal_id NOT IN (SELECT id FROM goals WHERE user_email = ${email} AND status = 'removed')
     ORDER BY done_at
   `;
   return rows.map((row) => ({
