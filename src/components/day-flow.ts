@@ -507,11 +507,11 @@ export const checkinMinute = (planned: number, pace?: number) =>
 
 const WRAP_UPS = ["Finish the line you're on, then Done.", "Wrap up this bit, then Done.", "Get it to a stopping point, then Done."];
 
-// The lines under the Focus card, shown and never said: calm (the planned minutes are on the card already), the
-// check-in for its minute (then calm again, however long the step runs), and the welcome back after the page was hidden
-// a minute or more.
+// The lines under the Focus card, shown and never said: calm, which is no line at all (the planned minutes are on the
+// card already; round 9 took "I'll stay quiet." off the screen), the check-in for its minute (then calm again, however
+// long the step runs), and the welcome back after the page was hidden a minute or more.
 export const FOCUS = {
-  calm: "I'll stay quiet.",
+  calm: "",
   checkin: (minute: number) => `${minute} min in. ${WRAP_UPS[minute % WRAP_UPS.length]}`,
   back: (startedAt: string, now: number) => `Back. ${Math.max(0, Math.floor((now - Date.parse(startedAt)) / 60_000))} min on this.`,
 };

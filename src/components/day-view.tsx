@@ -17,7 +17,7 @@ import Desk from "@/components/desk";
 import { bookedEvents } from "@/components/desk-rows";
 import FocusMusic from "@/components/focus-music";
 import FocusPop from "@/components/focus-pop";
-import { GoalAside, GoalStrip, StepsList, type Materials } from "@/components/goal-desk";
+import { GoalAside, GoalStrip, StepsList, WhyPlan, type Materials } from "@/components/goal-desk";
 import MemorySheet from "@/components/memory-sheet";
 import StreakRow from "@/components/streak-row";
 import VoiceRing from "@/components/voice-ring";
@@ -672,6 +672,9 @@ export default function DayView(props: DayViewProps) {
             </div>
           )}
         </div>
+
+        {/* A phone's Why this plan, right under the Next card's buttons (round 9); a laptop's is in For this goal. */}
+        {next && goal && <WhyPlan key={goal.id} lines={props.materials?.why ?? []} phone />}
 
         {/* A laptop's home points at the goals beside it when nothing waits to start (Start alone says enough, Nov 4). */}
         {home && !frontDoor && panelOn && !props.resume && <p className="mt-6 text-center text-ink-2 max-lg:hidden">Pick a goal on the left, or add one.</p>}

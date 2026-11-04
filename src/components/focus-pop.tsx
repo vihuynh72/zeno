@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { clock } from "@/components/day-flow";
 import type { DayViewProps } from "@/components/day-view";
 import { popCard, type PopCard } from "@/components/pop-card";
+import { Icon } from "@/components/icons";
 
 // The pop-out focus window (docs/PLAN-NOV3-APPS.md §3; Vi: comfortable, never in the way): a small always-on-top index
 // card with the step, its stopwatch, the check-in line and Done, where the browser has Document Picture-in-Picture.
@@ -81,16 +82,20 @@ export default function FocusPop({ screen, goal, line, quiet, timer, chips, busy
 
   return (
     <>
-      {/* One of the Focus links where the browser can pop out; the "·" travels with it, as with day-view's links. */}
+      {/* One of the Focus links where the browser can pop out: an icon alone (round 9), its words in the tooltip. */}
       {supported && screen === "focus" && (
-        <span className="flex items-center gap-2">
-          <span aria-hidden="true" className="max-sm:hidden">
-            ·
-          </span>
-          <button ref={link} type="button" className="link" aria-pressed={pip !== null} data-lead={pip ? true : undefined} onClick={() => void toggle()}>
-            Pop out
-          </button>
-        </span>
+        <button
+          ref={link}
+          type="button"
+          className="link min-w-11 justify-center"
+          aria-label="Pop out"
+          title="Pop out"
+          aria-pressed={pip !== null}
+          data-lead={pip ? true : undefined}
+          onClick={() => void toggle()}
+        >
+          <Icon name="popOut" />
+        </button>
       )}
       {pip && card && createPortal(<Card card={card} win={pip} line={line} quiet={quiet} timer={timer} busy={busy} onAnswer={on.chip} />, pip.document.body)}
     </>

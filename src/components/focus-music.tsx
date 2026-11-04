@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { STATIONS, TRACKS, brownNoise, playOrder, type Station } from "@/lib/music";
+import { Icon } from "@/components/icons";
 
-// Music for deep work (docs/PLAN-NOV2.md decision 13): a small "Music" link on the Focus screen shows the stations.
+// Music for deep work (docs/PLAN-NOV2.md decision 13): a small music-note button on the Focus screen shows the stations.
 // The choice is remembered per browser and plays only while `active` (the Focus screen is up), never on its own.
 const KEY = "zeno:music";
 const TRACK_VOLUME = 0.35;
@@ -137,15 +138,18 @@ export default function FocusMusic({ active }: { active: boolean }) {
   const label = STATIONS.find((station) => station.id === choice)?.label;
   return (
     <>
-      {/* The "·" travels with Music, as with day-view's links, and goes on a phone, where the row wraps. */}
-      <span className="flex items-center gap-2">
-        <span aria-hidden="true" className="max-sm:hidden">
-          ·
-        </span>
-        <button type="button" className="link" aria-expanded={open} onClick={() => setOpen(!open)}>
-          {label ? `Music: ${label}` : "Music"}
-        </button>
-      </span>
+      {/* A note alone (round 9), its words and the station in the tooltip; in ink while a station plays. */}
+      <button
+        type="button"
+        className="link min-w-11 justify-center"
+        aria-label={label ? `Music: ${label}` : "Music"}
+        title={label ? `Music: ${label}` : "Music"}
+        aria-expanded={open}
+        data-lead={label ? true : undefined}
+        onClick={() => setOpen(!open)}
+      >
+        <Icon name="music" />
+      </button>
       {open && (
         <div role="group" aria-label="Music" className="flex basis-full flex-wrap items-center justify-center gap-x-2">
           {OPTIONS.map((option) => (
