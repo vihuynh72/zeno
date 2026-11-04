@@ -17,10 +17,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
   const email = session.user.email;
   const { id } = await params;
-  const body = (await request.json().catch(() => null)) as { status?: unknown; later?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { status?: unknown; later?: unknown; before?: unknown } | null;
   const status = body?.status;
-  // Body { later: true } is Skip (Vi, Nov 4): the step goes to the end of its goal, its status unchanged.
-  const later = body?.later === true;
+  // Body { later: true } is Skip (Vi, Nov 4): the step goes to the end of its goal, its status unchanged. Body
+  // { before: <step id> } is Skip's Undo (round 7): back in front of that step.
+  const before = typeof body?.before === "string" && isId(body.before) ? body.before : undefined;
+  const later = body?.later === true || before !== undefined;
   if (!isId(id) || (!later && (typeof status !== "string" || !STATUSES.includes(status)))) {
     return NextResponse.json({ state: "bad-request" } satisfies StepResponse, { status: 400 });
   }
@@ -31,7 +33,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   try {
     if (later) {
-      const goal = await moveStepLater(email, id);
+      const goal = await moveStepLater(email, id, before);
       return goal
         ? NextResponse.json({ state: "ok", goal } satisfies StepResponse)
         : NextResponse.json({ state: "not-found" } satisfies StepResponse, { status: 404 });

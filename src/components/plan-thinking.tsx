@@ -8,8 +8,8 @@ import type { PlanQuestion } from "@/lib/day";
 // one by one, each with a check, then its first step. Shown under the planning card (day-view.tsx planning.view);
 // nothing here talks to the server.
 
-// Between lines as the plan opens.
-export const REVEAL_MS = 200;
+// Between lines as the plan opens: slow enough to read each one (round 7: at 200 ms nobody could).
+export const REVEAL_MS = 600;
 // How long the whole reveal of `lines` takes, with a moment to read the last line before the plan opens.
 export const revealMs = (lines: number) => (lines + 1) * REVEAL_MS + 700;
 

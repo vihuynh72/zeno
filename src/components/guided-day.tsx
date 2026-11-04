@@ -151,8 +151,12 @@ const mailKey = (account: string) => `zeno:mailgoal:${account}`;
 // What she said on a step and Zeno's answer, { [stepId]: Note[] }, on this device only, so nothing she told Zeno about
 // a step is gone after the next reply or a reload (round 3, Nov 4). Cleared at sign-out with the vault.
 const notesKey = (account: string) => `zeno:notes:${account}`;
+// Muse's own thinking lines for each plan it made, { [goalId]: string[] }, shown as "Why this plan" under For this goal
+// (round 7: they were gone 1.7 s after the plan opened). This device only; cleared at sign-out.
+const whyKey = (account: string) => `zeno:why:${account}`;
 const NOTE_STEPS = 40;
 const NOTES_A_STEP = 12;
+const SKIPPED = "Moved to the end.";
 // The day as this browser keeps it: no email snippets, and no Gmail link, which holds the address that the opaque account
 // key keeps out of storage. Both come back with each /api/day.
 const toKeep = (day: Day): Day => ({ ...day, emails: [], mailUrl: undefined });
@@ -217,6 +221,15 @@ function readNotes(account: string): Record<string, Note[]> {
   try {
     const data = JSON.parse(readLocal(notesKey(account)) ?? "{}");
     return data && typeof data === "object" ? (data as Record<string, Note[]>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function readWhy(account: string): Record<string, string[]> {
+  try {
+    const data: unknown = JSON.parse(readLocal(whyKey(account)) ?? "{}");
+    return data && typeof data === "object" && !Array.isArray(data) ? (data as Record<string, string[]>) : {};
   } catch {
     return {};
   }
@@ -387,15 +400,20 @@ export default function GuidedDay() {
   const [rollingId, setRollingId] = useState<string | null>(null); // a goal that keeps going whose next few are being planned
   const [mailGoals, setMailGoals] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, Note[]>>({});
+  const [whys, setWhys] = useState<Record<string, string[]>>({});
   const [retry, setRetry] = useState<string | null>(null); // typed words whose turn failed, back in the text box
   const [addWords, setAddWords] = useState<string | null>(null); // words whose plan couldn't be made, back in the box
   // The goal she just switched away from: the home offers every other current goal's next step (coming back, Nov 4).
   const [leftId, setLeftId] = useState<string | null>(null);
   // Talk's offer to remove a goal or mark it done, shown only while its line is Zeno's line (Nov 4); and the short line
-  // over Talk after either, with Undo for a removal, for 6 s.
+  // over Talk after either, with Undo for a removal, for at least 30 s and then until her next tap (round 7).
   const [confirm, setConfirm] = useState<(GoalConfirm & { line: string }) | null>(null);
   const [toast, setToast] = useState<{ text: string; undo?: { id: string; current: boolean } } | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const toastOff = useRef(() => {});
+  // Skip's "Moved to the end. Undo" under the card (round 7): the step, the step it went before, and its line.
+  const [skipped, setSkipped] = useState<{ step: Step; before: string | null; line: string } | null>(null);
+  const skipSaved = useRef<Promise<unknown>>(Promise.resolve());
+  const skipTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Connected apps (Nov 4): what they have waiting, read again after Your apps keeps or drops a token (appsRound); a doc
   // added under For this goal (docsRound); and the app just connected (/?connected=<app>), which opens Your apps.
   const [appItems, setAppItems] = useState<AppItem[]>([]);
@@ -681,6 +699,7 @@ export default function GuidedDay() {
     setHidden(readHidden(data.account, localDate(zone())));
     // What Zeno noticed joins the Suggestions; a failed read waits for the Memory sheet's own.
     void getJson<MemoryResponse>("/api/memory").then((res) => res.state === "ok" && setMemories(res.memories));
+    setWhys(readWhy(data.account));
     if (moved.current) return false;
     setGoal(plan);
     setGoals(null);
@@ -972,6 +991,15 @@ export default function GuidedDay() {
     return aloud(spoken(said));
   }
 
+  // Muse's lines for the plan it just made, kept for "Why this plan": only its own words, never one of ours.
+  function keepWhy(goalId: string, lines: string[]) {
+    const mine = account();
+    if (!mine) return;
+    const next = { ...readWhy(mine), [goalId]: lines.slice(0, 8) };
+    writeLocal(whyKey(mine), JSON.stringify(Object.fromEntries(Object.entries(next).slice(-40))));
+    setWhys(next);
+  }
+
   function keepNote(stepId: string, note: Note) {
     const mine = account();
     if (!mine) return;
@@ -1208,16 +1236,36 @@ export default function GuidedDay() {
     else if (latest.current.screen === "focus") quiet(FOCUS.calm);
     else setLine("");
     const name = title.replace(/[.!?]+$/, "");
-    clearTimeout(toastTimer.current);
-    setToast(how === "remove" ? { text: `Removed "${name}".`, undo: { id, current } } : { text: `"${name}" is done. Nice work.` });
-    toastTimer.current = setTimeout(() => setToast(null), 6000);
+    showToast(how === "remove" ? { text: `Removed "${name}".`, undo: { id, current } } : { text: `"${name}" is done. Nice work.` }, how === "remove" ? 30_000 : 6000);
+  }
+
+  // The line over Talk stays `ms`, then until her next tap anywhere but its Undo (round 7: 4 of 6 lost a goal to a 6 s Undo).
+  function showToast(next: NonNullable<typeof toast>, ms: number) {
+    toastOff.current();
+    setToast(next);
+    const stop = new AbortController();
+    const timer = setTimeout(() => {
+      document.addEventListener(
+        "pointerdown",
+        (event) => {
+          if ((event.target as Element | null)?.closest?.("[data-undo]")) return;
+          setToast(null);
+          stop.abort();
+        },
+        { signal: stop.signal },
+      );
+    }, ms);
+    toastOff.current = () => {
+      clearTimeout(timer);
+      stop.abort();
+    };
   }
 
   // Undo puts a removed goal back as it was: in the list, and open again when it was the goal on screen.
   async function undoRemove() {
     const undo = toast?.undo;
     if (!undo) return;
-    clearTimeout(toastTimer.current);
+    toastOff.current();
     setToast(null);
     const res = await post<CloseGoalResponse>("/api/goal/remove", { id: undo.id, undo: true } satisfies CloseGoalRequest);
     if (res.state === "signed-out") return showSignedOut();
@@ -1405,6 +1453,7 @@ export default function GuidedDay() {
       // Muse's lines are about the plan it just made, so a goal she already had opens without them.
       const lines = known || !Array.isArray(res.thinking) ? [] : res.thinking.filter((line) => typeof line === "string");
       if (lines.length > 0) {
+        keepWhy(res.goal.id, lines);
         planningWith(<PlanThinking live={[]} lines={lines} first={openSteps(res.goal)[0]?.title} />);
         await new Promise((done) => setTimeout(done, revealMs(lines.length)));
         if (ticket !== opened.current) return takeNew(res.goal);
@@ -1481,21 +1530,66 @@ export default function GuidedDay() {
 
   // Skip on the desk (Vi, Nov 4): the step goes to the end of its goal and the one after it shows, with no model call.
   // The server keeps the new order (PATCH /api/steps/[id] { later: true }), so a reload, the goals list and the apps agree.
+  // Round 7: "Moved to the end. Undo" says so under the card for a few seconds, and a skip the server didn't keep comes back.
   function skip(step: Step) {
     const plan = latest.current.goal;
     if (!plan) return;
     const after = nextProposal(plan, step.id);
+    const before = plan.steps[plan.steps.findIndex((one) => one.id === step.id) + 1]?.id ?? null;
     changeGoal({ ...plan, steps: [...plan.steps.filter((one) => one.id !== step.id), step] });
     setProposedId(after);
+    setLine(SKIPPED);
+    setSkipped({ step, before, line: SKIPPED });
+    clearTimeout(skipTimer.current);
+    skipTimer.current = setTimeout(() => {
+      setSkipped(null);
+      setLine((line) => (line === SKIPPED ? "" : line));
+    }, 6000);
+    skipSaved.current = moveStep(step.id, { later: true }).then((res) => {
+      if (res.state === "signed-out") return showSignedOut();
+      // Only while nothing has moved on, so a Start tapped meanwhile keeps its running step.
+      if (res.state === "ok") return void (latest.current.screen === "ready" && takeGoal(res.goal));
+      clearTimeout(skipTimer.current);
+      setSkipped(null);
+      if (putBack(step, before)) setLine("Couldn't skip that just now.");
+    });
+  }
+
+  // Skip's Undo: the step is Next again where it was, once the skip itself reached the server.
+  function unskip() {
+    const was = skipped;
+    if (!was || !putBack(was.step, was.before)) return;
+    clearTimeout(skipTimer.current);
+    setSkipped(null);
     setLine("");
-    void getJson<StepResponse>(`/api/steps/${encodeURIComponent(step.id)}`, {
+    const before = was.before;
+    if (!before) return;
+    void skipSaved.current
+      .then(() => moveStep(was.step.id, { before }))
+      .then((res) => {
+        if (res.state === "signed-out") showSignedOut();
+        else if (res.state === "ok") void (latest.current.screen === "ready" && takeGoal(res.goal));
+        else setLine("I couldn't undo that just now.");
+      });
+  }
+
+  // The open goal with `step` back in front of `before` (at the end without one), proposed again; false when the goal on
+  // screen is no longer its goal.
+  function putBack(step: Step, before: string | null): boolean {
+    const plan = latest.current.goal;
+    if (!plan?.steps.some((one) => one.id === step.id)) return false;
+    const rest = plan.steps.filter((one) => one.id !== step.id);
+    const at = before ? rest.findIndex((one) => one.id === before) : -1;
+    changeGoal({ ...plan, steps: at < 0 ? [...rest, step] : [...rest.slice(0, at), step, ...rest.slice(at)] });
+    setProposedId(step.id);
+    return true;
+  }
+
+  function moveStep(id: string, body: { later: true } | { before: string }) {
+    return getJson<StepResponse>(`/api/steps/${encodeURIComponent(id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ later: true }),
-    }).then((res) => {
-      if (res.state === "signed-out") showSignedOut();
-      // Only while nothing has moved on, so a Start tapped meanwhile keeps its running step.
-      else if (res.state === "ok" && latest.current.screen === "ready") takeGoal(res.goal);
+      body: JSON.stringify(body),
     });
   }
 
@@ -1912,7 +2006,7 @@ export default function GuidedDay() {
       const { id, title, how } = confirm;
       return [
         say(how === "remove" ? "Remove" : "Mark done", () => void endGoal(id, title, how)),
-        say(how === "remove" ? "Keep it" : "Not yet", () => {
+        say("Keep it", () => {
           setConfirm(null);
           setLine("Okay.");
         }),
@@ -2048,6 +2142,7 @@ export default function GuidedDay() {
               prompt: brief || assignment ? { course: brief?.course ?? assignment?.course ?? "", text: brief?.instructions ?? "", url: httpsOnly(assignment?.url) } : undefined,
               mail: mailId ? { id: mailId, gmail: gmail && `${gmail}#inbox/${encodeURIComponent(mailId)}` } : undefined,
               notes,
+              why: whys[goal.id],
             }
           : undefined
       }
@@ -2072,6 +2167,7 @@ export default function GuidedDay() {
       leaving={leaving}
       note={note}
       toast={toast && { text: toast.text, undo: Boolean(toast.undo) }}
+      lineUndo={skipped !== null && skipped.line === line && screen === "ready"}
       signInFailed={signInFailed}
       busy={busy || voice.phase === "thinking" || (screen === "ready" && !fresh)}
       chips={answers.map((one) => one.label)}
@@ -2140,7 +2236,7 @@ export default function GuidedDay() {
           // /api/day said whose browser this is (keys as in src/lib/vault.ts, src/lib/canvas-store.ts and connectKey in
           // src/lib/connect.ts: every app's token and the docs added to goals), nor what they hid.
           try {
-            for (const key of Object.keys(localStorage)) if (/^zeno\.(vault|canvas|connect|hidden)\.|^zeno:(notes|mail):/.test(key)) localStorage.removeItem(key);
+            for (const key of Object.keys(localStorage)) if (/^zeno\.(vault|canvas|connect|hidden)\.|^zeno:(notes|mail|why):/.test(key)) localStorage.removeItem(key);
           } catch {
             // Unreadable storage holds nothing to clear.
           }
@@ -2171,9 +2267,18 @@ export default function GuidedDay() {
         },
         // The desk's goal is the page's current one.
         closeGoal(how) {
-          if (goal && fresh && !busy) void endGoal(goal.id, goal.title, how);
+          if (!goal || !fresh || busy) return;
+          // Mark done with steps left asks first, as talk does (round 7: a goal finished with 4 of 5 steps left).
+          const left = openSteps(goal).length;
+          if (how === "finish" && left > 0) {
+            const said = `${left} ${left === 1 ? "step" : "steps"} left. Mark it done?`;
+            setConfirm({ id: goal.id, title: goal.title, how, line: said });
+            return setLine(said);
+          }
+          void endGoal(goal.id, goal.title, how);
         },
         undo: () => void undoRemove(),
+        unskip,
         // Make it a goal: its title, due date and detail as her words, the item kept on the goal.
         fromApp(index) {
           const item = fromApps[index];
