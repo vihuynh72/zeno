@@ -8,7 +8,8 @@ import { goalRow, panelGoals, type PanelRow } from "@/components/day-flow";
 // Suggestions. A laptop's left column beside the open goal's desk; a phone's home under the hello. Nothing here talks
 // to the server: the page's handlers do.
 
-const EXAMPLES = "Run a 5K by January\nFinish my portfolio site by Friday\nStudy for my CS exam next Thursday";
+// A dash starts each, so one that wraps on a phone still reads as one example.
+const EXAMPLES = "– Run a 5K by January\n– Finish my portfolio site by Friday\n– Study for my CS exam next Thursday";
 
 // Enter makes the plan, Shift+Enter starts a new line, Escape closes the box (the panel's only).
 function onKeys(event: KeyboardEvent<HTMLTextAreaElement>, submit: () => void, close?: () => void) {
@@ -56,17 +57,20 @@ export default function GoalsPanel({ goals, suggestions, openId, proposed, today
             <li key={goal.id}>
               <button type="button" onClick={() => onOpen(goal.id)} aria-current={open || undefined} className="choice">
                 <span className="lines block">
-                  <span className="line-clamp-2 font-bold">{row.title}</span>
+                  {/* The count inside the title: a direct child of .lines is position: relative, so it would take a line. */}
+                  <span className="line-clamp-2 font-bold">
+                    {row.title}
+                    <span className="sr-only">
+                      , {done} of {goal.steps.length} steps done.
+                    </span>
+                  </span>
                   {/* Fills only with finished steps (Nov 4: a red first segment read as progress already made). */}
                   <span className="meter" aria-hidden="true">
                     {goal.steps.map((step) => (
                       <i key={step.id} data-done={step.status === "done" || undefined} />
                     ))}
                   </span>
-                  <span className="sr-only">
-                    {done} of {goal.steps.length} steps done.{" "}
-                  </span>
-                  {row.line && <span className="block truncate text-[18px]">{row.line}</span>}
+                  {row.line && <span className="line-clamp-2 text-[18px]">{row.line}</span>}
                   {row.when && <span className="block truncate text-[18px] text-ink-2">{row.when}</span>}
                 </span>
               </button>

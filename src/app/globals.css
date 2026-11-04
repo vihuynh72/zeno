@@ -1524,18 +1524,25 @@ button:active .tap {
   .page[data-panel] > main {
     grid-column: 4;
   }
-  /* In view while the desk scrolls, with its own scroll above the dock. 8px of room keeps the focus rings whole. */
+  /* In view while the desk scrolls, with its own scroll that ends above the dock even under the header (80px), so a
+     short page never hides its last rows. 8px of room keeps the focus rings whole. */
   .page[data-panel] > .panel {
     grid-column: 2;
     grid-row: 2;
     align-self: start;
     position: sticky;
     top: 0;
-    max-height: calc(100dvh - var(--dock));
+    max-height: calc(100dvh - var(--dock) - 80px);
     overflow-y: auto;
     margin-inline: -8px;
     padding: 24px 8px;
     scrollbar-width: thin;
+  }
+  /* Level with the card's top edge, which sits higher on a short laptop. */
+  .page[data-panel] > .panel {
+    @variant short {
+      padding-top: 16px;
+    }
   }
   .page[data-panel] > .dock {
     padding-left: calc(var(--side) + var(--gap));
@@ -1590,12 +1597,9 @@ button:active .tap {
   transform: scale(0.99);
   transition-duration: 0s;
 }
-/* The box: a goal card being written, its words on the rules, ringed in ink while open. */
+/* The box: a goal card being written, its words on the rules (the line turns red while focused). */
 .add-box {
   --fs2: 20px;
-  box-shadow:
-    0 0 0 2px var(--ink),
-    var(--edge);
 }
 .add-box:active {
   transform: none;
@@ -1663,6 +1667,11 @@ button:active .tap {
 }
 .slip .write:focus-visible {
   background: linear-gradient(var(--red) 2px, transparent 2px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100% var(--lh) local;
+}
+/* The box sits inside html's scroll padding, so the caret could never come "clear" of the dock: without this, every
+   keystroke scrolled the page to its end. */
+html:has(.slip:focus-within) {
+  scroll-padding-bottom: 0;
 }
 
 /* The account menu's small heading over Canvas and Connect an app. */

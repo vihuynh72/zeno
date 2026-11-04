@@ -290,7 +290,9 @@ export default function GuidedDay() {
   const screen = screenSet ?? (saved && (!saved.day.isNew || saved.setupDone) ? (resumed ? "focus" : "ready") : null);
   const view = viewSet ?? (resumed ? "desk" : "home");
   const line = lineSet ?? (screen === "focus" ? FOCUS.calm : same ? same.opening?.text ?? same.day.opening : "");
-  const options = optionsSet ?? (same ? quickReplies(same.opening?.options ?? same.day.options) : []);
+  // Only a talk turn's quick replies (Nov 4): the opening's options ("Plan tomorrow") never show, and a saved one never
+  // leaks into Focus after a reload.
+  const options = optionsSet ?? [];
   const day = daySet ?? same?.day ?? null;
   // Plans and deadlines don't change with the part of the day, so a saved day's paint the home from any part of it.
   const base = day ?? saved?.day ?? null;
@@ -565,10 +567,7 @@ export default function GuidedDay() {
       setScreen("ready");
       latest.current.screen = "ready";
       // A saved model line for this part of the day stays until the new one lands; otherwise the quick line shows now.
-      if (!kept) {
-        setLine(data.opening);
-        setOptions(quickReplies(data.options));
-      }
+      if (!kept) setLine(data.opening);
     }
     // The first open of the day (not the first run) re-reads calendar and email quietly; what it learns saves silently.
     const today = localDate(zone());
@@ -594,10 +593,8 @@ export default function GuidedDay() {
     if (moved.current || latest.current.screen !== "ready" || latest.current.view !== "home") return;
     // cache.current.day is this load's /api/day, even before the render that sets `day`.
     const text = ok ? res.opening.trim() : (cache.current?.day.opening ?? line);
-    const next = quickReplies(ok ? res.options : cache.current?.day.options);
-    if (ok && sig !== null) keepOpening(text, next, sig, res.noticed);
+    if (ok && sig !== null) keepOpening(text, quickReplies(res.options), sig, res.noticed);
     setLine(text);
-    setOptions(next);
     if (spoke.current || voice.muted) return;
     spoke.current = true;
     // Never over another line (a heads-up) or the person: Hear Zeno offers it instead.
@@ -918,8 +915,8 @@ export default function GuidedDay() {
     });
   }
 
-  // The home: the hello and the goal options (Vi, Nov 3). The current plan stays current. `said` replaces Zeno's line
-  // for a moment ("Your draft is open in Gmail."); otherwise the day's opening is back.
+  // The home: the hello and the goals (Vi, Nov 3). The current plan stays current. `said` replaces Zeno's line for a
+  // moment ("Your draft is open in Gmail."); otherwise the day's opening is back.
   function goHome(said?: string) {
     opened.current += 1;
     setOfferKeys([]);
@@ -934,10 +931,10 @@ export default function GuidedDay() {
     latest.current.view = "home";
     latest.current.screen = "ready";
     setLine(said ?? cache.current?.opening?.text ?? cache.current?.day.opening ?? line);
-    setOptions(quickReplies(cache.current?.opening?.options ?? cache.current?.day.options));
+    setOptions([]);
   }
 
-  // The mark, "← All goals" and Switch goal: a step running in Focus goes back to todo first.
+  // The mark, "← Goals" and Switch goal: a step running in Focus goes back to todo first.
   function leaveForHome() {
     void letGo();
     goHome();
@@ -1061,7 +1058,9 @@ export default function GuidedDay() {
     const res = await post<GoalResponse>("/api/goal/add", { text: words } satisfies AddGoalRequest);
     making.current.delete("add");
     if (res.state === "signed-out") return showSignedOut();
-    if (res.state === "ok") for (const other of Array.isArray(res.others) ? res.others : []) takeGoal(other);
+    // Only whole plans join the panel: a bad entry must never take the page down.
+    const others = res.state === "ok" && Array.isArray(res.others) ? res.others.filter((one) => typeof one?.id === "string" && Array.isArray(one.steps)) : [];
+    for (const other of others) takeGoal(other);
     if (ticket !== opened.current) {
       if (res.state === "ok") takeNew(res.goal);
       else setAddWords(words);
@@ -1305,7 +1304,7 @@ export default function GuidedDay() {
     finishSetup();
   }
 
-  // Start my day: the home, with the opening written from what the scan learned.
+  // Start: the home, with the opening written from what the scan learned.
   function finishSetup() {
     store({ setupDone: true });
     moved.current = false;
@@ -1314,7 +1313,6 @@ export default function GuidedDay() {
     setView("home");
     setScreen("ready");
     setLine(day?.opening ?? "");
-    setOptions(quickReplies(day?.options));
     setWantOpening((n) => n + 1);
     // The scan saved what it found (its deadlines too) after /api/day answered, so the home reads the day again, Canvas
     // first when it is linked here; else the first home lists no deadlines until a reload (found in review, Nov 3).
@@ -1412,13 +1410,11 @@ export default function GuidedDay() {
     moved.current = false;
     setScreen("ready");
     setLine(cache.current?.day.opening ?? line);
-    setOptions(quickReplies(cache.current?.day.options));
     const sig = daySig();
     const res = await fetchOpening(account());
     if (res.state !== "ok" || moved.current) return;
     keepOpening(res.opening, quickReplies(res.options), sig, res.noticed);
     setLine(res.opening);
-    setOptions(quickReplies(res.options));
     speakLine(homeLine(res.opening));
   }
 
@@ -1558,7 +1554,8 @@ export default function GuidedDay() {
       busy={busy || voice.phase === "thinking" || (screen === "ready" && !fresh)}
       chips={answers.map((one) => one.label)}
       pasting={screen === "setup" && pasting}
-      hear={hear && screen === "ready" && !onDesk}
+      // Not on the front door: its line is fixed text, and the link would push a phone's view off its top.
+      hear={hear && screen === "ready" && !onDesk && !frontDoor}
       progress={progress}
       celebrate={celebrate}
       bookings={bookings}
@@ -1582,7 +1579,7 @@ export default function GuidedDay() {
         propose: (stepId) => setProposedId(stepId),
         hear() {
           setHear(false);
-          void voice.speak(`${hello} ${homeLine(line)}`);
+          void voice.speak(`${hello} ${line}`);
         },
         paste: savePaste,
         talk,

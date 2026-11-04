@@ -84,7 +84,7 @@ export type DayViewProps = {
     choose(index: number): void; // a suggestion: a deadline's new plan or an email's reply
     addGoal?(text: string): void; // the add box's words become a plan (POST /api/goal/add)
     snap(photo: File): void; // "Add from a photo": Muse Spark reads an assignment's photo, and its plan's desk opens
-    home(): void; // the Zeno mark and "← All goals"
+    home(): void; // the Zeno mark and "← Goals"
     propose(stepId: string): void; // a todo step tapped on the desk becomes the proposed one
     hear(): void;
     paste(text: string): void;
@@ -204,7 +204,8 @@ export default function DayView(props: DayViewProps) {
     // A tall card or line can leave the answers under the sticky dock or its fade; bring them clear of it (html's
     // scroll-padding-bottom is the dock). Answers far below, under an open desk, stay put.
     const pills = pillsRef.current;
-    if (!pills) return;
+    // No answers (the home, the front door): nothing to bring clear, so the view stays at its top.
+    if (!pills?.childElementCount) return;
     const { top, bottom } = pills.getBoundingClientRect();
     const dockTop = document.querySelector(".dock")?.getBoundingClientRect().top ?? innerHeight;
     // On a goal's desk the scroll stops where the goal strip would leave the top, so a Done shows its bar fill (live,
@@ -221,10 +222,10 @@ export default function DayView(props: DayViewProps) {
   // The person's words; the text box itself docks above the dock (Nov 4), never on the card.
   const youLine =
     props.you || youHint || listening ? (
-    <p>
-      <span className={`hand text-ink-2 ${listening ? "pen" : ""}`}>{props.you || youHint || "Listening. Tap anywhere to stop."}</span>
-    </p>
-  ) : null;
+      <p>
+        <span className={`hand text-ink-2 ${listening ? "pen" : ""}`}>{props.you || youHint || "Listening. Tap anywhere to stop."}</span>
+      </p>
+    ) : null;
 
   const answer = (i: number) => {
     if (props.busy) return;
@@ -249,6 +250,11 @@ export default function DayView(props: DayViewProps) {
     on.addGoal?.(text);
   };
   const pickPhoto = () => photoRef.current?.click();
+  // Focus goes back to the keyboard button without scrolling: the dock sits inside html's scroll padding.
+  const closeBox = () => {
+    typeRef.current?.focus({ preventScroll: true });
+    on.closeTyping();
+  };
   const offerChip = (booking: Booking, isBig = false) => (
     <BookingChip key={booking.key} booking={booking} big={isBig} onBook={() => on.book(booking.key)} onUndo={() => on.unbook(booking.key)} />
   );
@@ -572,13 +578,9 @@ export default function DayView(props: DayViewProps) {
               busy={props.busy}
               onSend={(text) => {
                 on.send(text);
-                typeRef.current?.focus();
-                on.closeTyping();
+                closeBox();
               }}
-              onClose={() => {
-                typeRef.current?.focus();
-                on.closeTyping();
-              }}
+              onClose={closeBox}
             />
           )}
           <div className="dock-row">
@@ -663,6 +665,8 @@ function Said({ text, fade }: { text: string; fade: boolean }) {
 // The text box, a slip of card docked above Talk (Nov 4): Send closes it, so Zeno's answer has the screen.
 function Write({ busy, onSend, onClose }: { busy: boolean; onSend(text: string): void; onClose(): void }) {
   const box = useRef<HTMLTextAreaElement>(null);
+  // Focused without scrolling: the dock is inside html's scroll padding, so a plain focus scrolls the page to its end.
+  useEffect(() => box.current?.focus({ preventScroll: true }), []);
   const send = () => {
     const text = box.current?.value.trim();
     // While Zeno is busy the words wait in the box for the next Enter, so two turns never run at once.
@@ -673,7 +677,6 @@ function Write({ busy, onSend, onClose }: { busy: boolean; onSend(text: string):
     <div className="slip">
       <textarea
         ref={box}
-        autoFocus
         rows={1}
         enterKeyHint="send"
         className="write min-w-0 flex-1"
