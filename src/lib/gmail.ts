@@ -71,10 +71,14 @@ const BULK = /^CATEGORY_(PROMOTIONS|SOCIAL|UPDATES|FORUMS)$/;
 const NO_REPLY = /no[-_]?reply|do[-_]?not[-_]?reply|notifications?@|mailer-daemon|newsletter/i;
 const IMPORTANT = "in:inbox -category:promotions -category:social -category:updates -category:forums";
 
+// A Gmail message id as the routes accept it.
+export const MAIL_ID = /^[A-Za-z0-9_-]{6,64}$/;
+
 // Only important mail (Vi, Nov 2), people and school: the newest 15 outside the bulk tabs, without bulk or no-reply
-// senders, at most 6.
-export async function getRecentEmail(accessToken: string): Promise<EmailSummary[]> {
-  const list = (await gmailFetch(accessToken, `messages?${new URLSearchParams({ maxResults: "15", q: IMPORTANT })}`)) as GmailListResponse;
+// senders, at most 6. all: every recent email instead ("Show all mail", Nov 4), the newest 20 in the inbox from any tab.
+export async function getRecentEmail(accessToken: string, all = false): Promise<EmailSummary[]> {
+  const query = all ? { maxResults: "20", q: "in:inbox" } : { maxResults: "15", q: IMPORTANT };
+  const list = (await gmailFetch(accessToken, `messages?${new URLSearchParams(query)}`)) as GmailListResponse;
 
   const ids = (list.messages ?? []).map((item) => item.id).filter(Boolean) as string[];
   const messages = await Promise.all(
@@ -91,7 +95,7 @@ export async function getRecentEmail(accessToken: string): Promise<EmailSummary[
     .flatMap((message, i) => {
       const from = header(message, "From");
       const labels = message.labelIds ?? [];
-      if (!from || NO_REPLY.test(from) || labels.some((label) => BULK.test(label))) return [];
+      if (!from || (!all && (NO_REPLY.test(from) || labels.some((label) => BULK.test(label))))) return [];
       return [
         {
           // The id it was read by: a made-up one could never open (Nov 4).
@@ -103,7 +107,7 @@ export async function getRecentEmail(accessToken: string): Promise<EmailSummary[
         },
       ];
     })
-    .slice(0, 6);
+    .slice(0, all ? 20 : 6);
 }
 
 // One email read in full for the Desk (GET /api/mail/[id]) with the person's own token: cleaned and capped at 6,000

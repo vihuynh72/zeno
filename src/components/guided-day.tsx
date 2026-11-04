@@ -5,6 +5,7 @@ import { signIn, signOut } from "next-auth/react";
 import type {
   ActivateRequest,
   AddGoalRequest,
+  AddStepRequest,
   AddGoalResponse,
   BookResponse,
   CalendarBlock,
@@ -527,6 +528,16 @@ export default function GuidedDay() {
     // current as it is saved, or keepCurrent puts the page's back when it fails (two goals added in a row, Nov 4).
     const shown = latest.current.goal;
     if (shown && shown.id !== next.id && making.current.size === 0) keepCurrent();
+  }
+
+  // An email's "Add as a step" (Nov 4): one step joins that goal, next but never stopping a running step, taken as the
+  // server saved it. false: not saved, and the Mail card says so.
+  async function addStep(goalId: string, title: string) {
+    const res = await post<GoalResponse>("/api/goal/step", { goalId, title } satisfies AddStepRequest);
+    if (res.state === "signed-out") showSignedOut();
+    if (res.state !== "ok") return false;
+    takeGoal(res.goal);
+    return true;
   }
 
   // The page's current plan made the server's current one again, so Talk acts on the plan she sees.
@@ -2023,7 +2034,7 @@ export default function GuidedDay() {
           // The next person at a shared computer must not read anyone's private facts or Canvas link, even before
           // /api/day said whose browser this is (keys as in src/lib/vault.ts and src/lib/canvas-store.ts).
           try {
-            for (const key of Object.keys(localStorage)) if (/^zeno\.(vault|canvas)\.|^zeno:notes:/.test(key)) localStorage.removeItem(key);
+            for (const key of Object.keys(localStorage)) if (/^zeno\.(vault|canvas)\.|^zeno:(notes|mail):/.test(key)) localStorage.removeItem(key);
           } catch {
             // Unreadable storage holds nothing to clear.
           }
@@ -2042,10 +2053,11 @@ export default function GuidedDay() {
           setSheet(null);
           if (fresh) void planDeadline(deadline);
         },
-        reply(email) {
+        mailGoal(text) {
           setSheet(null);
-          if (fresh) void answerMail(email);
+          if (fresh) void addGoal(text);
         },
+        addStep,
         // The desk's goal is the page's current one.
         closeGoal(how) {
           if (goal && fresh && !busy) void endGoal(goal.id, goal.title, how);

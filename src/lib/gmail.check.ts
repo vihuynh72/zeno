@@ -59,6 +59,15 @@ assert.deepEqual(
 assert.deepEqual(emails[0], { id: "m1", from: "Prof Kim <kim@sjsu.edu>", subject: "Subject m1", snippet: "About m1", unread: true });
 assert.equal(emails[1].unread, false);
 
+// "Show all mail" (Nov 4): the newest 20 in the inbox from every tab, no-reply and bulk senders too; senderless mail still out.
+urls.length = 0;
+const everything = await getRecentEmail("tok", true);
+assert.deepEqual(Object.fromEntries(new URL(urls[0]).searchParams), { maxResults: "20", q: "in:inbox" });
+assert.deepEqual(
+  everything.map((item) => item.id),
+  mail.filter(({ id }) => id !== "m5").map(({ id }) => id),
+);
+
 // One email in full for the Desk: format=full with the person's token, the plain part over the HTML one, cleaned like
 // the scan's (no quoted reply, links as [link]) with its paragraphs, capped at 6,000 characters; Gmail's 404 stays one.
 const part = (mimeType: string, text: string) => ({ mimeType, body: { data: Buffer.from(text).toString("base64url") } });

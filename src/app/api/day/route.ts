@@ -2,13 +2,11 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { ruleOpening, ruleOptions } from "@/lib/brief";
-import { loadUserContext, scrub } from "@/lib/context";
+import { dayEmails, loadUserContext } from "@/lib/context";
 import type { DayResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
-import { addressOf, asks } from "@/lib/gmail";
 import { doneTitles, finishedYesterday, hasAnyGoal, openGoals, recentSteps, stepsDoneSince, titleKey, weekStart } from "@/lib/goals";
 import { paceOf } from "@/lib/patterns";
-import { sensitiveEmail } from "@/lib/profile";
 import { accountKey } from "@/lib/session-json";
 import { timeZoneFrom, localDate } from "@/lib/tz";
 
@@ -55,15 +53,7 @@ export async function GET() {
     free: context.free,
     deadlines: context.deadlines.filter((deadline) => !finishedKeys.has(titleKey(deadline.title))),
     calendarWrite: context.calendarWrite,
-    // The day is kept in the browser, and codes are kept nowhere: code and bank mail shows that it came, not what it says,
-    // and never asks; its row opens it in Gmail, never in Zeno (Nov 4: it couldn't be clicked). Mail the person sent never
-    // asks either.
-    emails: context.emails.map(({ id, from, subject, snippet, unread }) => {
-      const address = addressOf(from);
-      return sensitiveEmail({ from, subject, snippet })
-        ? { id, from, address, subject: scrub(subject), snippet: "", unread, asks: false, sensitive: true }
-        : { id, from, address, subject, snippet, unread, asks: asks(subject, snippet, address === email.toLowerCase()) };
-    }),
+    emails: dayEmails(context.emails, email),
     unreadEmail: context.emails.filter((item) => item.unread).length,
     mailUrl: `https://mail.google.com/mail/?authuser=${encodeURIComponent(email)}`,
     isNew: context.tasksState === "ok" && context.memories.length === 0 && !anyGoal,

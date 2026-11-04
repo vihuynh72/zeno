@@ -112,10 +112,12 @@ export type DayViewProps = {
     signIn(): void;
     signOut(): void;
     canvasSynced(assignments: CanvasAssignment[]): void; // Canvas linked in its sheet (what it found), or unlinked ([])
-    // The Desk's working cards (Vi, Nov 3): open a plan's desk, plan a deadline and open its desk, answer an email.
+    // The Desk's working cards (Vi, Nov 3): open a plan's desk, plan a deadline and open its desk; an email becomes a goal
+    // (the Desk closes and it is planned) or a step on one of her goals (false: not saved) (Nov 4).
     openGoal(goalId: string): void;
     openDeadline(deadline: Deadline): void;
-    reply(email: DayEmail): void;
+    mailGoal?(text: string): void;
+    addStep?(goalId: string, title: string): Promise<boolean>;
     // The links by a desk's goal title (Nov 4): remove the goal or mark it done, and the toast's Undo for a removal.
     closeGoal?(how: "remove" | "finish"): void;
     undo?(): void;
@@ -668,7 +670,6 @@ export default function DayView(props: DayViewProps) {
           apps={props.appItems}
           onBook={() => props.deskOffer && on.book(props.deskOffer.key)}
           onUndo={() => props.deskOffer && on.unbook(props.deskOffer.key)}
-          onReply={on.reply}
         />
       )}
 
@@ -748,7 +749,8 @@ export default function DayView(props: DayViewProps) {
         progress={props.progress ?? undefined}
         onGoal={on.openGoal}
         onDeadline={on.openDeadline}
-        onReply={on.reply}
+        onAdd={on.mailGoal}
+        onStep={on.addStep}
       />
       <SheetPanel open={props.sheet === "memory"} title="Memory" onClose={() => on.sheet(null)}>
         {props.sheet === "memory" && (

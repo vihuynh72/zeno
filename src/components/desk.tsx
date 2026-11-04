@@ -1,9 +1,9 @@
 "use client";
 
 import { type CSSProperties, type KeyboardEvent, type MouseEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { DayEmail, DayEvent, Deadline, DoneStep, Goal, MailResponse, Progress, SourceState } from "@/lib/day";
+import type { DayEmail, DayEvent, Deadline, DoneStep, DraftResponse, Goal, MailLinesResponse, MailListResponse, MailResponse, Progress, SourceState } from "@/lib/day";
 import type { Today } from "@/components/day-view";
-import { browserZone, freeGaps, gmailRow, httpsOnly, markEvents, senderName, snippetLine, timeRange } from "@/components/desk-rows";
+import { browserZone, composeUrl, freeGaps, gmailRow, httpsOnly, markEvents, senderName, snippetLine, timeRange } from "@/components/desk-rows";
 import { deskPlans, doneCaption, doneSteps, dueShort, duration, mergeDone, nextCaption, sameGoal } from "@/components/goal-rows";
 import WeekGoals, { GoalLines } from "@/components/week-goals";
 import WeekGrid from "@/components/week-grid";
@@ -43,12 +43,13 @@ type DeskProps = {
   onClose(): void;
   onSignIn(): void;
   // The working cards (Vi, Nov 3): every open plan, this week's days for the Week, and taps that leave the Desk for a
-  // plan's desk, a deadline's new plan, or an email's reply.
+  // plan's desk, a deadline's new plan, or an email's new goal; an email's step joins a goal in place (Nov 4).
   goals?: Goal[];
   progress?: Progress;
   onGoal?(goalId: string): void;
   onDeadline?(deadline: Deadline): void;
-  onReply?(email: DayEmail): void;
+  onAdd?(text: string): void;
+  onStep?(goalId: string, title: string): Promise<boolean>;
 };
 
 // Only the backdrop: a click on the dialog's own scrollbar lands inside its box.
@@ -121,7 +122,7 @@ function unfold(dialog: HTMLDialogElement, from: DOMRect | undefined) {
   dialog.firstElementChild?.animate([{ opacity: 0.4 }, { opacity: 1 }], { duration: 120, easing: "ease-out" });
 }
 
-function DeskBody({ tab: opensOn = "today", today, goal, goals, progress, onSignIn, onGoal, onDeadline, onReply, booked = [] }: Omit<DeskProps, "open" | "onClose">) {
+function DeskBody({ tab: opensOn = "today", today, goal, goals, progress, onSignIn, onGoal, onDeadline, onAdd, onStep, booked = [] }: Omit<DeskProps, "open" | "onClose">) {
   // Wall clock to the minute; 0 on the server, so nothing is marked before the browser knows the time.
   const now = useSyncExternalStore(everyHalfMinute, () => Math.floor(Date.now() / 60_000) * 60_000, () => 0);
   const [tab, setTab] = useState(opensOn);
@@ -226,7 +227,7 @@ function DeskBody({ tab: opensOn = "today", today, goal, goals, progress, onSign
           <div className={`grid grid-cols-1 items-start gap-6 ${mailOn ? "lg:grid-cols-2 lg:grid-rows-[auto_auto_1fr]" : "max-w-[760px]"}`}>
             <Goals plans={plans} date={date} hint={deadlines.length > 0} failed={Boolean(today && today.sources.goals !== "ok")} onGoal={onGoal} />
             <DoneToday done={done} date={date} />
-            {today && mailOn && <Mail today={today} onReply={onReply} />}
+            {today && mailOn && <Mail today={today} goals={plans} onAdd={onAdd} onStep={onStep} all />}
             {deadlines.length > 0 && <Deadlines deadlines={deadlines} plans={plans} onGoal={onGoal} onDeadline={onDeadline} />}
             {today && calendarOn && <Calendar today={today} now={now} booked={booked} />}
           </div>
@@ -389,9 +390,30 @@ function Deadlines({ deadlines, plans, onGoal, onDeadline }: { deadlines: Deadli
   );
 }
 
-// Only important mail reaches the desk, mail that asks her something first (Vi, Nov 3). A tap opens one email in place,
-// read in full from Gmail; its text lives only in this card's state, never stored or logged.
-export function Mail({ today, onReply }: { today: Today; onReply?(email: DayEmail): void }) {
+// The day's summary lines on this device, by email id, for one date (cleared at sign-out): each email is summed up once a
+// day, and GET /api/day never waits on the model.
+const LINES_KEY = "zeno:mail:lines";
+function readLines(date: string): Record<string, string> {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LINES_KEY) ?? "null") as { date?: unknown; lines?: unknown } | null;
+    return saved?.date === date && saved.lines && typeof saved.lines === "object" ? (saved.lines as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+type MailProps = {
+  today: Today;
+  goals?: Goal[]; // her open goals, the chips for "Add as a step"
+  onAdd?(text: string): void; // "Make it a goal": the page plans these words (POST /api/goal/add)
+  onStep?(goalId: string, title: string): Promise<boolean>; // "Add as a step": false when it wasn't saved
+  all?: boolean; // the Desk's card: "Show all mail" under the important ones
+};
+
+// Only important mail reaches the desk, mail that asks her something first (Vi, Nov 3), each with one line on what it
+// asks and by when (Nov 4), and the rest of her mail one tap away. A tap opens one email in place, read in full from
+// Gmail; its text lives only in this card's state, never stored or logged.
+export function Mail({ today, goals = [], onAdd, onStep, all = false }: MailProps) {
   const { email } = today.sources;
   const gmail = httpsOnly(today.mailUrl)?.split("#")[0];
   const list = [...today.emails.filter((mail) => mail.asks), ...today.emails.filter((mail) => !mail.asks)].slice(0, 6);
@@ -399,6 +421,11 @@ export function Mail({ today, onReply }: { today: Today; onReply?(email: DayEmai
   const other = list.filter((mail) => !mail.asks);
   const [open, setOpen] = useState<string | null>(null);
   const [read, setRead] = useState<{ id: string; mail: MailResponse } | null>(null);
+  const [lines, setLines] = useState(() => readLines(localDate(browserZone())));
+  const asked = useRef(new Set<string>());
+  const [more, setMore] = useState<MailListResponse | "loading" | null>(null);
+  // Code and bank mail is never summed up: the page never opens it.
+  const summed = email === "ok" ? list.flatMap((mail) => (mail.id && !mail.sensitive ? [mail.id] : [])).join(",") : "";
 
   useEffect(() => {
     if (!open) return;
@@ -413,15 +440,47 @@ export function Mail({ today, onReply }: { today: Today; onReply?(email: DayEmai
     return () => stop.abort();
   }, [open]);
 
+  // The lines this device doesn't have yet, asked once per visit; a failed ask leaves the row's snippet.
+  useEffect(() => {
+    const date = localDate(browserZone());
+    const ids = summed ? summed.split(",").filter((id) => !readLines(date)[id] && !asked.current.has(id)) : [];
+    if (ids.length === 0) return;
+    for (const id of ids) asked.current.add(id);
+    void fetch("/api/mail/lines", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }), cache: "no-store" })
+      .then((response) => response.json() as Promise<MailLinesResponse>)
+      .then((res) => {
+        if (res.state !== "ok" || !res.lines || typeof res.lines !== "object") return;
+        const all = { ...readLines(date), ...res.lines };
+        try {
+          localStorage.setItem(LINES_KEY, JSON.stringify({ date, lines: all }));
+        } catch {
+          // Storage off: asked again next visit.
+        }
+        setLines(all);
+      })
+      .catch(() => {});
+  }, [summed]);
+
   // One email open at a time; closing one drops its text.
   function toggle(id: string) {
     setRead(null);
     setOpen((was) => (was === id ? null : id));
   }
 
+  async function showAll() {
+    setMore("loading");
+    setMore(
+      await fetch("/api/mail", { cache: "no-store" })
+        .then((response) => response.json() as Promise<MailListResponse>)
+        .catch((): MailListResponse => ({ state: "error" })),
+    );
+  }
+  const listed = new Set(list.map((mail) => mail.id));
+  const rest = more && more !== "loading" && more.state === "ok" && Array.isArray(more.emails) ? more.emails.filter((mail) => !listed.has(mail.id)) : [];
+
   const row = (mail: DayEmail, i: number) => {
     const { id } = mail;
-    const snippet = mail.asks ? snippetLine(mail.snippet) : "";
+    const line = (id && lines[id]) || (mail.asks ? snippetLine(mail.snippet) : "");
     const head = (
       <>
         <span className={`block truncate max-sm:line-clamp-2 max-sm:whitespace-normal ${mail.unread ? "font-bold" : ""}`}>
@@ -433,10 +492,10 @@ export function Mail({ today, onReply }: { today: Today; onReply?(email: DayEmai
           <span className="sr-only">: </span>
           <span className="underline-offset-4 group-hover:underline">{mail.subject}</span>
         </span>
-        {snippet && (
-          <span className="block truncate text-ink-2">
+        {line && (
+          <span className="block truncate text-ink-2 max-sm:line-clamp-2 max-sm:whitespace-normal">
             <span className="sr-only">: </span>
-            {snippet}
+            {line}
           </span>
         )}
       </>
@@ -485,17 +544,15 @@ export function Mail({ today, onReply }: { today: Today; onReply?(email: DayEmai
             ) : (
               <p className="text-ink-2">This email has no text.</p>
             )}
-            <p className="flex flex-wrap gap-x-4">
-              <button type="button" onClick={() => onReply?.(mail)} className={`underline underline-offset-4 ${mail.asks ? "font-bold" : "text-ink-2"}`}>
-                Reply
-              </button>
-              {gmail && (
-                <a href={`${gmail}#inbox/${encodeURIComponent(id)}`} target="_blank" rel="noopener noreferrer" className="text-ink-2 underline underline-offset-4">
-                  Open in Gmail
-                  <span className="sr-only"> (opens in a new tab)</span>
-                </a>
-              )}
-            </p>
+            <MailActions
+              mail={{ ...mail, id }}
+              line={lines[id] ?? ""}
+              text={shown?.state === "ok" ? shown.text : ""}
+              gmail={gmail}
+              goals={goals}
+              onAdd={onAdd}
+              onStep={onStep}
+            />
           </div>
         )}
       </li>
@@ -533,6 +590,25 @@ export function Mail({ today, onReply }: { today: Today; onReply?(email: DayEmai
             )}
           </>
         )}
+        {/* The rest of her recent mail, under the important ones (Vi, Nov 4: "show more than important"). */}
+        {all &&
+          email === "ok" &&
+          (more === null || (more !== "loading" && more.state !== "ok") ? (
+            <p>
+              <button type="button" onClick={() => void showAll()} className="text-ink-2 underline underline-offset-4">
+                {more ? "Couldn't load your mail. Try again" : "Show all mail"}
+              </button>
+            </p>
+          ) : more === "loading" ? (
+            <p className="text-ink-2">Getting your mail…</p>
+          ) : rest.length === 0 ? (
+            <p className="text-ink-2">No other recent mail.</p>
+          ) : (
+            <>
+              <h4 className="font-bold text-ink-2">More mail</h4>
+              <ul>{rest.map(row)}</ul>
+            </>
+          ))}
         {gmail && (
           <p>
             <a href={gmail} target="_blank" rel="noopener noreferrer" className="text-ink-2 underline underline-offset-4">
@@ -543,5 +619,103 @@ export function Mail({ today, onReply }: { today: Today; onReply?(email: DayEmai
         )}
       </div>
     </section>
+  );
+}
+
+// An open email's taps (Vi, Nov 4): Muse drafts a reply she edits and sends herself from Gmail (Zeno never sends mail),
+// or the email becomes a goal, or a step on one of her goals. A reply plan's email card (goal-desk.tsx) has the draft only.
+export function MailActions({ mail, line, text, gmail, goals = [], onAdd, onStep }: { mail: DayEmail & { id: string }; line: string; text: string; gmail?: string } & Omit<MailProps, "today">) {
+  const [draft, setDraft] = useState<DraftResponse | "writing" | null>(null);
+  const [words, setWords] = useState("");
+  const [picking, setPicking] = useState(false);
+  const [added, setAdded] = useState("");
+  const name = senderName(mail.from);
+  // What it asks and by when: the day's line, else the start of the email itself.
+  const ask = line || text.replace(/\s+/g, " ").trim().slice(0, 300) || snippetLine(mail.snippet);
+  const written = draft && draft !== "writing" && draft.state === "ok" ? draft : null;
+
+  async function write() {
+    if (draft === "writing") return;
+    setDraft("writing");
+    const res = await fetch(`/api/mail/${encodeURIComponent(mail.id)}/draft`, { method: "POST", cache: "no-store" })
+      .then((response) => response.json() as Promise<DraftResponse>)
+      .catch((): DraftResponse => ({ state: "error" }));
+    if (res.state === "ok") setWords(res.draft);
+    setDraft(res);
+  }
+  async function addStep(goal: Goal) {
+    setPicking(false);
+    setAdded("Adding it…");
+    const saved = (await onStep?.(goal.id, line ? `${line} (from ${name})` : `Reply to ${name}: ${mail.subject}`)) ?? false;
+    setAdded(saved ? `Added to ${goal.title.replace(/[.!?]+$/, "")}.` : "Couldn't add it. Try again.");
+  }
+
+  return (
+    <>
+      <p className="flex flex-wrap gap-x-4">
+        {!written && (
+          <button type="button" onClick={() => void write()} className={`underline underline-offset-4 ${mail.asks ? "font-bold" : "text-ink-2"}`}>
+            Draft a reply
+          </button>
+        )}
+        {onAdd && (
+          <button type="button" onClick={() => onAdd(`${ask}${ask.includes(mail.subject) ? "" : ` (${name}'s email "${mail.subject}")`}`)} className="text-ink-2 underline underline-offset-4">
+            Make it a goal
+          </button>
+        )}
+        {onStep && goals.length > 0 && (
+          <button type="button" onClick={() => setPicking((was) => !was)} aria-expanded={picking} className="text-ink-2 underline underline-offset-4">
+            Add as a step
+          </button>
+        )}
+        {gmail && !written && (
+          <a href={`${gmail}#inbox/${encodeURIComponent(mail.id)}`} target="_blank" rel="noopener noreferrer" className="text-ink-2 underline underline-offset-4">
+            Open in Gmail
+            <span className="sr-only"> (opens in a new tab)</span>
+          </a>
+        )}
+      </p>
+      {/* Chips the pill's height plus a 12px gap, padded to the card's 32px rules. */}
+      {picking && (
+        <div role="group" aria-label="Add it to which goal?" className="flex flex-wrap gap-x-2 gap-y-3 py-1.5">
+          {goals.slice(0, 6).map((goal) => (
+            <button key={goal.id} type="button" onClick={() => void addStep(goal)} className="pill pill-small max-w-full">
+              <span className="truncate">{goal.title}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {added && (
+        <p role="status" className="text-ink-2">
+          {added}
+        </p>
+      )}
+      {draft === "writing" ? (
+        <p role="status" className="text-ink-2">
+          Writing a draft…
+        </p>
+      ) : draft && !written ? (
+        <p role="status" className="text-ink-2">
+          {draft.state === "private" ? "Zeno doesn't read this kind of mail. Reply in Gmail." : "Couldn't write a draft. Try again."}
+        </p>
+      ) : null}
+      {written && (
+        <>
+          <label htmlFor={`reply-${mail.id}`} className="block font-bold text-ink-2">
+            Your reply to {name}
+          </label>
+          <textarea id={`reply-${mail.id}`} value={words} onChange={(event) => setWords(event.target.value)} className="write [--fs2:var(--fs)]" />
+          <p className="flex flex-wrap gap-x-4">
+            {gmail && (
+              <a href={composeUrl(gmail, written.to, written.subject, words)} target="_blank" rel="noopener noreferrer" className="font-bold underline underline-offset-4">
+                Open in Gmail
+                <span className="sr-only"> (a new email with this reply, in a new tab)</span>
+              </a>
+            )}
+            <span className="text-ink-2">You send it. Zeno never does.</span>
+          </p>
+        </>
+      )}
+    </>
   );
 }
