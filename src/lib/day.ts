@@ -304,3 +304,26 @@ export type PlanRequest = { title: string; due: string | null; canvas?: CanvasBr
 export type MailResponse =
   | { state: "ok"; from: string; address: string; subject: string; date: string; text: string }
   | { state: "signed-out" | "bad-request" | "not-found" | "error" };
+
+// ---------- The Nov 3 night round (docs/PLAN-NOV3-APPS.md) ----------
+
+// POST /api/goal/snap body: a photo or screenshot of an assignment, shrunk in the browser to a JPEG, PNG or WebP data
+// URL under 3.5 MB. Muse Spark reads it once (never stored) and saves its steps as the current plan. Answers with
+// GoalResponse; bad-request when the photo holds no assignment.
+export type SnapRequest = { image: string };
+
+// POST /api/app-token mints a personal token for connected apps (MCP clients such as Muse Code or Claude Code, and the
+// Mac menu-bar clock), shown once; a new token turns the old one off. DELETE turns it off. Apps send it as
+// "Authorization: Bearer zeno_…". It reaches goals and steps only, never mail, calendar or memories.
+export type AppTokenResponse = { state: "ok"; token: string } | { state: "off" } | { state: "signed-out" | "error" };
+
+// GET /api/companion/now (token auth): the step to show in the Mac menu bar. step is the running step, else the
+// current plan's next todo step, else null; goal is the current plan's summary.
+export type CompanionNow =
+  | {
+      state: "ok";
+      step: { id: string; title: string; minutes: number | null; startedAt: string | null; status: "doing" | "todo" } | null;
+      goal: { title: string; done: number; total: number; due: string | null } | null;
+    }
+  | { state: "unauthorized" | "error" };
+// POST /api/companion/done (token auth) finishes the running step and answers with CompanionNow for what comes next.
