@@ -7,7 +7,7 @@ import { freeSlots } from "@/lib/calendar";
 import { loadUserContext } from "@/lib/context";
 import type { TalkResponse } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
-import { currentGoal, openGoals } from "@/lib/goals";
+import { currentGoal, openGoals, removedGoals } from "@/lib/goals";
 import { timeZoneFrom } from "@/lib/tz";
 import { cleanPrivate } from "@/lib/vault";
 
@@ -44,12 +44,14 @@ export async function POST(request: Request) {
 
   const timeZone = timeZoneFrom((await cookies()).get("tz")?.value);
   const accessToken = session.error ? undefined : session.accessToken;
-  const [context, free, others] = await Promise.all([
+  const [context, free, others, removed] = await Promise.all([
     loadUserContext(session.user.email, session, timeZone),
     // Today and tomorrow, so a block can be offered for tomorrow morning; on failure the day's own free time stands.
     accessToken ? freeSlots(accessToken, timeZone, { minutes: 5, days: 2 }).catch(() => null) : null,
     // Their other open goals, so a goal they name is never made twice (Nov 4); a failed read lists none.
     databaseConfigured() ? openGoals(session.user.email).catch(() => []) : [],
+    // Goals removed lately, so "bring back my Etsy goal" restores that one (round 7); a failed read lists none.
+    databaseConfigured() ? removedGoals(session.user.email).catch(() => []) : [],
   ]);
   const firstName = session.user.name?.trim().split(/\s+/)[0] || null;
 
@@ -63,6 +65,7 @@ export async function POST(request: Request) {
       body?.proposals === true,
       cleanPrivate(body?.private),
       others,
+      removed,
     );
     return NextResponse.json({ state: "ok", ...result } satisfies TalkResponse);
   } catch (error) {

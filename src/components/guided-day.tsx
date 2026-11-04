@@ -934,7 +934,7 @@ export default function GuidedDay() {
     // A skip said in Focus leaves it this way too, so only a step really marked done gets the stamp, the sound and "Nice".
     const status = done ? res.goal?.steps.find((one) => one.id === done.id)?.status : undefined;
     // After a Done, said or tapped, Zeno says what is next, unless it offers to remove a goal or mark it done (Nov 4).
-    const offered = res.confirm && typeof res.confirm.id === "string" && ["remove", "finish"].includes(res.confirm.how) ? res.confirm : null;
+    const offered = res.confirm && typeof res.confirm.id === "string" && ["remove", "finish", "restore"].includes(res.confirm.how) ? res.confirm : null;
     const said = next === "checkin" && !offered ? afterDone(res.goal, status === "skipped") : res.reply;
     if (now.screen === "focus" && next === "focus") answered.current = said;
     if (next === "checkin") setCelebrate(Boolean(res.progress));
@@ -1273,6 +1273,17 @@ export default function GuidedDay() {
     takeGoal(res.goal);
     if (undo.current) void openPlan(res.goal);
     else if (res.current?.id === res.goal.id) changeGoal(res.goal);
+  }
+
+  // Zeno's offer to bring back a removed goal (round 7): her tap restores it through Undo's route, as it was.
+  async function bringBack(id: string) {
+    setConfirm(null);
+    const res = await post<CloseGoalResponse>("/api/goal/remove", { id, undo: true } satisfies CloseGoalRequest);
+    if (res.state === "signed-out") return showSignedOut();
+    if (res.state !== "ok" || !res.goal) return setNote("I couldn't bring that back just now.");
+    takeGoal(res.goal);
+    if (res.current?.id === res.goal.id) changeGoal(res.goal);
+    setLine("It's back, as it was.");
   }
 
   // ---------- A goal's desk (Vi, Nov 3: she picks the goal, Zeno picks the step) ----------
@@ -2004,6 +2015,7 @@ export default function GuidedDay() {
     // Zeno's offer to remove a goal or mark it done, while its line shows: only this tap does it (Nov 4).
     if (confirm && confirm.line === line) {
       const { id, title, how } = confirm;
+      if (how === "restore") return [say("Bring it back", () => void bringBack(id)), say("Not now", () => (setConfirm(null), setLine("Okay.")))];
       return [
         say(how === "remove" ? "Remove" : "Mark done", () => void endGoal(id, title, how)),
         say("Keep it", () => {
