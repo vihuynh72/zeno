@@ -1,6 +1,7 @@
-// The Nov 4 connectors on the server (src/lib/connect.ts): Linear issues, Trello cards and Google Docs, read with the
-// person's token or a shared link for one request. Tokens go only in request headers, never in a URL, log or error.
-import type { AppItem, AppItemsResponse } from "@/lib/connect";
+// The Nov 4 connectors on the server (src/lib/connect.ts): Linear issues, Trello cards, Google Docs, Jira issues and
+// Confluence tasks, read with the person's token or a shared link for one request. Tokens go only in request headers,
+// never in a URL, log or error.
+import { atlassianSite, type AppItem, type AppItemsResponse } from "@/lib/connect";
 import { cleanBody } from "@/lib/gmail";
 import { localDate } from "@/lib/tz";
 
@@ -118,4 +119,109 @@ export async function readDoc(id: string, max = 6000): Promise<DocRead> {
   if ([401, 403, 404].includes(res.status) || (res.ok && text === null)) return { state: "private" };
   if (!res.ok || text === null) return { state: "error" };
   return { state: "ok", title: docTitle(res.headers.get("content-disposition")), text: cleanBody(text.replace(/^﻿/, ""), false, max), url: docUrl(id) };
+}
+
+// ---------- Jira and Confluence: an Atlassian API token, her email and her own <name>.atlassian.net ----------
+
+export type AtlassianLogin = { site: string; email: string; token: string };
+
+// The pasted sign-in (JSON { site, email, token }) with its site cut down to "<name>.atlassian.net"; null for anything
+// else, before any fetch.
+export function atlassianLogin(json: unknown): AtlassianLogin | null {
+  let raw: { site?: unknown; email?: unknown; token?: unknown } | null = null;
+  try {
+    raw = typeof json === "string" && json.length <= 2000 ? JSON.parse(json) : null;
+  } catch {
+    return null;
+  }
+  const site = typeof raw?.site === "string" ? atlassianSite(raw.site) : null;
+  const email = typeof raw?.email === "string" ? raw.email.trim() : "";
+  const token = typeof raw?.token === "string" ? raw.token.trim() : "";
+  if (!site || !/^[^\s@:]{1,200}@[^\s@:]{1,200}$/.test(email) || !/^[\x21-\x7e]{8,600}$/.test(token)) return null;
+  return { site, email, token };
+}
+
+// One GET on her site: Basic auth in the header, 8 s at most, and never a redirect (one could lead off her site).
+// Refused is 401/403, or Atlassian saying the sign-in failed while it still answers.
+async function atlassianGet(login: AtlassianLogin, path: string): Promise<{ refused: boolean; body: unknown } | null> {
+  const res = await fetch(`https://${login.site}${path}`, {
+    headers: { authorization: `Basic ${Buffer.from(`${login.email}:${login.token}`).toString("base64")}`, accept: "application/json" },
+    redirect: "error",
+    signal: AbortSignal.timeout(8_000),
+  }).catch(() => null);
+  if (!res) return null;
+  const refused = res.status === 401 || res.status === 403 || /AUTHENTICAT/i.test(res.headers.get("x-seraph-loginreason") ?? "");
+  const body = res.ok && !refused ? await res.json().catch(() => null) : null;
+  return refused || body ? { refused, body } : null;
+}
+
+// Jira's description is a tree (Atlassian Document Format): its text, a line per block.
+export function adfText(node: unknown): string {
+  if (!node || typeof node !== "object") return typeof node === "string" ? node : "";
+  const { type, text, content } = node as { type?: unknown; text?: unknown; content?: unknown };
+  if (typeof text === "string") return text;
+  if (type === "hardBreak") return "\n";
+  return Array.isArray(content) ? content.map(adfText).join(type === "paragraph" || type === "heading" ? "" : "\n") : "";
+}
+
+type JiraIssue = { id?: unknown; key?: unknown; fields?: { summary?: unknown; duedate?: unknown; description?: unknown } | null };
+
+export function jiraItem(issue: JiraIssue, site: string): AppItem[] {
+  const key = typeof issue.key === "string" && /^[A-Za-z][A-Za-z0-9_]*-\d+$/.test(issue.key) ? issue.key : null;
+  const summary = typeof issue.fields?.summary === "string" ? issue.fields.summary.trim() : "";
+  if (!key || !summary) return [];
+  const due = issue.fields?.duedate;
+  return [
+    {
+      app: "jira",
+      id: typeof issue.id === "string" ? issue.id : key,
+      title: `${key} ${summary}`.slice(0, 120),
+      url: `https://${site}/browse/${key}`,
+      kind: "task",
+      due: typeof due === "string" && DAY.test(due) ? due : null,
+      detail: detailOf(adfText(issue.fields?.description)),
+    },
+  ];
+}
+
+const JQL = "assignee = currentUser() AND statusCategory != Done ORDER BY duedate ASC";
+
+// Her open Jira issues, soonest due first.
+export async function jiraItems(login: AtlassianLogin): Promise<AppItemsResponse> {
+  const query = new URLSearchParams({ jql: JQL, fields: "summary,duedate,status,description", maxResults: "30" });
+  const res = await atlassianGet(login, `/rest/api/3/search/jql?${query}`);
+  if (res?.refused) return { state: "no-access" };
+  const issues = (res?.body as { issues?: unknown } | null | undefined)?.issues;
+  if (!Array.isArray(issues)) return { state: "error" };
+  return { state: "ok", items: soonest(issues.flatMap((issue: JiraIssue) => jiraItem(issue ?? {}, login.site))) };
+}
+
+type ConfluenceTask = { globalId?: unknown; id?: unknown; contentId?: unknown; body?: unknown; description?: unknown; title?: unknown; dueDate?: unknown };
+
+export function confluenceItem(task: ConfluenceTask, site: string, timeZone: string): AppItem[] {
+  const id = [task.globalId, task.id].find((one) => typeof one === "number" || (typeof one === "string" && one !== ""));
+  const page = typeof task.contentId === "number" || (typeof task.contentId === "string" && /^\d+$/.test(task.contentId)) ? task.contentId : null;
+  const text = typeof task.body === "string" ? task.body : typeof task.description === "string" ? task.description : "";
+  const title = cleanBody(text, true, 400).replace(/\s+/g, " ").trim().slice(0, 120);
+  if (id === undefined || page === null || !title) return [];
+  const at = typeof task.dueDate === "number" ? task.dueDate : typeof task.dueDate === "string" ? Date.parse(task.dueDate) : NaN;
+  // A due day alone comes as midnight UTC: that day, wherever she is.
+  const due = Number.isFinite(at) ? (at % 86_400_000 === 0 ? new Date(at).toISOString().slice(0, 10) : localDate(timeZone, new Date(at))) : null;
+  return [{ app: "confluence", id: String(id), title, url: `https://${site}/wiki/pages/viewpage.action?pageId=${page}`, kind: "task", due, detail: detailOf(task.title) }];
+}
+
+// Her open Confluence tasks, soonest due first: who she is, then the tasks assigned to her.
+export async function confluenceItems(login: AtlassianLogin, timeZone: string): Promise<AppItemsResponse> {
+  const me = await atlassianGet(login, "/wiki/rest/api/user/current");
+  if (me?.refused) return { state: "no-access" };
+  const user = me?.body as { accountId?: unknown; type?: unknown } | null | undefined;
+  if (!user) return { state: "error" };
+  // Confluence answers a sign-in it doesn't know as the anonymous user.
+  if (typeof user.accountId !== "string" || !user.accountId || user.type === "anonymous") return { state: "no-access" };
+  const query = new URLSearchParams({ assignee: user.accountId, status: "incomplete", limit: "30" });
+  const res = await atlassianGet(login, `/wiki/rest/api/inlinetasks/search?${query}`);
+  if (res?.refused) return { state: "no-access" };
+  const tasks = (res?.body as { results?: unknown } | null | undefined)?.results;
+  if (!Array.isArray(tasks)) return { state: "error" };
+  return { state: "ok", items: soonest(tasks.flatMap((task: ConfluenceTask) => confluenceItem(task ?? {}, login.site, timeZone))) };
 }

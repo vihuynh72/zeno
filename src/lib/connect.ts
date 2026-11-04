@@ -5,8 +5,9 @@
 // browser only in the body of POST /api/connect/<app>, which uses it for that one request and never stores or logs it.
 // OAuth apps (Notion, Slack, Google Docs) finish at /api/connect/<app>/callback, which hands the token to the page to keep.
 // Tokens are cleared at Disconnect and at sign out (the sign-out regex in guided-day.tsx must match connectKey).
+// Jira and Confluence share one Atlassian sign-in she pastes: { site, email, token } as JSON, kept under Jira's key.
 
-export const APPS = ["notion", "gdocs", "slack", "linear", "trello"] as const;
+export const APPS = ["notion", "gdocs", "slack", "linear", "trello", "jira", "confluence"] as const;
 export type App = (typeof APPS)[number];
 
 export const APP_NAMES: Record<App, string> = {
@@ -15,6 +16,8 @@ export const APP_NAMES: Record<App, string> = {
   slack: "Slack",
   linear: "Linear",
   trello: "Trello",
+  jira: "Jira",
+  confluence: "Confluence",
 };
 
 // One thing waiting in an app.
@@ -31,5 +34,13 @@ export type AppItem = {
 // The answer of POST /api/connect/<app> with { token }: the person's open items, soonest due first.
 export type AppItemsResponse = { state: "ok"; items: AppItem[] } | { state: "no-access" | "error" };
 
-// This browser's key for an app's token, per account.
-export const connectKey = (app: App, account: string) => `zeno.connect.${app}.${account}`;
+// This browser's key for an app's token, per account. Confluence reads Jira's: one Atlassian sign-in serves both.
+export const connectKey = (app: App, account: string) => `zeno.connect.${app === "confluence" ? "jira" : app}.${account}`;
+
+// The only host Zeno fetches for Atlassian, "<name>.atlassian.net", from what she pasted ("https://acme.atlassian.net/jira/…"
+// or "acme.atlassian.net"); null for anything else, so nothing is fetched.
+export function atlassianSite(pasted: string): string | null {
+  const host = /^(?:https?:\/\/)?([^/?#\s]+)(?:[/?#]|$)/i.exec(pasted.trim())?.[1]?.toLowerCase() ?? "";
+  const name = /^([a-z0-9][a-z0-9-]{0,62})\.atlassian\.net$/.exec(host)?.[1];
+  return name ? `${name}.atlassian.net` : null;
+}

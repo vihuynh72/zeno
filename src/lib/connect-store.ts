@@ -34,14 +34,15 @@ export const readApp = (app: App, token: string): Promise<AppItemsResponse> =>
     .catch((): AppItemsResponse => ({ state: "error" }));
 
 // Every connected app's items, read side by side. A token the app refuses now (Trello's ends after 30 days) is forgotten,
-// so Your apps offers Connect again; one that failed for a moment stays.
+// so Your apps offers Connect again; one that failed for a moment stays. Jira decides for the Atlassian sign-in it shares
+// with Confluence, so a site without Confluence keeps Jira.
 export async function loadItems(account: string): Promise<AppItem[]> {
   const lists = await Promise.all(
     APPS.map(async (app) => {
       const token = readToken(app, account);
       if (!token) return [];
       const res = await readApp(app, token);
-      if (res.state === "no-access" && readToken(app, account) === token) clearToken(app, account);
+      if (res.state === "no-access" && app !== "confluence" && readToken(app, account) === token) clearToken(app, account);
       return res.state === "ok" && Array.isArray(res.items) ? res.items.filter((item) => item?.app === app && typeof item.title === "string") : [];
     }),
   );
