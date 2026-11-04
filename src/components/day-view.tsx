@@ -362,11 +362,8 @@ export default function DayView(props: DayViewProps) {
                     <p>
                       <span className="hand">{props.resume.started ? "Pick up where you left off:" : "Start here:"}</span>
                     </p>
-                    <p className="font-bold">
-                      {props.resume.step}
-                      {/* Inline: the card's right-hand minutes collided with the goal's line under a long step (Nov 4). */}
-                      {props.resume.minutes ? <span className="font-normal text-ink-2"> · {props.resume.minutes} min</span> : null}
-                    </p>
+                    {/* Its minutes are on Start under the card (Nov 4: beside a long step they collided with the goal's line). */}
+                    <p className="font-bold">{props.resume.step}</p>
                     <p>
                       <span className="hand text-ink-2">
                         {props.resume.goal}
