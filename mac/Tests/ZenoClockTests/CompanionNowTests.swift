@@ -76,6 +76,31 @@ final class CompanionNowTests: XCTestCase {
     XCTAssertEqual(baseURL(["ZENO_URL": "file:///tmp"]), production)
   }
 
+  // The calls behind the poll and Done, for real: start a fresh `python3 mac/mock-companion.py`, then
+  // ZENO_MOCK=http://127.0.0.1:8790 swift test. Skipped without ZENO_MOCK.
+  func testAgainstTheMock() async throws {
+    guard let mock = ProcessInfo.processInfo.environment["ZENO_MOCK"].flatMap(URL.init(string:)) else {
+      throw XCTSkip("Set ZENO_MOCK to a fresh mock's address.")
+    }
+    let token = "zeno_mock_token_for_local_tests"
+    let now = await fetch(companionRequest("GET", "api/companion/now", base: mock, token: token))
+    guard case .ok(let running?, let goal?) = now else { return XCTFail("no running step: \(now)") }
+    XCTAssertEqual(running.status, .doing)
+    XCTAssertEqual(goal.done, 2)
+    XCTAssertTrue(menuBarTitle(now, now: Date()).hasSuffix(" · Outline the intro parag…"))
+    XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(isoDate(running.startedAt ?? "")!), 751, "started 12:31 before the mock began")
+    let done = await fetch(companionRequest("POST", "api/companion/done", base: mock, token: token))
+    guard case .ok(let next?, let after?) = done else { return XCTFail("no next step: \(done)") }
+    XCTAssertEqual(next.status, .todo)
+    XCTAssertNotEqual(next.id, running.id)
+    XCTAssertEqual(after.done, 3)
+    XCTAssertEqual(menuBarTitle(done, now: Date()), "Zeno", "nothing runs after Done")
+    let refused = await fetch(companionRequest("GET", "api/companion/now", base: mock, token: "zeno_not_the_mock_token"))
+    XCTAssertEqual(refused, .unauthorized)
+    let unreachable = await fetch(companionRequest("GET", "api/companion/now", base: URL(string: "http://127.0.0.1:9")!, token: token))
+    XCTAssertEqual(unreachable, .error, "nothing listens on port 9")
+  }
+
   func testIsToken() {
     XCTAssertTrue(isToken("zeno_" + String(repeating: "Ab3-_", count: 8) + "xyz"))
     XCTAssertTrue(isToken("zeno_mock_token_for_local_tests"))

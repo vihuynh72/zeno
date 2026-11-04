@@ -12,7 +12,7 @@ struct ZenoClockApp: App {
     // `ZenoClock --set-token` saves a token read from stdin, for a scripted setup and the mock test; an empty line
     // removes it.
     if CommandLine.arguments.dropFirst().first == "--set-token" {
-      let token = (readLine() ?? "").trimmingCharacters(in: .whitespaces)
+      let token = (readLine() ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
       guard token.isEmpty || isToken(token) else { exit(2) }
       exit(Keychain.save(token, for: baseURL(ProcessInfo.processInfo.environment)) ? 0 : 1)
     }
