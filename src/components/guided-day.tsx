@@ -1674,7 +1674,10 @@ export default function GuidedDay() {
         choose,
         // Before /api/day answers, the words wait in the box (as every other action waits for it).
         addGoal: (text) => (fresh ? void addGoal(text) : setAddWords(text)),
-        closeAdd: () => setAddWords(null),
+        closeAdd() {
+          setAddWords(null);
+          setNote(null);
+        },
         snap(photo) {
           if (fresh) void snapAssignment(photo);
         },
