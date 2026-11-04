@@ -10,7 +10,7 @@ import { localDate, timeZoneFrom } from "@/lib/tz";
 export const maxDuration = 30;
 
 // Body { title, due, canvas? } (src/lib/day.ts PlanRequest): a deadline with no plan yet becomes the current plan, in 3
-// to 7 small steps from Muse, or the three-step rule plan when the model fails or refuses (savePlan in agent.ts, shared
+// to 12 small steps from Muse, or the three-step rule plan when the model fails or refuses (savePlan in agent.ts, shared
 // with the MCP tool plan_goal). The Canvas instructions reach the model only here and in /api/prep, and are never saved.
 export async function POST(request: Request) {
   const session = await auth();
