@@ -1,7 +1,7 @@
 // Self-check for gmail.ts's day mail, asking mail and one email in full, against a stubbed Gmail: node src/lib/gmail.check.ts
 import assert from "node:assert/strict";
 
-const { GmailError, addressOf, asks, getRecentEmail, readMessage } = await import("./gmail.ts");
+const { GmailError, addressOf, asks, cleanBody, getRecentEmail, readMessage } = await import("./gmail.ts");
 
 // Asking mail (Vi, Nov 3): a "?" or a request's words in the subject or snippet, in any case, never in mail the person
 // sent, and never a link's "?".
@@ -75,12 +75,46 @@ const full = {
   },
 };
 const long = { id: "long456", payload: { headers: [{ name: "From", value: "ana@school.edu" }], ...part("text/html", `<p>${"word ".repeat(2000)}</p>`) } };
+
+// A forward with nothing added, or only a greeting, opens on the message it carries (Nov 4: it opened as "This email has
+// no text."): that message's From and Subject lines, then its words, cleaned the same way (links and long numbers out,
+// its own quoted reply cut). A forward or reply with words of its own keeps only them.
+const forwarded = [
+  "---------- Forwarded message ---------",
+  "From: Prof Patel <patel@school.edu>",
+  "Date: Mon, Nov 2, 2026 at 9:00 AM",
+  "Subject: Lab 3 moved to Friday",
+  "To: Maya Lin <maya@school.edu>",
+  "",
+  "",
+  "Hi all,",
+  "",
+  "Lab 3 is now due Friday. Slides: https://canvas.example.edu/x?y=1",
+  "Room code 12345678.",
+  "",
+  "On Sun, Nov 1, 2026 at 8:00 AM Ana <ana@school.edu> wrote:",
+  "> an older line",
+].join("\n");
+const carried = "From: Prof Patel <patel@school.edu>\nSubject: Lab 3 moved to Friday\n\nHi all,\n\nLab 3 is now due Friday. Slides: [link]\nRoom code [number].";
+assert.equal(cleanBody(forwarded), carried, "a forward with no words of its own");
+assert.equal(cleanBody(`Hi Maya,\n\n${forwarded}`), carried, "a greeting only");
+assert.equal(cleanBody(`Can you check the new date?\n\n${forwarded}`), "Can you check the new date?", "its own words keep the cut");
+assert.equal(cleanBody("Sounds good, see you then.\n\nOn Mon, Nov 2, 2026 at 9:00 AM Ana <ana@school.edu> wrote:\n> Lab at 2?"), "Sounds good, see you then.", "a reply keeps the cut");
+assert.equal(cleanBody("On Mon, Nov 2, 2026 at 9:00 AM Ana <ana@school.edu> wrote:\n> Lab at 2?"), "", "a reply with nothing added is no forward");
+assert.equal(
+  cleanBody("\r\n________________________________\r\nFrom: Ana Lopez <ana@school.edu>\r\nSent: Monday, November 2, 2026 9:00 AM\r\nTo: Maya\r\nSubject: Rides\r\n\r\nCan you drive Saturday?\r\n"),
+  "From: Ana Lopez <ana@school.edu>\nSubject: Rides\n\nCan you drive Saturday?",
+  "Outlook's forward",
+);
+assert.equal(cleanBody(`---------- Forwarded message ---------\nFrom: Maya <maya@school.edu>\nSubject: Fwd: Lab 3\n\n${forwarded}`), `From: Maya <maya@school.edu>\nSubject: Fwd: Lab 3\n\n${carried}`, "a forward of a forward");
+const forwardMail = { id: "fwd789", payload: { headers: [{ name: "From", value: "Maya <maya@school.edu>" }, { name: "Subject", value: "Fwd: Lab 3 moved to Friday" }], ...part("text/plain", forwarded) } };
+
 const reads: string[] = [];
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input);
   reads.push(url);
   assert.equal(new Headers(init?.headers).get("authorization"), "Bearer tok");
-  const found = [full, long].find(({ id }) => url.includes(`/messages/${id}?`));
+  const found = [full, long, forwardMail].find(({ id }) => url.includes(`/messages/${id}?`));
   return found ? Response.json(found) : Response.json({ error: { code: 404, message: "Requested entity was not found." } }, { status: 404 });
 }) as typeof fetch;
 assert.deepEqual(await readMessage("tok", "msg123"), {
@@ -95,5 +129,6 @@ assert.equal(new URL(reads[0]).searchParams.get("format"), "full");
 const longMail = await readMessage("tok", "long456");
 assert.deepEqual([longMail.text.length, longMail.subject], [6000, "(no subject)"], "the HTML part, capped");
 await assert.rejects(readMessage("tok", "gone789"), (error) => error instanceof GmailError && error.status === 404);
+assert.equal((await readMessage("tok", "fwd789")).text, carried, "a forward opens on what it carries");
 
 console.log("gmail self-check passed");

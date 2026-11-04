@@ -63,6 +63,7 @@ export type DayViewProps = {
   stamping: boolean; // the focus card is being stamped DONE
   leaving: Step | null; // the finished card on its way to the pile
   note: string | null; // one plain line under the pills
+  toast?: { text: string; undo: boolean } | null; // a short line over Talk for a few seconds: a goal removed (with Undo) or done
   signInFailed: boolean;
   busy: boolean; // a save is in flight, so the answers wait
   // The screen's answers (Vi, Nov 2): the first is its one big button, the rest small links under it. All are links
@@ -111,6 +112,9 @@ export type DayViewProps = {
     openGoal(goalId: string): void;
     openDeadline(deadline: Deadline): void;
     reply(email: DayEmail): void;
+    // The links by a desk's goal title (Nov 4): remove the goal or mark it done, and the toast's Undo for a removal.
+    closeGoal?(how: "remove" | "finish"): void;
+    undo?(): void;
   };
 };
 
@@ -134,6 +138,26 @@ const everyMinute = (onChange: () => void) => {
 // The person's date as YYYY-MM-DD; "" on the server, so due labels wait for the browser's clock.
 export function useToday() {
   return useSyncExternalStore(everyMinute, () => localDate(zone()), () => "");
+}
+
+// A tall card or line, or a dock that grew, can leave the answers under the sticky dock or its fade: bring them clear of
+// it. Answers far below, under an open desk, stay put.
+function keepClear(answers: Element | null | undefined, main: HTMLElement | null, grew = false) {
+  if (!answers?.childElementCount) return;
+  const { bottom } = answers.getBoundingClientRect();
+  const dockTop = document.querySelector(".dock")?.getBoundingClientRect().top ?? innerHeight;
+  // On a goal's desk the scroll stops before the step card slides under the sticky goal strip (Nov 4), so the step and a
+  // Done's bar fill stay in view (live, Nov 3: Done scrolled the bar off a 1440x900 laptop); the links may then sit in the
+  // dock's fade. On a phone, and when the dock grew (the text box opened over Zeno's answers on a 1280x720 laptop, Nov 4),
+  // the answers win: no button or chip stays under the dock (Nov 4: Keep going sat under it).
+  const strip = document.querySelector<HTMLElement>("[data-strip]");
+  const card = main?.querySelector(".card");
+  const room = !grew && strip && card && innerWidth >= 640 ? Math.max(0, card.getBoundingClientRect().top - strip.offsetHeight - 8) : Infinity;
+  const need = Math.min(bottom - (dockTop - 16), room);
+  // Even when a long reply pushed them below the fold (round 3: Done and Stuck? sat under Talk on a phone).
+  if (need > 0) {
+    window.scrollBy({ top: need, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }
 }
 
 export default function DayView(props: DayViewProps) {
@@ -206,27 +230,8 @@ export default function DayView(props: DayViewProps) {
     if (!active || active === document.body || area?.contains(active)) button.focus({ preventScroll: true });
   }, [answersKey]);
   useEffect(() => {
-    // A tall card or line can leave the answers under the sticky dock or its fade; bring them clear of it (html's
-    // scroll-padding-bottom is the dock). Answers far below, under an open desk, stay put.
-    const clear = () => {
-      const pills = pillsRef.current;
-      // No answers (the home, the front door): nothing to bring clear, so the view stays at its top.
-      if (!pills?.childElementCount) return;
-      const { bottom } = pills.getBoundingClientRect();
-      const dockTop = document.querySelector(".dock")?.getBoundingClientRect().top ?? innerHeight;
-      // On a goal's desk the scroll stops before the step card slides under the sticky goal strip (Nov 4), so the step
-      // and a Done's bar fill stay in view (live, Nov 3: Done scrolled the bar off a 1440x900 laptop); the links may
-      // then sit in the dock's fade. On a phone the answers win: no button or chip stays under the dock (Nov 4: Keep
-      // going sat under it).
-      const strip = document.querySelector<HTMLElement>("[data-strip]");
-      const card = mainRef.current?.querySelector(".card");
-      const room = strip && card && innerWidth >= 640 ? Math.max(0, card.getBoundingClientRect().top - strip.offsetHeight - 8) : Infinity;
-      const need = Math.min(bottom - (dockTop - 16), room);
-      // Even when a long reply pushed them below the fold (round 3: Done and Stuck? sat under Talk on a phone).
-      if (need > 0) {
-        window.scrollBy({ top: need, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-      }
-    };
+    // No answers (the home, the front door): nothing to bring clear, so the view stays at its top.
+    const clear = () => keepClear(pillsRef.current, mainRef.current);
     clear();
     // Once more after the card's rise and a Done's slide settle (300 ms), which can still push the answers down (round 2,
     // Nov 4: Keep going sat half under the dock on a phone).
@@ -234,6 +239,27 @@ export default function DayView(props: DayViewProps) {
     return () => clearTimeout(again);
     // Zeno's line too: a 2-3 line reply under a running step pushes Done down without changing the answers (round 4).
   }, [answersKey, props.line]);
+  // The dock's real height is the page's bottom space: html's scroll padding and the goals panel's height read it from
+  // --dock, never a fixed guess. When it grows (the text box opens, a long message wraps, a line shows over Talk) the
+  // screen's answers come clear of it, the front door's Make a plan too (Nov 4: the box covered Zeno's answers).
+  const dockRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const dock = dockRef.current;
+    if (!dock) return;
+    const root = document.documentElement;
+    let last = dock.offsetHeight;
+    const observer = new ResizeObserver(() => {
+      root.style.setProperty("--dock", `${dock.offsetHeight}px`);
+      const pills = pillsRef.current;
+      if (dock.offsetHeight > last) keepClear(pills?.childElementCount ? pills : mainRef.current?.querySelector("[data-answers]"), mainRef.current, true);
+      last = dock.offsetHeight;
+    });
+    observer.observe(dock);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--dock");
+    };
+  }, [signedIn]);
 
   // The person's words; the text box itself docks above the dock (Nov 4), never on the card.
   const youLine =
@@ -400,6 +426,16 @@ export default function DayView(props: DayViewProps) {
                     marked={marked}
                     caption={barCaption(done, steps.length, screen === "checkin" && Boolean(props.celebrate), Boolean(goal?.rhythm) && !planning)}
                     today={today}
+                    // Not in Focus, where Done finishes the step and a "Mark done" beside it would read as the same.
+                    onClose={
+                      planning || !on.closeGoal || screen === "focus"
+                        ? undefined
+                        : (how) => {
+                            if (props.busy) return;
+                            pressed.current = true;
+                            on.closeGoal?.(how);
+                          }
+                    }
                   />
                 </div>
               </div>
@@ -622,7 +658,17 @@ export default function DayView(props: DayViewProps) {
 
       {/* First sign-in is one card and its links, so the dock waits until it's done. Talk, and typing one tap beside it. */}
       {signedIn && (
-        <nav aria-label="Zeno" className="dock">
+        <nav ref={dockRef} aria-label="Zeno" className="dock">
+          {props.toast && (
+            <p role="status" className="mb-2 flex items-center gap-1 px-4 text-center text-ink-2">
+              {props.toast.text}
+              {props.toast.undo && (
+                <button type="button" data-answer data-lead onClick={() => on.undo?.()} className="link">
+                  Undo
+                </button>
+              )}
+            </p>
+          )}
           {/* The text box docks here, in one place above Talk, and closes after Send (Nov 4). */}
           {props.typing && (
             <Write

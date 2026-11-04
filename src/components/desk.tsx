@@ -3,7 +3,7 @@
 import { type CSSProperties, type KeyboardEvent, type MouseEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { DayEmail, DayEvent, Deadline, DoneStep, Goal, MailResponse, Progress, SourceState } from "@/lib/day";
 import type { Today } from "@/components/day-view";
-import { browserZone, freeGaps, httpsOnly, markEvents, senderName, snippetLine, timeRange } from "@/components/desk-rows";
+import { browserZone, freeGaps, gmailRow, httpsOnly, markEvents, senderName, snippetLine, timeRange } from "@/components/desk-rows";
 import { deskPlans, doneCaption, doneSteps, dueShort, duration, mergeDone, nextCaption, sameGoal } from "@/components/goal-rows";
 import WeekGoals, { GoalLines } from "@/components/week-goals";
 import WeekGrid from "@/components/week-grid";
@@ -441,8 +441,18 @@ function Mail({ today, onReply }: { today: Today; onReply?(email: DayEmail): voi
         )}
       </>
     );
-    // A row from a day saved before Nov 3 has no id, so it doesn't open.
-    if (!id) return <li key={`${i}:${mail.from}:${mail.subject}`}>{head}</li>;
+    // Code or bank mail, and a row with no id, open in Gmail (gmailRow); the rest open here.
+    const outside = gmailRow(mail, gmail);
+    if (!id || outside) {
+      return (
+        <li key={id ?? `${i}:${mail.from}:${mail.subject}`}>
+          <a href={outside ?? undefined} target="_blank" rel="noopener noreferrer" className="group block active:opacity-60">
+            {head}
+            <span className="sr-only"> (opens in Gmail, in a new tab)</span>
+          </a>
+        </li>
+      );
+    }
     const shown = open === id && read?.id === id ? read.mail : null;
     return (
       <li key={id}>

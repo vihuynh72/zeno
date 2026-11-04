@@ -8,7 +8,15 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { bookedEvents, canvasHost, dueDays, dueTime, httpsOnly, markEvents, senderName, snippetLine } = await import("./desk-rows.ts");
+const { bookedEvents, canvasHost, dueDays, dueTime, gmailRow, httpsOnly, markEvents, senderName, snippetLine } = await import("./desk-rows.ts");
+
+// Every mail row opens (Nov 4, Vi: "certain emails you can't even click on"): mail with an id opens in Zeno, code or bank
+// mail at its message in this account's Gmail, never in Zeno, and a row with no id as Gmail's search for its subject.
+const inbox = "https://mail.google.com/mail/?authuser=maya%40school.edu";
+assert.equal(gmailRow({ id: "18c2f", subject: "Lab 3" }, inbox), null);
+assert.equal(gmailRow({ id: "18c2f", subject: "Your code is [number]", sensitive: true }, inbox), `${inbox}#inbox/18c2f`);
+assert.equal(gmailRow({ subject: 'Lab 3 "moved" & more' }, inbox), `${inbox}#search/subject%3A%22Lab%203%20%22moved%22%20%26%20more%22`);
+assert.equal(gmailRow({ subject: "Lab 3" }), "https://mail.google.com/mail/#search/subject%3A%22Lab%203%22", "no account link: plain Gmail");
 
 const event = (title: string, start: string, end: string, allDay = false): DayEvent => ({ title, start, end, allDay });
 const day = [

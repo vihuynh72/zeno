@@ -9,6 +9,7 @@ import {
   type EmailDraft,
   type FreeSlot,
   type Goal,
+  type GoalConfirm,
   type Memory,
   type MemoryGroup,
   type PlanRequest,
@@ -198,6 +199,7 @@ const PLAN_RULES = [
   "Another thing they want to get done is its own goal: call set_goal for it and never add its steps to the current goal. Its title never holds its date, like 'by Friday' or 'before December': the date goes in due. Several at once: call set_goal once for each, the most urgent first. While the current goal has steps left, every new goal waits in their goals list unless they clearly say to work on it now; otherwise the first becomes current and the others wait. Never make a goal again that is already in their other goals.",
   "A goal saved to wait: say so with its date, like 'Saved in your goals: Renew my passport, due December 1.', then stay on the current goal: send them back to a running step or name its next step, and never suggest starting anything in the new goal.",
   "When they want to work on another of their goals now, like 'Let's do the scoring first' or a tap like 'Score first', call switch_goal with its title as listed in their other goals.",
+  "When they want a goal gone for good, like 'drop the 5K goal', 'delete it' or 'stop this goal', call remove_goal; when they say a whole goal is finished, like 'I finished the paper', call finish_goal. Both only offer it: they confirm with a tap, so never say it is removed or done. 'Stop for now' or a break only pauses, and changes no goal.",
   "A goal that keeps going, like training, practice, a habit or a job hunt, gets a rhythm in set_goal, like '3 runs a week', and its steps are the next few sessions. Any other goal's steps finish the whole job: the last one sends, submits, pays, books or hands it in.",
   `Steps you save with set_goal, update_steps or add_step: ${SMALL_STEPS} ${SESSION_STEP} ${ONGOING} ${BACKWARD} ${RANGES}`,
   // Round 2: "Saved: 10 to 11 AM weekdays" nowhere to be seen, "lunch runs locked in", "Map both out now?" and "Yes, plan
@@ -1116,6 +1118,32 @@ export const TOOLS = [
   {
     type: "function",
     function: {
+      name: "remove_goal",
+      description:
+        "Offer to remove one of their goals when they want to drop, delete or stop it for good, like 'drop the 5K goal' or 'stop this goal'. Nothing changes here: they tap Remove to do it, and can undo it.",
+      parameters: {
+        type: "object",
+        properties: { title: { type: "string", description: "Its title as listed: the current goal or one of their other open goals." } },
+        required: ["title"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "finish_goal",
+      description:
+        "Offer to mark one of their goals done when they say the whole goal is finished, like 'I finished the paper', not only a step. Nothing changes here: they tap to mark it done.",
+      parameters: {
+        type: "object",
+        properties: { title: { type: "string", description: "Its title as listed: the current goal or one of their other open goals." } },
+        required: ["title"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "start_step",
       description: "Mark a step of the current goal as started. Never in the same turn as set_goal or update_steps.",
       parameters: {
@@ -1232,6 +1260,7 @@ type Checked =
   | { name: "set_due"; goalId: string; due: string | null }
   | { name: "edit_goal"; goalId: string; edit: { title?: string; rhythm?: string | null } }
   | { name: "switch"; title: string }
+  | { name: "confirm"; how: GoalConfirm["how"]; title: string }
   | { name: "step"; stepId: string; status: StepStatus }
   | { name: "remember"; text: string; group: MemoryGroup; private: boolean }
   | { name: "forget"; memoryId: string }
@@ -1344,6 +1373,12 @@ export function checkCall(call: ToolCall, goal: Goal | null, refs: Refs, slots: 
     case "switch_goal": {
       const title = titleOf(args?.title);
       return title ? { name: "switch", title } : { error: "title must be one of their other goals' titles, as listed" };
+    }
+    case "remove_goal":
+    case "finish_goal": {
+      const title = titleOf(args?.title);
+      const how = call.function.name === "remove_goal" ? "remove" : "finish";
+      return title ? { name: "confirm", how, title } : { error: "title must be one of their goals' titles, as listed" };
     }
     case "start_step":
     case "finish_step": {
@@ -1520,6 +1555,19 @@ export function finalSay(say: string, finished: boolean, running: boolean): stri
   return said ? said[0].toUpperCase() + said.slice(1) : "Got it.";
 }
 
+// The goal a title names among `goals`: the same title, else the only one whose words hold all of its words or are all
+// in it. Whole words only (review, Nov 4: "art" never names "Start my taxes").
+function goalNamed(title: string, goals: Goal[]): Goal | undefined {
+  const key = titleKey(title);
+  const words = (text: string) => titleKey(text).split(" ").filter(Boolean);
+  const within = (a: string[], b: string[]) => a.length > 0 && a.every((word) => b.includes(word));
+  const near = goals.filter((other) => key && (within(words(key), words(other.title)) || within(words(other.title), words(key))));
+  return goals.find((other) => titleKey(other.title) === key) ?? (near.length === 1 ? near[0] : undefined);
+}
+
+// What talk says when it offers to remove a goal or mark it done; the tap under it does it.
+const confirmLine = ({ how, title }: GoalConfirm) => (how === "remove" ? `Remove "${title}"?` : `Mark "${title}" done?`);
+
 // The other open goals, so a goal they name again is never made twice and their steps never land in the wrong goal.
 export const othersText = (others: Goal[]) =>
   others.length > 0 ? `Their other open goals, waiting in their list: ${others.map(goalLine).join("; ")}.` : "Their other open goals: none.";
@@ -1552,6 +1600,7 @@ export async function talk(
   progress?: Progress;
   private: PrivateFact[];
   draft: EmailDraft | null;
+  confirm: GoalConfirm | null;
 }> {
   const email = context.email;
   const refs: Refs = new Map();
@@ -1562,6 +1611,7 @@ export async function talk(
   const proposal: CalendarBlock[] = [];
   const kept: PrivateFact[] = [];
   let draft: EmailDraft | null = null;
+  let confirm: GoalConfirm | null = null;
   // Set when this turn finished or skipped a step.
   let progress: Progress | undefined;
   // Set once this turn saves or changes the plan: a start_step after that waits for the person's tap.
@@ -1659,13 +1709,18 @@ export async function talk(
       if (checked.name === "step" && checked.status === "doing" && planChanged) {
         return { ok: false, note: "Not started: they see its card first and tap Start. Don't say it started." };
       }
+      // Remove and Mark done are only offered here; her tap on the page does them (Nov 4).
+      if (checked.name === "confirm") {
+        const target = goalNamed(checked.title, [...(goal ? [goal] : []), ...waiting]);
+        if (!target) return { error: `"${checked.title}" is not one of their goals: use a title as listed` };
+        if (confirm && confirm.id !== target.id) return { error: "one goal at a time: offer the other one after they answer" };
+        confirm = { id: target.id, title: target.title.replace(/[.!?]+$/, ""), how: checked.how };
+        const done = checked.how === "remove" ? "removed" : "done";
+        return { ok: true, note: `Not ${done} yet: they see a button and tap it to confirm. Never say it is ${done}.` };
+      }
       if (checked.name === "switch") {
-        const key = titleKey(checked.title);
-        if (goal && titleKey(goal.title) === key) return { ok: true, note: "That is already their current goal." };
-        const words = (text: string) => titleKey(text).split(" ").filter(Boolean);
-        const within = (a: string[], b: string[]) => a.length > 0 && a.every((word) => b.includes(word));
-        const near = waiting.filter((other) => key && (within(words(key), words(other.title)) || within(words(other.title), words(key))));
-        const target = waiting.find((other) => titleKey(other.title) === key) ?? (near.length === 1 ? near[0] : undefined);
+        if (goal && titleKey(goal.title) === titleKey(checked.title)) return { ok: true, note: "That is already their current goal." };
+        const target = goalNamed(checked.title, waiting);
         if (!target) return { error: `"${checked.title}" is not one of their other open goals: use a title as listed` };
         const switched = await activateGoal(email, target.id);
         if (!switched) return { error: "that goal is finished or no longer exists" };
@@ -1771,16 +1826,19 @@ export async function talk(
       }
     }
   } catch (error) {
-    // Once something was saved, a short honest reply beats an error that hides the change.
-    if (actions.length === 0 && proposal.length === 0 && !draft) throw error;
+    // Once something was saved or offered, a short honest reply beats an error that hides the change.
+    if (actions.length === 0 && proposal.length === 0 && !draft && !confirm) throw error;
     console.error("Talk stopped after saving a change:", error instanceof Error ? error.message.slice(0, 120) : "unknown");
   }
   const finished = actions.some((action) => action.type === "step-finished");
   const changedNothing = actions.length === 0 && proposal.length === 0 && !draft;
   const spoken = reply && (changedNothing ? unclaimed(reply.say) : reply.say);
   const said = reply && (spoken ? finalSay(withoutRefs(spoken, goal, refs), finished, goal?.steps.some((step) => step.status === "doing") ?? false) : UNSAVED);
+  // An offer to remove a goal or mark it done says exactly that, and its tap is the answer (no other options).
+  const offered = confirm && confirmLine(confirm);
   return {
     reply:
+      offered ??
       said ??
       (actions.length > 0
         ? "I made that change, but lost my words for a second. Keep going?"
@@ -1793,10 +1851,11 @@ export async function talk(
     actions,
     // Tap answers answer a question, so they go when finalSay took it out; a step's ref in one becomes its title (round 6:
     // "Do s3 now").
-    options: said?.includes("?") ? (reply?.options ?? []).map((option) => withoutRefs(option, goal, refs)) : [],
+    options: !offered && said?.includes("?") ? (reply?.options ?? []).map((option) => withoutRefs(option, goal, refs)) : [],
     proposal,
     progress,
     private: kept,
     draft,
+    confirm,
   };
 }

@@ -52,7 +52,8 @@ export type DayEvent = { title: string; start: string; end: string; allDay: bool
 
 // id opens the email in full (GET /api/mail/[id]), address is the sender's, for a reply draft's To, and asks marks mail
 // that asks the person something (a question or a request, by rule). All three are missing from days saved before Nov 3.
-export type DayEmail = { from: string; subject: string; snippet: string; unread: boolean; id?: string; address?: string; asks?: boolean };
+// sensitive marks code or bank mail: its row opens it in Gmail, never in Zeno (Nov 4: those rows couldn't be clicked).
+export type DayEmail = { from: string; subject: string; snippet: string; unread: boolean; id?: string; address?: string; asks?: boolean; sensitive?: boolean };
 
 // A free gap in the person's calendars, ISO start and end.
 export type FreeSlot = { start: string; end: string };
@@ -181,6 +182,8 @@ export type TalkResponse =
       private?: PrivateFact[];
       // An email Zeno drafted when asked ("draft the email to Prof Patel"); the page shows "Open in Gmail".
       draft?: EmailDraft | null;
+      // A goal to remove or mark done, only once she taps to confirm (see GoalConfirm).
+      confirm?: GoalConfirm | null;
     }
   | { state: "signed-out" | "no-key" | "bad-request" | "model-error" };
 
@@ -350,3 +353,15 @@ export type NextStepsRequest = { id: string };
 
 // A finished step for the Week: its title, its goal's title, when it was done (ISO) and its real minutes when known.
 export type DoneStep = { title: string; goal: string; doneAt: string; minutes: number | null };
+
+// POST /api/goal/remove body { id, undo? } and POST /api/goal/finish body { id } (Nov 4, Vi: "no simple delete goal"),
+// called only from a tap. Remove takes the goal out of every list and count, kept so undo: true brings it back (paused,
+// or current when no goal is); Finish marks it done, a goal that keeps going too, and closes its open steps. current is
+// the current goal after (when the goal was current, the most recently paused one); goal is the one an undo restored.
+// bad-request for a goal that is not theirs or not open (not removed, for an undo).
+export type CloseGoalRequest = { id: string; undo?: boolean };
+export type CloseGoalResponse = { state: "ok"; current: Goal | null; goal?: Goal } | { state: "signed-out" | "bad-request" | "error" };
+
+// A goal change talk only proposes (Nov 4: "drop the 5K goal", "I finished the paper"): the page shows Remove or Mark
+// done for that goal, and only the tap calls the route above.
+export type GoalConfirm = { id: string; title: string; how: "remove" | "finish" };
