@@ -9,7 +9,7 @@ const real = (name: string) => new URL(`./${name}.ts`, import.meta.url).href;
 const FAKES: Record<string, string> = {
   "fake:goals": [
     `export * from "${real("goals")}";`,
-    ...["addMemory", "forgetMemory", "setGoal", "replaceRemainingSteps", "changeStepStatus", "insertStep", "setGoalDue", "openGoals", "activateGoal"].map(
+    ...["addMemory", "forgetMemory", "setGoal", "replaceRemainingSteps", "changeStepStatus", "insertStep", "setGoalDue", "editGoal", "openGoals", "activateGoal"].map(
       (name) => `export const ${name} = (...args) => globalThis.fake.${name}(...args);`,
     ),
   ].join("\n"),
@@ -26,7 +26,7 @@ registerHooks({
 const {
   ASKS_FOR_BLOCK, checkCall, checkPlan, checkPlanRequest, cleanCanvas, cleanHeard, cleanHistory, datesText, DEFERRED, DEFERS, draftUrl, extractNotes,
   finalSay, goalsFrom, goalText, isDate, keepNotes, newPattern, nextSessions, notesFrom, openingNews, openingPrompt, othersText, parseOpening,
-  parseReply, planDeadline, planFrom, planSessions, readGoals, roundSlots, rulePlan, ruleSessions, saidFinish, saveGoals, slotsText, SMALLER,
+  parseReply, planDeadline, planFrom, planSessions, readGoals, roundSlots, rulePlan, ruleSessions, saidFinish, sameGoal, saveGoals, slotsText, SMALLER,
   systemPrompt, talk, TOOLS, unasked, unclaimed, wantsNow, withoutRefs,
 } = await import("./agent.ts");
 const { freeLine, ruleOpening, ruleOptions, senderName } = await import("./brief.ts");
@@ -116,6 +116,8 @@ assert.match(
   /Practice makes them do the work, so give it: when they ask for practice questions, give all they asked for, each in quotes, like five interview questions; when they ask you to quiz them or play the interviewer, ask the first question now, in quotes, then correct each answer in a few words and ask the next, one at a time; a quiz starts, finishes and changes no step\. Never write their answers, essays or other work for them: offer its first step instead\./,
 );
 assert.match(system, /When they start a step, call start_step; call finish_step to finish or skip one only when they say so\./);
+// Round 3: Lucia, who reads English as a second language, got "Use have lived for time, as for job."
+assert.match(system, /When you explain something, like grammar or a reason, use full short sentences in plain words, never note-style fragments like 'Use have lived for time, as for job\.'/);
 assert.doesNotMatch(system, /three to seven|When they start, finish or skip a step/);
 
 // Memories show under readable headings in MEMORY_GROUPS order, freshest first within a group, refs in that order.
@@ -321,6 +323,46 @@ assert.equal((checkCall(call("set_due", { due: "2026-11-01" }), goal, refs, [], 
 assert.match((checkCall(call("set_due", { due: "2026-10-31" }), goal, refs, [], "America/Los_Angeles", sundayEvening) as { error?: string }).error ?? "", /already past/);
 for (const due of ["Friday", "2026-02-30", 20301110]) assert.ok(errorOf("set_due", { due }), String(due));
 assert.ok(errorOf("set_due", { due: "2030-01-10" }, null), "no goal");
+// edit_goal (round 3: "I can do 4 hours a day" made Jordan's job hunt a second goal): the current goal's own title or
+// rhythm, checked as set_goal's are; one left out stays, an empty title is a field filled in, an empty rhythm ends it.
+const edits = (args: object) => checkCall(call("edit_goal", args), goal, refs);
+assert.deepEqual(edits({ rhythm: " 4 hours a day " }), { name: "edit_goal", goalId: "goal-1", edit: { title: undefined, rhythm: "4 hours a day" } });
+assert.deepEqual(edits({ title: " World history essay ", rhythm: "" }), { name: "edit_goal", goalId: "goal-1", edit: { title: "World history essay", rhythm: null } });
+assert.deepEqual(edits({ title: "", rhythm: "2 sessions a week" }), { name: "edit_goal", goalId: "goal-1", edit: { title: undefined, rhythm: "2 sessions a week" } });
+for (const args of [{}, { title: "" }, { title: null, rhythm: null }]) assert.match(errorOf("edit_goal", args) ?? "", /^give a new title or rhythm; the due date changes with set_due$/, JSON.stringify(args));
+assert.match(errorOf("edit_goal", { title: "Essay due Friday" }) ?? "", /^leave the date out of the title, and change the due date with set_due/);
+assert.match(errorOf("edit_goal", { title: "Prep for my citizenship interview" }) ?? "", /titles are stored on Zeno's servers/);
+for (const args of [{ title: "x".repeat(121) }, { title: "  " }, { title: 3 }, { rhythm: "x".repeat(41) }, { rhythm: 4 }, { rhythm: ["daily"] }]) {
+  assert.ok(errorOf("edit_goal", args), JSON.stringify(args));
+}
+assert.ok(errorOf("edit_goal", { rhythm: "4 hours a day" }, null), "no goal");
+assert.match(JSON.stringify(TOOLS.find((tool: { function: { name: string } }) => tool.function.name === "edit_goal")), /Change the current goal itself when they ask: its title, or how often it repeats[\s\S]*Leave it out to keep it; empty only when they say it should stop repeating/);
+// set_goal never names the goal they are on again: every word that matters in one title is in the other, either way.
+for (const [current, named] of [
+  ["Get a junior developer job", "Get a junior developer job"],
+  ["Get a junior developer job", "get a Junior Developer job!"],
+  ["Get a junior developer job", "Get a job"],
+  ["Open my Etsy shop with 10 listings", "Open my Etsy shop"],
+  ["Finish the chapter 2 draft of my thesis", "Finish chapter 2 of my thesis"],
+  ["Prepare my 12-minute conference talk", "Prepare the conference talk"],
+  ["Run a 5K", "Run a 5K in under 30 minutes"],
+]) {
+  assert.ok(sameGoal(current, named) && sameGoal(named, current), `${current} / ${named}`);
+}
+// Another goal is never taken for it: other words, another number, another verb.
+for (const [current, named] of [
+  ["Get a junior developer job", "Write my resume"],
+  ["Get a junior developer job", "Update my resume"],
+  ["Finish the chapter 2 draft of my thesis", "Prepare my 12-minute conference talk"],
+  ["Finish chapter 2 of my thesis", "Finish chapter 3 of my thesis"],
+  ["Study for the CS 146 exam", "Study for the CS 146 quiz"],
+  ["Run a 5K", "Run a 10K"],
+  ["Clean the kitchen", "Paint the kitchen"],
+  ["Open my Etsy shop with 10 listings", "Make 10 print files"],
+  ["History essay", "The"],
+]) {
+  assert.ok(!sameGoal(current, named) && !sameGoal(named, current), `${current} / ${named}`);
+}
 
 // finish_step only on a finish they said (Nov 4): Lucia's "is correct?" and Priya's tapped "Cat bakery" each finished a step.
 for (const said of ["Done", "done!", "I'm done, what's next?", "Finished it", "Sent it", "I paid it this morning", "I just booked the venue", "ok I did it", "Is this right? I did it.", "All set", "Listo", "terminé", "I ran 2 miles"]) {
@@ -1143,6 +1185,10 @@ Object.assign(globalThis, {
       { ...goal, steps: goal.steps.flatMap((item) => (item.id === before ? [step("piece", added.title, added.minutes, "todo"), item] : [item])) }
     ),
     setGoalDue: async (email: string, goalId: string, due: string | null) => (calls.push(`setGoalDue ${goalId} ${due}`), { ...(openList.find((one) => one.id === goalId) ?? goal), due }),
+    editGoal: async (email: string, goalId: string, edit: { title?: string; rhythm?: string | null }) => (
+      calls.push(`editGoal ${goalId} ${JSON.stringify(edit)}`),
+      { ...(openList.find((one) => one.id === goalId) ?? goal), ...(edit.title ? { title: edit.title } : {}), ...(edit.rhythm !== undefined ? { rhythm: edit.rhythm } : {}) }
+    ),
     openGoals: async () => openList,
     activateGoal: async (email: string, id: string) => (calls.push(`activateGoal ${id}`), openList.find((one) => one.id === id) ?? null),
     changeStepStatus: async (email: string, id: string, status: string) => (
@@ -1345,6 +1391,11 @@ for (const rule of [
   /Say you saved, added, planned, changed or moved something only when a tool call this turn did it, and say where, like 'Added a step: Call the venue\.' or 'In Memory: runs at lunch\.' Never say how a change feels, like 'Feels smaller now'\./,
   /You can't spread a plan over the week or put every step on days: if they ask, say so plainly and name the next step \(you can still offer one calendar block for a step when they ask for one\)\. Tap options are things they'd say back that you can do now with a tool or an answer, never an offer no tool does, like 'Yes, plan it' or 'Map both out'\./,
   /When you say a goal is due, use its due date as listed; a date they gave for something else, like a rehearsal, is never its due date\./,
+  // Round 3: Jordan's "I can do 4 hours a day" made a second goal, Priya's "the party is at home" got "Got it" beside "Book
+  // venue or plan home setup", and Jordan's "200 applications, 2 rejections and silence" only went back to the step.
+  /To change the current goal itself, its name or how often \(its rhythm, like '4 hours a day'\), call edit_goal; to change its due date, call set_due\. Never call set_goal for the goal they are on\./,
+  /When they tell you a fact that makes a step unneeded or different, like 'the party is at home' while a step says 'Book the venue', change that step with update_steps in the same turn and say what changed, never only 'Got it\.'/,
+  /When they share a setback or a hard number about the goal, like '200 applications, 2 rejections and silence', after the short warm first sentence offer one concrete change to the plan that answers it, like a step to fix the resume, as a tap option, instead of only sending them back to the step\./,
 ]) {
   assert.match(talkSent[1].content ?? "", rule);
 }
@@ -1450,6 +1501,35 @@ replies.push(tools(call("switch_goal", { title: "Score all 40 hackathon submissi
 await talk(idle, null, [], "Score first, and the history essay", false, [], [scoring]);
 assert.deepEqual(calls, ["activateGoal g-score"]);
 assert.match(results()[1].error, /"History essay" is already one of their goals/);
+// The goal they are on is changed, never made twice (round 3: Jordan's "I can do 4 hours a day" saved his job hunt again,
+// waiting as a second goal): set_goal naming it is sent back, edit_goal changes it in place, and the page hears
+// roadmap-changed under its new title. A goal of its own still waits in their list.
+const hunt = {
+  id: "g-hunt", title: "Get a junior developer job", due: "2030-12-31", rhythm: "1 hour a day",
+  steps: [step("h1", "Pick one role to target", 5, "done"), step("h2", "Fix the top of the resume", 20, "todo")],
+};
+openList = [hunt];
+reset();
+replies.push(
+  tools(call("set_goal", { title: "Get a junior developer job", rhythm: "4 hours a day", steps: [fine] })),
+  tools(call("edit_goal", { rhythm: "4 hours a day" })),
+  say("4 hours a day now. Next: fix the top of your resume. Start now?"),
+);
+turn = await talk({ ...talkContext, goal: hunt }, null, [], "I can do 4 hours a day");
+assert.deepEqual(calls, ['editGoal g-hunt {"rhythm":"4 hours a day"}'], "no second goal");
+assert.equal(
+  results()[0].error,
+  'not saved: that names "Get a junior developer job", the goal they are on. Change its name or how often with edit_goal, its due date with set_due and its steps with update_steps or add_step. If they meant another goal, give it a title that says how it differs.',
+);
+assert.deepEqual([turn.goal?.id, turn.goal?.rhythm, turn.actions], ["g-hunt", "4 hours a day", [{ type: "roadmap-changed", label: "Get a junior developer job" }]]);
+reset();
+replies.push(tools(call("edit_goal", { title: "Get a backend developer job" })), say("It's the backend job hunt now."));
+turn = await talk({ ...talkContext, goal: hunt }, null, [], "make it backend jobs");
+assert.deepEqual([calls, turn.actions], [['editGoal g-hunt {"title":"Get a backend developer job"}'], [{ type: "roadmap-changed", label: "Get a backend developer job" }]]);
+reset();
+replies.push(tools(call("set_goal", { title: "Update my resume", steps: [fine] })), say("Saved in your goals: Update my resume."));
+turn = await talk({ ...talkContext, goal: hunt }, null, [], "also I need to update my resume");
+assert.deepEqual([calls, turn.goal?.id], [["setGoal Update my resume paused"], "g-hunt"]);
 openList = [];
 // A save claimed by a turn that changed nothing goes (round 2: "Got it, lunch runs locked in.", "Saved: 10 to 11 AM
 // weekdays."); advice stays, and so does a claim when a tool really saved something.
@@ -1467,9 +1547,14 @@ reset();
 replies.push({ content: JSON.stringify({ say: "Got it, lunch runs locked in. Back to picking your days. Done?", options: ["Yes", "Not yet"] }) });
 turn = await talk(idle, null, [], "Monday, Wednesday and Saturday. Weekdays at lunch.");
 assert.deepEqual([turn.reply, turn.options], ["Back to picking your days. Done?", ["Yes", "Not yet"]]);
+// A reply that was only the claim says so, never a bare "Got it." as if it was kept (round 3); a reply with no claim stays.
 reset();
 replies.push({ content: JSON.stringify({ say: "Saved.", options: [] }) });
-assert.equal((await talk(idle, null, [], "Weekdays at lunch")).reply, "Got it.", "nothing left to say: no claim either");
+turn = await talk(idle, null, [], "Weekdays at lunch");
+assert.deepEqual([turn.reply, turn.options], ["I didn't save that. Say it again as a step, or ask me to remember it.", []]);
+reset();
+replies.push(say("Lunch works for runs."));
+assert.equal((await talk(idle, null, [], "Weekdays at lunch")).reply, "Lunch works for runs.");
 reset();
 saved = { id: "mem-12", text: "Runs at lunch on weekdays.", group: "routines", source: "you", createdAt: "" };
 replies.push(tools(call("remember", { text: "Runs at lunch on weekdays.", group: "routines", private: false })), say("In Memory: runs at lunch on weekdays."));

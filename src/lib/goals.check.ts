@@ -9,7 +9,7 @@ registerHooks({
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
 const {
-  activateGoal, changeStepStatus, currentGoal, doneTitles, finishedDays, finishedYesterday, getGoal, insertStep, openGoals, orderGoals, recentSteps,
+  activateGoal, changeStepStatus, currentGoal, doneTitles, editGoal, finishedDays, finishedYesterday, getGoal, insertStep, openGoals, orderGoals, recentSteps,
   replaceRemainingSteps, savePrep, setGoal, setGoalDue, setStepStatus, stepsDoneSince, stepTitles, titleKey, weekStart,
 } = await import("./goals.ts");
 const { getSql } = await import("./db.ts");
@@ -211,6 +211,27 @@ try {
   assert.equal((await openGoals(rolling)).length, 7, "the move, the run, the essay and four more");
 } finally {
   await getSql()`DELETE FROM goals WHERE user_email = ${rolling}`;
+}
+
+// The goal itself, changed in talk (round 3: "I can do 4 hours a day" saved Jordan's job hunt again, as a second goal):
+// the same row takes the new rhythm or title, what is left out stays, a null rhythm ends it, and no one else's changes.
+const editing = `goals-edit-check-${crypto.randomUUID()}@zeno.local`;
+try {
+  const hunt = await setGoal(editing, "Get a junior developer job", [{ title: "Pick one role to target", minutes: 5 }], "2031-01-01", { rhythm: "1 hour a day" });
+  const more = await editGoal(editing, hunt.id, { rhythm: "4 hours a day" });
+  assert.deepEqual(
+    [more?.id, more?.title, more?.rhythm, more?.due, more?.steps.map((step) => step.id)],
+    [hunt.id, "Get a junior developer job", "4 hours a day", "2031-01-01", hunt.steps.map((step) => step.id)],
+  );
+  const renamed = await editGoal(editing, hunt.id, { title: "Get a backend developer job" });
+  assert.deepEqual([renamed?.title, renamed?.rhythm], ["Get a backend developer job", "4 hours a day"], "a new title keeps the rhythm");
+  assert.deepEqual([(await editGoal(editing, hunt.id, { rhythm: null }))?.rhythm, (await currentGoal(editing))?.id], [null, hunt.id], "cleared, still current");
+  assert.equal(await editGoal(`someone-else-${crypto.randomUUID()}@zeno.local`, hunt.id, { title: "Mine now" }), null, "another person's goal");
+  assert.equal(await editGoal(editing, crypto.randomUUID(), { title: "Gone" }), null, "an unknown one");
+  const rows = await getSql()`SELECT title, rhythm FROM goals WHERE user_email = ${editing}`;
+  assert.deepEqual(rows.map((row) => [row.title, row.rhythm]), [["Get a backend developer job", null]], "one goal, never a copy");
+} finally {
+  await getSql()`DELETE FROM goals WHERE user_email = ${editing}`;
 }
 
 // Memory: one row per fact whatever its case, punctuation or spacing; caps that drop the oldest scanned facts first.

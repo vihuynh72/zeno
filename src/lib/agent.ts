@@ -25,6 +25,7 @@ import {
   changeStepStatus,
   deadlineMemory,
   dueDay,
+  editGoal,
   forgetMemory,
   insertStep,
   isId,
@@ -174,6 +175,8 @@ const RULES = [
   "Use plain words a 12-year-old knows, never jargon like blocker, shell, mock, keep pile or kill avoidance. Words they should say or write go in quotes.",
   "When they say they feel sick, guilty, rejected, scared or overwhelmed, your first sentence is short and warm, like 'That rejection stings.', before anything about the plan.",
   "When they ask whether something they wrote or said is correct, answer that first: the corrected version in quotes and the reason in a few words, like '\"How can I help you?\" In a question, can comes before I.' Never call a wrong sentence good.",
+  // Round 3: Lucia, who reads English as a second language, got "Use have lived for time, as for job."
+  "When you explain something, like grammar or a reason, use full short sentences in plain words, never note-style fragments like 'Use have lived for time, as for job.'",
   "Never make up facts about them, like a job, a past, a date or a number they didn't give: ask for it in one short question with tap answers. A line you give them to say is correct and natural.",
 ].join(" ");
 
@@ -185,7 +188,13 @@ const PLAN_RULES = [
   "When they ask how to do a step, like 'Show me how', answer with only its very first move or one short example in plain words, like 'First move: name three days, like \"Mon, Wed, Sat.\"', and change nothing.",
   "When they ask to make a step smaller, or say it's too big, call add_step with one first piece of 2 to 5 minutes right before that step; the step itself stays as it is. When they ask to split a step, call update_steps with that step replaced by its parts, like 'Shoot items 1 to 5' and 'Shoot items 6 to 10'.",
   "update_steps keeps every step they didn't mention, with its ref, its title, its minutes and its place: never drop, merge, reword or reorder a step they didn't ask about.",
+  // Round 3: "the party is at home, 2 to 4 PM, 12 kids" got "Got it" beside "Book venue or plan home setup", and Jordan's
+  // "200 applications, 2 rejections and silence" only went back to the same step.
+  "When they tell you a fact that makes a step unneeded or different, like 'the party is at home' while a step says 'Book the venue', change that step with update_steps in the same turn and say what changed, never only 'Got it.'",
+  "When they share a setback or a hard number about the goal, like '200 applications, 2 rejections and silence', after the short warm first sentence offer one concrete change to the plan that answers it, like a step to fix the resume, as a tap option, instead of only sending them back to the step.",
   "When they give a date for the current goal, like 'it's due Friday', call set_due with it, read from the dates listed.",
+  // Round 3: "I can do 4 hours a day" saved Jordan's job hunt again, as a second goal.
+  "To change the current goal itself, its name or how often (its rhythm, like '4 hours a day'), call edit_goal; to change its due date, call set_due. Never call set_goal for the goal they are on.",
   "Another thing they want to get done is its own goal: call set_goal for it and never add its steps to the current goal. Its title never holds its date, like 'by Friday' or 'before December': the date goes in due. Several at once: call set_goal once for each, the most urgent first. While the current goal has steps left, every new goal waits in their goals list unless they clearly say to work on it now; otherwise the first becomes current and the others wait. Never make a goal again that is already in their other goals.",
   "A goal saved to wait: say so with its date, like 'Saved in your goals: Renew my passport, due December 1.', then stay on the current goal: send them back to a running step or name its next step, and never suggest starting anything in the new goal.",
   "When they want to work on another of their goals now, like 'Let's do the scoring first' or a tap like 'Score first', call switch_goal with its title as listed in their other goals.",
@@ -1076,6 +1085,24 @@ export const TOOLS = [
   {
     type: "function",
     function: {
+      name: "edit_goal",
+      description:
+        "Change the current goal itself when they ask: its title, or how often it repeats (its rhythm, like '4 hours a day'). Its steps stay as they are, and its due date changes with set_due.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Its new title in their words, only when they rename it; never a date in it." },
+          rhythm: {
+            type: "string",
+            description: "How often, in a few words, like '4 hours a day'. Leave it out to keep it; empty only when they say it should stop repeating.",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "switch_goal",
       description:
         "Make one of their other open goals the current one, when they want to work on it now, like 'Let's do the scoring first' or a tap like 'Score first'. Its steps stay as they are, and the goal they leave waits in their list.",
@@ -1203,6 +1230,7 @@ type Checked =
   | { name: "update_steps"; goalId: string; steps: NewStep[] }
   | { name: "add_step"; goalId: string; before: string | null; step: NewStep }
   | { name: "set_due"; goalId: string; due: string | null }
+  | { name: "edit_goal"; goalId: string; edit: { title?: string; rhythm?: string | null } }
   | { name: "switch"; title: string }
   | { name: "step"; stepId: string; status: StepStatus }
   | { name: "remember"; text: string; group: MemoryGroup; private: boolean }
@@ -1300,6 +1328,18 @@ export function checkCall(call: ToolCall, goal: Goal | null, refs: Refs, slots: 
       if (due !== null && !isDate(due)) return { error: "due must be a date written YYYY-MM-DD" };
       if (due !== null && due < localDate(timeZone, now)) return { error: "due is already past: ask when it is really due" };
       return { name: "set_due", goalId: goal.id, due };
+    }
+    case "edit_goal": {
+      if (!goal) return { error: "there is no current goal yet, use set_goal" };
+      // An empty title is a field filled in, not a new name (tools are sent without strict); an empty rhythm clears it.
+      const title = args?.title === undefined || args.title === null || args.title === "" ? undefined : titleOf(args.title);
+      const rhythm = typeof args?.rhythm === "string" ? args.rhythm.trim() || null : undefined;
+      if (title === null) return { error: "title must be 1 to 120 characters" };
+      if (title && DATED.test(title)) return { error: "leave the date out of the title, and change the due date with set_due" };
+      if (args?.rhythm !== undefined && args.rhythm !== null && typeof args.rhythm !== "string") return { error: "rhythm must be text, like '4 hours a day', or empty to stop it repeating" };
+      if (rhythm && rhythm.length > 40) return { error: "rhythm must be a few words, like '4 hours a day'" };
+      if (title === undefined && rhythm === undefined) return { error: "give a new title or rhythm; the due date changes with set_due" };
+      return title && privateTitle([title]) ? { error: PRIVATE_TITLE } : { name: "edit_goal", goalId: goal.id, edit: { title, rhythm } };
     }
     case "switch_goal": {
       const title = titleOf(args?.title);
@@ -1441,6 +1481,13 @@ const NOT_NOW = /\b(?:\w+n['’]?t|not)\b[^.!?]{0,40}\b(?:now|first|instead)\b|\
 export const wantsNow = (message: string, now: boolean) => now && NOW.test(message) && !NOT_NOW.test(message);
 const hasOpen = (goal: Goal | null) => goal?.steps.some((step) => step.status === "todo" || step.status === "doing") ?? false;
 
+// One goal named twice: every word that matters in one title is in the other, so "Get a job" is "Get a junior developer
+// job", while "Write my resume" is another goal, and so is "Paint the kitchen" beside "Clean the kitchen".
+export const sameGoal = (a: string, b: string) => {
+  const [x, y] = [contentWords(a), contentWords(b)];
+  return x.length > 0 && y.length > 0 && (x.every((word) => y.includes(word)) || y.every((word) => x.includes(word)));
+};
+
 // A save claimed by a turn that saved nothing (round 2: "Got it, lunch runs locked in." and "Saved: 10 to 11 AM weekdays."
 // with nothing to show): that sentence goes. Only one that opens with the claim, says "locked in" or promises a save, so
 // advice like "Save the file first" stays.
@@ -1451,6 +1498,8 @@ export const unclaimed = (say: string) =>
     .split(/(?<=[.!?]["”’']?)\s+/)
     .filter((sentence) => /\?["”’']?$/.test(sentence) || !CLAIM.test(sentence))
     .join(" ");
+// Talk's words when its whole reply was such a claim (round 3: a lone "Saved." became "Got it.", as if something was kept).
+const UNSAVED = "I didn't save that. Say it again as a step, or ask me to remember it.";
 
 // A turn that only puts the step off, like the taps "Not now" and "Not yet": POST /api/talk answers DEFERRED at once, with
 // no model call and nothing changed (round 2: 16 s of Thinking, then a card with no button).
@@ -1552,6 +1601,12 @@ export async function talk(
         (other) => titleKey(other.title) === titleKey(checked.title),
       );
       if (twin) return { error: `not saved: "${twin.title}" is already one of their goals; never make it again.` };
+      // Round 3: "I can do 4 hours a day" saved Jordan's job hunt again, as a second goal; Kenji's and Amara's edits too.
+      if (goal && sameGoal(checked.title, goal.title)) {
+        return {
+          error: `not saved: that names "${goal.title}", the goal they are on. Change its name or how often with edit_goal, its due date with set_due and its steps with update_steps or add_step. If they meant another goal, give it a title that says how it differs.`,
+        };
+      }
     }
     try {
       if (checked.name === "remember" && checked.private) {
@@ -1643,7 +1698,7 @@ export async function talk(
               : `${waits}.`,
         };
       }
-      if (checked.name === "set_goal" || checked.name === "update_steps" || checked.name === "add_step" || checked.name === "set_due") {
+      if (checked.name === "set_goal" || checked.name === "update_steps" || checked.name === "add_step" || checked.name === "set_due" || checked.name === "edit_goal") {
         const changed =
           checked.name === "set_goal"
             ? await setGoal(email, checked.title, checked.steps, checked.due, { rhythm: checked.rhythm })
@@ -1651,7 +1706,9 @@ export async function talk(
               ? await replaceRemainingSteps(email, checked.goalId, checked.steps)
               : checked.name === "add_step"
                 ? await insertStep(email, checked.goalId, checked.step, checked.before)
-                : await setGoalDue(email, checked.goalId, checked.due);
+                : checked.name === "set_due"
+                  ? await setGoalDue(email, checked.goalId, checked.due)
+                  : await editGoal(email, checked.goalId, checked.edit);
         if (!changed) return { error: "that goal or step no longer exists" };
         goal = changed;
         actions.push({ type: checked.name === "set_goal" ? "goal-set" : "roadmap-changed", label: goal.title });
@@ -1720,8 +1777,8 @@ export async function talk(
   }
   const finished = actions.some((action) => action.type === "step-finished");
   const changedNothing = actions.length === 0 && proposal.length === 0 && !draft;
-  const said =
-    reply && finalSay(withoutRefs(changedNothing ? unclaimed(reply.say) : reply.say, goal, refs), finished, goal?.steps.some((step) => step.status === "doing") ?? false);
+  const spoken = reply && (changedNothing ? unclaimed(reply.say) : reply.say);
+  const said = reply && (spoken ? finalSay(withoutRefs(spoken, goal, refs), finished, goal?.steps.some((step) => step.status === "doing") ?? false) : UNSAVED);
   return {
     reply:
       said ??
