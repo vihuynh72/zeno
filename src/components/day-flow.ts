@@ -364,14 +364,13 @@ export function doneLine(goal: Goal | null, skipped = false): string {
   return `${skipped ? "Skipped." : "Nice."} Next: ${next.title.replace(/\.+$/, "")}${next.minutes ? `, ${next.minutes} min` : ""}.`;
 }
 
-// After a goal that keeps going got its next few steps: "Planned your next few: A, B and C." (three named at most).
+// After a goal that keeps going got its next few steps: "Planned your next few: Run 20 min easy, then 2 more." Only the
+// next one is named (live, Nov 4: three titles with their own commas read as one jumble); the steps list has them all.
 export function nextFewLine(before: Goal | null, after: Goal): string {
-  const added = after.steps
-    .filter((step) => step.status === "todo" && !before?.steps.some((old) => old.id === step.id))
-    .map((step) => step.title.replace(/[.!?]+$/, ""));
-  const named = added.length > 3 ? [...added.slice(0, 3), `${added.length - 3} more`] : added;
-  if (named.length === 0) return "Planned your next few.";
-  return `Planned your next few: ${named.length === 1 ? named[0] : `${named.slice(0, -1).join(", ")} and ${named.at(-1)}`}.`;
+  const added = after.steps.filter((step) => step.status === "todo" && !before?.steps.some((old) => old.id === step.id));
+  if (added.length === 0) return "Planned your next few.";
+  const first = added[0].title.replace(/[.!?]+$/, "");
+  return `Planned your next few: ${first}${added.length > 1 ? `, then ${added.length - 1} more` : ""}.`;
 }
 
 // A line as Zeno says it: "15 min" is "15 minutes" and "1 h" is "1 hour".

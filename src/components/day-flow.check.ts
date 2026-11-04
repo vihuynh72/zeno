@@ -82,12 +82,11 @@ assert.equal(doneLine(runs), "Nice. Planning your next few…");
 assert.equal(doneLine(runs, true), "Skipped. Planning your next few…");
 assert.equal(doneLine({ ...runs, rhythm: null }), "That's all of Run a 5K.");
 assert.equal(doneLine({ ...runs, steps: [...runs.steps, step("3", "todo", { title: "Run 20 min easy", minutes: 20 })] }), "Nice. Next: Run 20 min easy, 20 min.");
-// Its next few, named (three at most).
+// Its next few: the next one named, the rest counted.
 const more = (...titles: string[]) => ({ ...runs, steps: [...runs.steps, ...titles.map((title, i) => step(`n${i}`, "todo", { title }))] });
 assert.equal(nextFewLine(runs, more("Run 20 min easy.")), "Planned your next few: Run 20 min easy.");
-assert.equal(nextFewLine(runs, more("Run 20 min", "Rest day stretch")), "Planned your next few: Run 20 min and Rest day stretch.");
-assert.equal(nextFewLine(runs, more("A", "B", "C")), "Planned your next few: A, B and C.");
-assert.equal(nextFewLine(runs, more("A", "B", "C", "D", "E")), "Planned your next few: A, B, C and 2 more.");
+assert.equal(nextFewLine(runs, more("Run 1 min, walk 1 min, 6 rounds", "Rest day stretch")), "Planned your next few: Run 1 min, walk 1 min, 6 rounds, then 1 more.");
+assert.equal(nextFewLine(runs, more("A", "B", "C")), "Planned your next few: A, then 2 more.");
 assert.equal(nextFewLine(runs, runs), "Planned your next few.");
 // Said aloud, the minutes and hours are words.
 assert.equal(spoken("Nice. Next: Step 2, 15 min."), "Nice. Next: Step 2, 15 minutes.");
