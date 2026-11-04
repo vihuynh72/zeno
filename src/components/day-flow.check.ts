@@ -148,6 +148,12 @@ assert.equal(asksBig("Done. Friday is the line. Find the number next. Start now?
 assert.equal(asksBig("Want me to add a step for the playlist?", false), false);
 assert.equal(asksBig("Start with the intro. It's short.", false), false, "no question");
 assert.equal(asksBig("Ready to start?", true), false, "Focus's big button is Done");
+assert.equal(asksBig("Ready to start?", false), true);
+assert.equal(asksBig("Looks good. All done?", true), true);
+// A question about more than the button keeps its yes (review, Nov 4).
+assert.equal(asksBig("Want me to split it so it is easier to get done?", true), false);
+assert.equal(asksBig("Want to start with the outline instead?", false), false);
+assert.equal(asksBig("Want a 2-minute piece before you start?", false), false);
 assert.deepEqual(extraReplies(["Yes", "Not yet", "One more paragraph"], true), ["One more paragraph"]);
 assert.deepEqual(extraReplies(["I'm finished", "Mark it done", "Let's begin", "Start over", "Restart"]), []);
 

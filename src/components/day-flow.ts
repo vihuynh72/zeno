@@ -111,10 +111,14 @@ export function extraReplies(options: string[], yesIsBig = false): string[] {
 // Whether a spoken line asks something, so hands-free listening opens the mic after it.
 export const asks = (line: string) => /\?["'”’)]*$/.test(line.trim());
 
-// Whether Zeno's line ends by asking what the screen's big button does: "Done?" in Focus, "Start now?" on the desk.
+// Whether Zeno's line ends by asking exactly what the screen's big button does: "Done?" or "All done?" in Focus, "Start
+// now?" or "Ready to start?" on the desk. A question about anything more ("Want to start with the outline instead?")
+// keeps its yes (found in review, Nov 4).
+const DONE_ASK = /^(?:(?:all|are you|you|is (?:it|that|this)(?: one)?)\s+)?(?:done|finished)(?:\s+with (?:it|this|that))?\?$/i;
+const START_ASK = /^(?:(?:ready|want|wanna|time) to\s+)?(?:start|begin)(?:\s+(?:it|this|that|now|it now|this now))?\?$/i;
 export function asksBig(line: string, focus: boolean): boolean {
-  const last = line.trim().split(/(?<=[.!?])\s+/).at(-1) ?? "";
-  return asks(last) && (focus ? /\b(done|finished)\b/i : /\b(start|begin)\b/i).test(last);
+  const last = (line.trim().split(/(?<=[.!?])\s+/).at(-1) ?? "").replace(/^["'“‘]+|["'”’)]+$/g, "").trim();
+  return (focus ? DONE_ASK : START_ASK).test(last);
 }
 
 // Longer lines get a smaller hand so a reply still fits the card.

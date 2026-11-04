@@ -352,7 +352,8 @@ export default function GuidedDay() {
   const history = useRef<Turn[]>([]);
   const cache = useRef<Saved | null>(null);
   const tapped = useRef<string | null>(null); // the turn in flight came from a chip, not the type box: the words it shows
-  const rolling = useRef(false); // a goal's next few are being planned, so a second tap waits for them
+  // Goals whose next few are being planned, by id: a second tap (or Done then the goal again) waits for the same answer.
+  const rolls = useRef(new Map<string, Promise<GoalResponse | { state: "error" }>>());
   const moved = useRef(false); // the person has taken a turn (or opened a desk) since the opening was shown
   const spoke = useRef(false); // the opening has been said (or offered with Hear Zeno)
   const talking = useRef(false); // hands-free: the person tapped Talk, so Zeno listens after each question it says
@@ -372,9 +373,9 @@ export default function GuidedDay() {
   }, [screen, pasting, view, stuck]);
   // The voice hook calls onUserTurn later, so it reads the screen, goal and phase from here, not a stale render.
   const shown: View = onDesk ? "desk" : "home";
-  const latest = useRef({ screen, view: shown, goal, goals, line, progress, choices, chosen: proposedId, planning });
+  const latest = useRef({ screen, view: shown, goal, goals, line, progress, choices, chosen: proposedId });
   useEffect(() => {
-    latest.current = { screen, view: shown, goal, goals, line, progress, choices, chosen: proposedId, planning };
+    latest.current = { screen, view: shown, goal, goals, line, progress, choices, chosen: proposedId };
   });
 
   // Auth.js sends failed sign-ins back to "/?error=...".
@@ -478,10 +479,16 @@ export default function GuidedDay() {
     if (latest.current.view !== "desk") return changeGoal(next);
     takeGoal(next);
     // Saving it made it the server's current plan, so the desk on screen is made current again: Talk, Start and Done
-    // always act on the plan she sees (found in review, Nov 3). A desk whose own plan is still being made needs nothing:
-    // that plan becomes current as it is saved (two goals added in a row, Nov 4).
+    // always act on the plan she sees (found in review, Nov 3). While another plan is still being made, that one becomes
+    // current as it is saved, or keepCurrent puts the page's back when it fails (two goals added in a row, Nov 4).
     const shown = latest.current.goal;
-    if (shown && shown.id !== next.id && !latest.current.planning) void post<GoalResponse>("/api/goal/activate", { id: shown.id } satisfies ActivateRequest);
+    if (shown && shown.id !== next.id && making.current.size === 0) keepCurrent();
+  }
+
+  // The page's current plan made the server's current one again, so Talk acts on the plan she sees.
+  function keepCurrent() {
+    const shown = latest.current.goal;
+    if (shown) void post<GoalResponse>("/api/goal/activate", { id: shown.id } satisfies ActivateRequest);
   }
 
   function changeProgress(next: Progress) {
@@ -786,7 +793,7 @@ export default function GuidedDay() {
     // clock on the new first piece, so Focus carries on with it.
     if (next === "ready" || next === "focus") {
       setView("desk");
-      setAddWords(null);
+      if (now.view !== "desk") setAddWords(null);
     }
     if (next === "ready" && changed) {
       setStuck(false);
@@ -903,15 +910,21 @@ export default function GuidedDay() {
   // changes the current plan): after its last Done, where the screen after it says what they are (or that it couldn't,
   // with Plan my next few to try again), or as its desk opens (`ticket`), which shows them being planned.
   async function rollOn(plan: Goal | null, ticket?: number) {
-    if (!plan?.rhythm || openSteps(plan).length > 0 || rolling.current) return;
-    rolling.current = true;
-    setRollingId(plan.id);
+    if (!plan?.rhythm || openSteps(plan).length > 0) return;
     if (ticket) setPlanning({ title: plan.title, due: plan.due ?? null, line: "Planning your next few…" });
-    const res = await post<GoalResponse>("/api/goal/next", { id: plan.id } satisfies NextStepsRequest);
-    rolling.current = false;
-    setRollingId(null);
+    const asked = rolls.current.get(plan.id);
+    const call = asked ?? post<GoalResponse>("/api/goal/next", { id: plan.id } satisfies NextStepsRequest);
+    if (!asked) {
+      rolls.current.set(plan.id, call);
+      setRollingId(plan.id);
+    }
+    const res = await call;
+    if (!asked) {
+      rolls.current.delete(plan.id);
+      setRollingId((id) => (id === plan.id ? null : id));
+      if (res.state === "ok") takeGoal(res.goal);
+    }
     if (res.state === "signed-out") return showSignedOut();
-    if (res.state === "ok") takeGoal(res.goal);
     if (ticket) {
       if (ticket !== opened.current) return;
       setPlanning(null);
@@ -1079,6 +1092,7 @@ export default function GuidedDay() {
     setPlanning(null);
     if (res.state === "ok") return changeGoal(res.goal);
     goHome();
+    keepCurrent();
     setNote(OPEN_FAIL);
   }
 
@@ -1111,6 +1125,7 @@ export default function GuidedDay() {
     setPlanning(null);
     if (res.state === "ok") return changeGoal(res.goal);
     goHome();
+    keepCurrent();
     setNote(OPEN_FAIL);
   }
 
@@ -1145,6 +1160,7 @@ export default function GuidedDay() {
       return;
     }
     goHome();
+    keepCurrent();
     setAddWords(words);
     setNote(res.state === "bad-request" ? NO_GOAL : ADD_FAIL);
   }
@@ -1167,6 +1183,7 @@ export default function GuidedDay() {
     setPlanning(null);
     if (res.state === "ok") return changeGoal(res.goal);
     goHome();
+    keepCurrent();
     setNote(res.state === "unreadable" ? PHOTO_UNREADABLE : res.state === "bad-request" ? SNAP_FAIL : OPEN_FAIL);
   }
 
