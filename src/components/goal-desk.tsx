@@ -63,11 +63,14 @@ export function GoalStrip(props: StripProps & { onClose?(how: "remove" | "finish
             {/* 44px tap targets that keep the caption's own line height, so the sticky strip stays as short. */}
             {onClose && (
               <p className="-mx-1 -my-2.5 flex items-center gap-1">
-                <button type="button" data-answer onClick={() => onClose("finish")} data-ink className="link">
+                <button type="button" data-answer onClick={() => onClose("finish")} data-ink className="link gap-1.5">
+                  {/* Words alone on a phone, so the pair stays on the caption's line. */}
+                  <Icon name="check" className="h-[18px] w-[18px] max-sm:hidden" />
                   Mark done
                 </button>
                 <span aria-hidden="true">·</span>
-                <button type="button" data-answer onClick={() => onClose("remove")} data-ink className="link">
+                <button type="button" data-answer onClick={() => onClose("remove")} data-ink className="link gap-1.5">
+                  <Icon name="trash" className="h-[18px] w-[18px] max-sm:hidden" />
                   Remove
                 </button>
               </p>

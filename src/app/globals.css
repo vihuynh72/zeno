@@ -959,6 +959,24 @@ button:active .tap {
 .choice[aria-disabled="true"] {
   cursor: default;
 }
+/* A goal card's 'Remove "…"?' (Vi, Nov 4): over the card at its size, so nothing moves, with a 44px Remove and Keep. */
+.ask {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+.ask:active {
+  transform: none;
+}
+.ask .pill {
+  min-height: 44px;
+  padding-inline: 20px;
+  font-size: 18px;
+}
 
 /* Suggestions (Vi, Nov 4): a card's ✕ sits over its top right corner, 44px, beside its first line; a hidden card fades
    out while the cards under it move up. */
