@@ -12,6 +12,7 @@ import CanvasSheet from "@/components/canvas-sheet";
 import Desk from "@/components/desk";
 import { bookedEvents } from "@/components/desk-rows";
 import FocusMusic from "@/components/focus-music";
+import FocusPop from "@/components/focus-pop";
 import { DeskMaterials, GoalStrip, StepsList, type Materials } from "@/components/goal-desk";
 import MemorySheet from "@/components/memory-sheet";
 import StreakRow from "@/components/streak-row";
@@ -508,6 +509,9 @@ export default function DayView(props: DayViewProps) {
                   </button>
                 </span>
               )}
+              {/* Before Music, whose stations open on their own row after it. Mounted after a Done too, so its window can
+                  show what is next. */}
+              <FocusPop {...props} />
               <FocusMusic active={screen === "focus"} />
             </div>
           )}
