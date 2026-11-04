@@ -72,9 +72,10 @@ export default function GoalsPanel({ goals, suggestions, openId, proposed, today
                       <i key={step.id} data-done={step.status === "done" || undefined} />
                     ))}
                   </span>
-                  {row.line && <span className="line-clamp-2 text-[18px]">{row.line}</span>}
-                  {/* Wraps: "3 runs a week · due Fri Jan 1 · 58 days left" was cut on a phone (Nov 4). */}
-                  {row.when && <span className="line-clamp-2 text-[18px] text-ink-2">{row.when}</span>}
+                  {/* One line each in a laptop's column, so 3-4 goals fit above the dock (live, Nov 4: the third was cut at
+                      772px); a phone's full-width rows wrap ("58 days left" was cut there). */}
+                  {row.line && <span className="line-clamp-2 text-[18px] lg:line-clamp-1">{row.line}</span>}
+                  {row.when && <span className="line-clamp-2 text-[18px] text-ink-2 lg:line-clamp-1">{row.when}</span>}
                 </span>
               </button>
             </li>
