@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import type { CanvasAssignment, CanvasBrief, DayEmail, DayEvent, Deadline, DoneStep, FreeSlot, Goal, Memory, Progress, SourceState, Step } from "@/lib/day";
 import { localDate } from "@/lib/tz";
-import type { App, AppItem } from "@/lib/connect";
+import type { App } from "@/lib/connect";
+import type { GoalItem } from "@/components/app-rows";
 import type { VaultFact } from "@/lib/vault";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
 import { barCaption, cardSize, clock, dueLine, openSteps, type CardRow, type Fact, type PanelRow, type Screen } from "@/components/day-flow";
@@ -82,7 +83,7 @@ export type DayViewProps = {
   bookings?: Record<string, Booking>; // booking chips by key
   offers?: Booking[]; // booking chips that answer Zeno's line
   deskOffer?: Booking; // "For this goal": the next free time that fits the desk's step
-  appItems?: AppItem[]; // "For this goal": the goal's own app item and docs, then what connected apps have that matches it
+  appItems?: GoalItem[]; // "For this goal": the goal's own item (an app's or the web's) and docs, then what connected apps have that matches it
   appRows?: PanelRow[]; // From your apps (Nov 4): connected apps' items that aren't goals yet, soonest due first (on.fromApp)
   connected?: App | null; // back from an app's sign-in (/?connected=<app>): Your apps opens and says so
   timer?: number | null; // Focus's planned minutes when the tap said so ("Start · 5 min"), shown beside the stopwatch

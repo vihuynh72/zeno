@@ -31,7 +31,8 @@ export type Step = {
 // source: the app item it was made from (Nov 4: "Make it a goal" in From your apps, or a Google Doc's link), so the item
 // leaves that list and shows under For this goal; null or missing for a goal made from her own words.
 export type Goal = { id: string; title: string; steps: Step[]; due?: string | null; rhythm?: string | null; source?: GoalSource | null };
-export type GoalSource = { app: App | "canvas"; id: string; url: string; title: string };
+// "web": the page she confirmed under "Is this the one?" (its id is its url).
+export type GoalSource = { app: App | "canvas" | "web"; id: string; url: string; title: string };
 
 // The grouped profile, in the order Memory shows it.
 export const MEMORY_GROUPS = ["about", "routines", "projects", "interests", "people", "work-style", "patterns"] as const;
@@ -376,10 +377,22 @@ export type CompanionNow =
 // the page asks them one at a time and posts the same text again with `answers`, and that call never asks (Vi, Nov 4).
 // source: the app item the words come from, saved on the goal. A Google Doc's link in the words is read by the server
 // (shared "Anyone with the link"); one it can't open answers "doc-private".
-export type AddGoalRequest = { text: string; answers?: PlanAnswer[]; source?: GoalSource };
+// "Is this the one?" (Vi, Nov 4): words that name one real public thing whose facts change the plan, like a hackathon,
+// a race or an exam, answer "lookup" with a short web query; the page says it is looking that up and posts the words again
+// with `lookup`, and the server searches the web once (up to 10 s) and answers "confirm" with the best match, or plans
+// without it on any failure. She confirms: the words go again with `match` (planned with it, due its real date when that
+// is to come, and the page kept as the goal's source); `match: null` plans without the web.
+export type AddGoalRequest = { text: string; answers?: PlanAnswer[]; source?: GoalSource; lookup?: string; match?: WebMatch | null };
 export type PlanQuestion = { question: string; options: string[] };
 export type PlanAnswer = { question: string; answer: string };
-export type AddGoalResponse = GoalResponse | { state: "ask"; questions: PlanQuestion[] } | { state: "doc-private" };
+// when: its key date in words, like "Submissions close Nov 4, 6 PM PT"; date: the last day to act (or its first), YYYY-MM-DD.
+export type WebMatch = { title: string; when: string | null; date: string | null; line: string; url: string; site: string };
+export type AddGoalResponse =
+  | GoalResponse
+  | { state: "ask"; questions: PlanQuestion[] }
+  | { state: "doc-private" }
+  | { state: "lookup"; query: string }
+  | { state: "confirm"; query: string; match: WebMatch };
 
 // POST /api/goal/next body: a goal that keeps going (rhythm set) gets its next few steps from what is done so far.
 // Answers with GoalResponse. It never changes which goal is current: the goal comes back with its status as it was.

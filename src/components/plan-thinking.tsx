@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { PlanQuestion } from "@/lib/day";
+import type { PlanQuestion, WebMatch } from "@/lib/day";
 
 // Vi's planning flow (Nov 4): for a goal too vague to plan well, Zeno asks one or two tap questions, one at a time; then
 // "Muse is planning…" shows only what is really happening while it plans, and, once the plan is back, Muse's own lines
@@ -61,6 +61,75 @@ export function PlanAsk({ question, onAnswer }: { question: PlanQuestion; onAnsw
         <div className="links">
           <button type="button" data-answer onClick={() => setTyping(true)} className="link">
             Something else
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// "Is this the one?" (Vi, Nov 4; the card asks it): what the web has for the real thing her goal names, with its source's
+// site (opens in a new tab), then her answers. "A different one" (onOther, only before a second search) opens a box for a
+// detail that is searched once more, or plans without the web (onSkip). Its buttons are answers (data-answer).
+export function PlanMatch({ match, onYes, onOther, onSkip }: { match: WebMatch; onYes(): void; onOther?: (detail: string) => void; onSkip(): void }) {
+  const [typing, setTyping] = useState(false);
+  const [words, setWords] = useState("");
+  return (
+    <div className="mt-4 flex w-full max-w-[520px] flex-col items-center gap-3">
+      <div className="w-full text-[18px] leading-7">
+        <p className="font-bold">{match.title}</p>
+        {match.when && <p>{match.when}</p>}
+        {match.line && <p className="text-ink-2">{match.line}</p>}
+        <a href={match.url} target="_blank" rel="noopener noreferrer" className="link -ml-1">
+          Source: {match.site}
+          <span className="sr-only"> (opens in a new tab)</span>
+        </a>
+      </div>
+      {typing && onOther ? (
+        <>
+          <form
+            className="flex w-full max-w-[480px] items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (words.trim()) onOther(words.trim().slice(0, 60));
+            }}
+          >
+            <div className="choice add-box min-w-0 flex-1">
+              <div className="lines">
+                <input
+                  autoFocus
+                  maxLength={60}
+                  enterKeyHint="search"
+                  value={words}
+                  onChange={(event) => setWords(event.target.value)}
+                  className="write"
+                  aria-label="Which one?"
+                  placeholder="City, year or name"
+                />
+              </div>
+            </div>
+            <button type="submit" data-answer className="pill pill-small pill-ink">
+              Search
+            </button>
+          </form>
+          <div className="links">
+            <button type="button" data-answer onClick={onSkip} className="link">
+              Plan without it
+            </button>
+          </div>
+        </>
+      ) : (
+        <div role="group" aria-label="Is this the one?" className="flex flex-wrap justify-center gap-2">
+          <button type="button" data-answer onClick={onYes} className="pill pill-small pill-ink">
+            Yes, that&apos;s it
+          </button>
+          {onOther && (
+            <button type="button" data-answer onClick={() => setTyping(true)} className="pill pill-small">
+              A different one
+            </button>
+          )}
+          <button type="button" data-answer onClick={onSkip} className="pill pill-small">
+            Skip
           </button>
         </div>
       )}

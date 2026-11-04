@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { CanvasBrief, Goal, MailResponse, Step } from "@/lib/day";
-import { APP_NAMES, type AppItem } from "@/lib/connect";
+import { APP_NAMES } from "@/lib/connect";
+import type { GoalItem } from "@/components/app-rows";
 import BookingChip, { type Booking } from "@/components/booking-chip";
 import type { Today } from "@/components/day-view";
 import { goalLine, isEmailStep, isResearchStep, realMinutes, slotLabel, splitLater } from "@/components/day-flow";
@@ -153,7 +154,7 @@ type AsideProps = {
   brief?: CanvasBrief;
   today: Today | null;
   offer?: Booking; // the next free time that fits the step, booked with one tap
-  apps?: AppItem[]; // the goal's own app item and docs, then what connected apps have that matches it (the page picks)
+  apps?: GoalItem[]; // the goal's own item (an app's, or the page from the web) and docs, then what connected apps have that matches it
   onAddDoc?(url: string): Promise<string>; // "Add a doc": "" once it shows, else the line saying why not
   onBook(): void;
   onUndo(): void;
@@ -251,18 +252,28 @@ export function GoalAside({ goal, step, materials, brief, today, offer, apps = [
                   )}
                 </div>
               )}
-              {items.map((item) => (
-                <p key={`${item.app}:${item.id}`} className="mt-1">
-                  <a href={item.url} target="_blank" rel="noopener noreferrer" className="font-bold underline underline-offset-4">
-                    {item.title}
-                    <span className="sr-only"> (opens in a new tab)</span>
-                  </a>
-                  <span className="block text-ink-2">
-                    {APP_NAMES[item.app]}
-                    {item.due ? ` · due ${dateLabel(item.due, { month: "short", day: "numeric" })}` : ""}
-                  </span>
-                </p>
-              ))}
+              {items.map((item) =>
+                item.app === "web" ? (
+                  <p key={`web:${item.id}`} className="mt-1">
+                    From the web:{" "}
+                    <a href={item.url} target="_blank" rel="noopener noreferrer" className="font-bold underline underline-offset-4">
+                      {item.title}
+                      <span className="sr-only"> (opens in a new tab)</span>
+                    </a>
+                  </p>
+                ) : (
+                  <p key={`${item.app}:${item.id}`} className="mt-1">
+                    <a href={item.url} target="_blank" rel="noopener noreferrer" className="font-bold underline underline-offset-4">
+                      {item.title}
+                      <span className="sr-only"> (opens in a new tab)</span>
+                    </a>
+                    <span className="block text-ink-2">
+                      {APP_NAMES[item.app]}
+                      {item.due ? ` · due ${dateLabel(item.due, { month: "short", day: "numeric" })}` : ""}
+                    </span>
+                  </p>
+                ),
+              )}
               {onAddDoc && <AddDoc key={goal.id} onAdd={onAddDoc} />}
             </section>
           )}
