@@ -568,7 +568,7 @@ export default function DayView(props: DayViewProps) {
         {desk && !planning && goal && (
           <>
             <StepsList key={goal.id} steps={steps} marked={marked} onPropose={screen === "ready" ? on.propose : undefined} />
-            <DeskMaterials key={sourceStep?.id ?? "none"} materials={props.materials} step={sourceStep} brief={props.brief} />
+            <DeskMaterials key={sourceStep?.id ?? "none"} materials={props.materials} step={sourceStep} brief={props.brief} steps={steps} />
             <p className="mt-10 w-full max-w-[760px] text-[16px] text-ink-2">Steps by Muse, Meta&apos;s AI</p>
           </>
         )}

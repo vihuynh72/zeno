@@ -11,7 +11,7 @@ import { goalRow, panelGoals, type PanelRow } from "@/components/day-flow";
 // Errands, health and school, each on one line of a 360px phone (the plan's longer ones wrapped and read as five
 // examples); a dash starts each, so one that still wraps reads as one. Round 3: the older and the non-student testers
 // read the first set as "for young people".
-const EXAMPLES = "– Call the bank this week\n– Run a 5K by January\n– Study for Thursday's exam";
+const EXAMPLES = "Type your goal here, like:\n– Call the bank this week\n– Run a 5K by January\n– Study for Thursday's exam";
 
 // Enter makes the plan, Shift+Enter starts a new line, Escape closes the box (the panel's only). In a box for a list
 // (`lines`, the front door: its examples are one goal a line), Enter starts a new line and Cmd or Ctrl+Enter makes the
@@ -75,10 +75,10 @@ export default function GoalsPanel({ goals, suggestions, openId, proposed, today
                       <i key={step.id} data-done={step.status === "done" || undefined} />
                     ))}
                   </span>
-                  {/* One line each in a laptop's column, so 3-4 goals fit above the dock (live, Nov 4: the third was cut at
-                      772px); a phone's full-width rows wrap ("58 days left" was cut there). */}
+                  {/* The next step takes one line in a laptop's column, so 3-4 goals fit above the dock (live, Nov 4: the third
+                      was cut at 772px); the due line may wrap to two, so "58 days left" is never cut (round 5). */}
                   {row.line && <span className="line-clamp-2 text-[18px] lg:line-clamp-1">{row.line}</span>}
-                  {row.when && <span className="line-clamp-2 text-[18px] text-ink-2 lg:line-clamp-1">{row.when}</span>}
+                  {row.when && <span className="line-clamp-2 text-[18px] text-ink-2">{row.when}</span>}
                 </span>
               </button>
             </li>

@@ -119,10 +119,18 @@ const cut = (text: string, max: number) => (text.length > max ? `${text.slice(0,
 // things up; any other step offers them with a small "Find help online". They are searched only on a tap (each search is
 // billed), unless found before (key this by the step, so a new step starts with its button again). A reply is hers to
 // write: no links for an email step.
-export function DeskMaterials({ materials, step, brief }: { materials?: Materials; step: Step | null; brief?: CanvasBrief }) {
+type MaterialsProps = { materials?: Materials; step: Step | null; brief?: CanvasBrief; steps?: Step[] };
+export function DeskMaterials({ materials, step, brief, steps = [] }: MaterialsProps) {
   const [links, setLinks] = useState(materials?.sourcesOpen ?? Boolean(step?.prep?.length));
   const { prompt, stopped, mail } = materials ?? {};
-  const notes = step ? (materials?.notes?.[step.id] ?? []) : [];
+  // This step's notes, else those of the step finished last, named, so a Done never hides them (round 5).
+  const own = step ? (materials?.notes?.[step.id] ?? []) : [];
+  const before = own.length
+    ? undefined
+    : steps
+        .filter((one) => one.status === "done" && one.doneAt && (materials?.notes?.[one.id]?.length ?? 0) > 0)
+        .sort((a, b) => Date.parse(b.doneAt ?? "") - Date.parse(a.doneAt ?? ""))[0];
+  const notes = own.length ? own : before ? (materials?.notes?.[before.id] ?? []) : [];
   const linkable = step !== null && !isEmailStep(step.title);
   const card = linkable && (links || isResearchStep(step.title));
   const find = linkable && !card && (
@@ -157,7 +165,7 @@ export function DeskMaterials({ materials, step, brief }: { materials?: Material
             <p className="mt-1">{stopped}</p>
           </article>
         )}
-        {notes.length > 0 && <NotesCard notes={notes} />}
+        {notes.length > 0 && <NotesCard notes={notes} from={before?.title} />}
         {card &&
           (links ? (
             <article className="mini">
@@ -178,12 +186,12 @@ export function DeskMaterials({ materials, step, brief }: { materials?: Material
 
 // What she said on this step and Zeno's answers, newest last, with Copy: Lucia's questions, Ruth's taps and Maya's
 // outline stay after the next reply and a reload (round 3, Nov 4). Kept on this device only.
-function NotesCard({ notes }: { notes: Note[] }) {
+function NotesCard({ notes, from }: { notes: Note[]; from?: string }) {
   const [copied, setCopied] = useState(false);
   const text = notes.map((note) => `You: ${note.you}\nZeno: ${note.zeno}`).join("\n\n");
   return (
     <article className="mini sm:col-span-2">
-      <h3 className="font-bold text-ink-2">Your notes</h3>
+      <h3 className="font-bold text-ink-2">{from ? `Your notes from "${from.replace(/[.!?]+$/, "")}"` : "Your notes"}</h3>
       <ul className="mt-1 flex flex-col gap-3">
         {notes.map((note, i) => (
           <li key={i}>
