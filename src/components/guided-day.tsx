@@ -354,6 +354,7 @@ export default function GuidedDay() {
   const [rollingId, setRollingId] = useState<string | null>(null); // a goal that keeps going whose next few are being planned
   const [mailGoals, setMailGoals] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, Note[]>>({});
+  const [retry, setRetry] = useState<string | null>(null); // typed words whose turn failed, back in the text box
   const [addWords, setAddWords] = useState<string | null>(null); // words whose plan couldn't be made, back in the box
   // The goal she just switched away from: the home offers every other current goal's next step (coming back, Nov 4).
   const [leftId, setLeftId] = useState<string | null>(null);
@@ -774,9 +775,16 @@ export default function GuidedDay() {
     setCelebrate(false);
     setHeard(theirs);
     const mine = account();
+    // The step this turn is about: the running one, or the one the desk proposes. After a reload Zeno's memory of it is
+    // its notes (round 3: "I don't have your reasons saved, Maya").
+    const about = before.screen === "focus" ? openSteps(before.goal)[0] : before.view === "desk" ? proposedStep(before.goal, before.chosen) : null;
+    const kept = about && mine ? (readNotes(mine)[about.id] ?? []) : [];
+    const past =
+      history.current.length > 0 ? history.current : kept.flatMap((note): Turn[] => [{ role: "user", content: note.you }, { role: "assistant", content: note.zeno }]).slice(-12);
+    setRetry(null);
     const res = await post<TalkResponse>("/api/talk", {
       message: text,
-      history: history.current,
+      history: past,
       // This page shows and books proposals.
       proposals: true,
       private: mine ? vaultTexts(mine) : [],
@@ -789,13 +797,17 @@ export default function GuidedDay() {
     }
     if (res.state !== "ok" || typeof res.reply !== "string") {
       setLine(THINK_FAIL);
+      // Typed words come back in the box, so trying again is one Enter (round 3: Kenji's long message was gone).
+      if (how === "typed" && !fromChip) {
+        setRetry(text);
+        setTyping(true);
+      }
       return aloud(THINK_FAIL);
     }
     remember([
       { role: "user", content: text },
       { role: "assistant", content: res.reply },
     ]);
-    const about = before.screen === "focus" ? openSteps(before.goal)[0] : before.view === "desk" ? proposedStep(before.goal, before.chosen) : null;
     if (about && res.reply.trim()) keepNote(about.id, { you: theirs, zeno: res.reply });
     // What the turn remembered stays quiet (Vi, Nov 2): it shows in Memory, and private facts only on this device.
     keep(res.private);
@@ -1737,6 +1749,7 @@ export default function GuidedDay() {
       memories={memories}
       sheet={sheet}
       typing={typing && screen !== "setup"}
+      retry={retry}
       stamping={stamping}
       leaving={leaving}
       note={note}
@@ -1779,7 +1792,10 @@ export default function GuidedDay() {
         paste: savePaste,
         talk,
         type: openTyping,
-        closeTyping: () => setTyping(false),
+        closeTyping() {
+          setTyping(false);
+          setRetry(null);
+        },
         send: (text) => void voice.submit(text),
         sheet: openSheet,
         forget,

@@ -58,6 +58,7 @@ export type DayViewProps = {
   memories: Memory[] | "loading" | "error";
   sheet: Sheet;
   typing: boolean;
+  retry?: string | null; // typed words whose turn failed, back in the docked box
   stamping: boolean; // the focus card is being stamped DONE
   leaving: Step | null; // the finished card on its way to the pile
   note: string | null; // one plain line under the pills
@@ -622,6 +623,8 @@ export default function DayView(props: DayViewProps) {
           {/* The text box docks here, in one place above Talk, and closes after Send (Nov 4). */}
           {props.typing && (
             <Write
+              key={props.retry ?? ""}
+              initial={props.retry ?? ""}
               busy={props.busy}
               onSend={(text) => {
                 on.send(text);
@@ -711,7 +714,7 @@ function Said({ text, fade }: { text: string; fade: boolean }) {
 }
 
 // The text box, a slip of card docked above Talk (Nov 4): Send closes it, so Zeno's answer has the screen.
-function Write({ busy, onSend, onClose }: { busy: boolean; onSend(text: string): void; onClose(): void }) {
+function Write({ initial, busy, onSend, onClose }: { initial: string; busy: boolean; onSend(text: string): void; onClose(): void }) {
   const box = useRef<HTMLTextAreaElement>(null);
   // Focused without scrolling: the dock is inside html's scroll padding, so a plain focus scrolls the page to its end.
   useEffect(() => box.current?.focus({ preventScroll: true }), []);
@@ -727,6 +730,7 @@ function Write({ busy, onSend, onClose }: { busy: boolean; onSend(text: string):
         ref={box}
         rows={1}
         enterKeyHint="send"
+        defaultValue={initial}
         className="write min-w-0 flex-1"
         aria-label="Type to Zeno"
         placeholder="Type to Zeno"
