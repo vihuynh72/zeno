@@ -1,13 +1,13 @@
 "use client";
 
 import { type FormEvent, type ReactNode, useEffect, useState } from "react";
-import { APP_NAMES, type App } from "@/lib/connect";
+import { APP_NAMES, atlassianSite, type App } from "@/lib/connect";
 import type { ConnectStatus } from "@/lib/connect-config";
 import { clearToken, readApp, readToken, saveToken } from "@/lib/connect-store";
 
 // Your apps (Vi, Nov 4: "there's no connector for other apps yet"): what each app brings, and Connect or Disconnect.
 // Tokens stay on this device (src/lib/connect-store.ts). Opened from the header's Apps and from "Connect your apps"
-// under + Add goal.
+// under + Add goal. Jira and Confluence share one Atlassian sign-in: connecting or disconnecting one does both.
 
 const BRINGS: Record<App, string> = {
   notion: "Pages and tasks assigned to you become goals.",
@@ -15,9 +15,13 @@ const BRINGS: Record<App, string> = {
   slack: "Messages that ask you something become goals.",
   linear: "Issues assigned to you become goals.",
   trello: "Cards you're on become goals.",
+  jira: "Issues assigned to you become goals.",
+  confluence: "Tasks assigned to you become goals.",
 };
-const ORDER: App[] = ["notion", "gdocs", "slack", "linear", "trello"];
+const ORDER: App[] = ["notion", "gdocs", "slack", "linear", "trello", "jira", "confluence"];
+const PASTED: App[] = ["linear", "jira", "confluence"]; // a key pasted here: nothing to set up on the server
 const LINEAR_KEYS = "https://linear.app/settings/account/security";
+const ATLASSIAN_TOKENS = "https://id.atlassian.com/manage-profile/security/api-tokens";
 // Trello's authorize page hands back a read token (#token=…) at /connect/trello; Notion and Slack sign in through
 // /api/connect/<app>/start (the Notion/Slack track), which ends at /connect/<app> too.
 const startUrl = (app: App) =>
@@ -45,7 +49,7 @@ type Props = {
 export default function YourApps({ account, google, canvas, connected, onGoogle, onCanvas, onChange }: Props) {
   const [status, setStatus] = useState<ConnectStatus | null>(null);
   const [tokens, setTokens] = useState(() => new Set(ORDER.filter((app) => account && readToken(app, account))));
-  const [pasting, setPasting] = useState(false);
+  const [pasting, setPasting] = useState<App | null>(null); // the row whose key form is open
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(connected ? `Connected ${APP_NAMES[connected]}.` : "");
   useEffect(() => {
@@ -54,31 +58,41 @@ export default function YourApps({ account, google, canvas, connected, onGoogle,
       .then(setStatus, () => setStatus(null));
   }, []);
 
-  const keep = (app: App, on: boolean) => setTokens((old) => new Set(on ? [...old, app] : [...old].filter((one) => one !== app)));
+  // From this device's storage, so Jira and Confluence (one key) change together.
+  const reread = () => setTokens(new Set(ORDER.filter((app) => account && readToken(app, account))));
+  const named = (app: App) => (app === "jira" || app === "confluence" ? "Jira and Confluence" : APP_NAMES[app]);
 
-  async function pasteLinear(event: FormEvent<HTMLFormElement>) {
+  // Linear takes its key; Jira and Confluence take her site, email and API token as one JSON value.
+  async function paste(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const token = String(new FormData(event.currentTarget).get("token") ?? "").trim();
-    if (busy || !account || !token) return;
+    const form = new FormData(event.currentTarget);
+    const field = (name: string) => String(form.get(name) ?? "").trim();
+    if (busy || !account || !pasting || !field("token")) return;
+    const linear = pasting === "linear";
+    const site = linear ? null : atlassianSite(field("site"));
+    if (!linear && !site) return setNote("Use your Atlassian site's address, like your-team.atlassian.net.");
+    const token = linear ? field("token") : JSON.stringify({ site, email: field("email"), token: field("token") });
     setBusy(true);
     setNote("");
-    const res = await readApp("linear", token);
+    const res = await readApp(pasting, token);
     setBusy(false);
     if (res.state !== "ok") {
-      return setNote(res.state === "no-access" ? "Linear didn't accept that key. Make a new one and paste it again." : "Couldn't reach Linear. Try again.");
+      if (linear) return setNote(res.state === "no-access" ? "Linear didn't accept that key. Make a new one and paste it again." : "Couldn't reach Linear. Try again.");
+      return setNote(res.state === "no-access" ? "Atlassian didn't accept that. Check your email and API token." : "Couldn't reach that site. Check the address and try again.");
     }
-    saveToken("linear", account, token);
-    keep("linear", true);
-    setPasting(false);
-    setNote(`Connected Linear · ${res.items.length || "No"} open ${res.items.length === 1 ? "issue" : "issues"}.`);
+    saveToken(pasting, account, token);
+    reread();
+    setPasting(null);
+    const noun = pasting === "confluence" ? "task" : "issue";
+    setNote(`Connected ${named(pasting)} · ${res.items.length || "No"} open ${res.items.length === 1 ? noun : `${noun}s`}.`);
     onChange();
   }
 
   function disconnect(app: App) {
     if (!account) return;
     clearToken(app, account);
-    keep(app, false);
-    setNote(`Disconnected ${APP_NAMES[app]}.`);
+    reread();
+    setNote(`Disconnected ${named(app)}.`);
     onChange();
   }
 
@@ -90,12 +104,12 @@ export default function YourApps({ account, google, canvas, connected, onGoogle,
           Disconnect
         </button>
       );
-    if (app !== "linear" && !status?.[app]) return <span className="text-ink-2">Not set up yet</span>;
+    if (!PASTED.includes(app) && !status?.[app]) return <span className="text-ink-2">Not set up yet</span>;
     return (
       <button
         type="button"
         aria-disabled={!account}
-        onClick={() => (!account ? undefined : app === "linear" ? setPasting(true) : window.location.assign(startUrl(app)))}
+        onClick={() => (!account ? undefined : PASTED.includes(app) ? setPasting(app) : window.location.assign(startUrl(app)))}
         className="pill pill-small"
       >
         Connect
@@ -133,15 +147,38 @@ export default function YourApps({ account, google, canvas, connected, onGoogle,
               </div>
               <div className="shrink-0">{row.action}</div>
             </div>
-            {row.app === "linear" && pasting && (
-              <form className="mini mt-3 flex flex-col gap-3" onSubmit={pasteLinear}>
+            {row.app && row.app === pasting && (
+              <form className="mini mt-3 flex flex-col gap-3" onSubmit={paste}>
+                {pasting !== "linear" && (
+                  <>
+                    <label className="flex flex-col">
+                      <span className="font-bold">Site</span>
+                      <input
+                        name="site"
+                        required
+                        autoFocus
+                        placeholder="your-team.atlassian.net"
+                        className="add"
+                        inputMode="url"
+                        autoComplete="off"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                      />
+                    </label>
+                    <label className="flex flex-col">
+                      <span className="font-bold">Email</span>
+                      <input name="email" type="email" required className="add" autoComplete="email" />
+                    </label>
+                  </>
+                )}
                 <label className="flex flex-col">
-                  <span className="font-bold">Personal API key</span>
+                  <span className="font-bold">{pasting === "linear" ? "Personal API key" : "API token"}</span>
                   {/* Text, not a password field, so the browser never offers to save the key to a synced password manager. */}
                   <input
                     name="token"
                     required
-                    autoFocus
+                    autoFocus={pasting === "linear"}
                     className="add secret"
                     autoComplete="off"
                     autoCapitalize="none"
@@ -151,14 +188,23 @@ export default function YourApps({ account, google, canvas, connected, onGoogle,
                     data-lpignore="true"
                   />
                 </label>
-                <p className="text-ink-2">
-                  In Linear: Settings → Security &amp; access → New API key. It stays on this device.{" "}
-                  <a href={LINEAR_KEYS} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">
-                    Open Linear&apos;s API keys<span className="sr-only"> (opens in a new tab)</span>
-                  </a>
-                </p>
+                {pasting === "linear" ? (
+                  <p className="text-ink-2">
+                    In Linear: Settings → Security &amp; access → New API key. It stays on this device.{" "}
+                    <a href={LINEAR_KEYS} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">
+                      Open Linear&apos;s API keys<span className="sr-only"> (opens in a new tab)</span>
+                    </a>
+                  </p>
+                ) : (
+                  <p className="text-ink-2">
+                    One token connects Jira and Confluence. It stays on this device.{" "}
+                    <a href={ATLASSIAN_TOKENS} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">
+                      Make an API token<span className="sr-only"> (opens in a new tab)</span>
+                    </a>
+                  </p>
+                )}
                 <button type="submit" aria-disabled={busy} className="pill pill-ink">
-                  {busy ? "Connecting…" : "Connect Linear"}
+                  {busy ? "Connecting…" : `Connect ${APP_NAMES[pasting]}`}
                 </button>
               </form>
             )}

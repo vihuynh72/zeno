@@ -59,7 +59,7 @@ export function goalItems(goal: Goal, items: AppItem[], docs: AppItem[]): AppIte
         })
       : null;
   const rest = items.filter((item) => !(own && item.app === own.app && item.id === own.id));
-  // An issue's key ("ENG-15") says which team, not what it is about, so it never makes a match.
-  const all = [...(own ? [own] : []), ...docs, ...forGoal(goal, rest, (item) => `${item.title.replace(/^[A-Z][A-Z0-9]*-\d+ /, "")} ${item.detail ?? ""}`)];
+  // An issue's key ("ENG-15", Jira's "MY_APP-7") says which team, not what it is about, so it never makes a match.
+  const all = [...(own ? [own] : []), ...docs, ...forGoal(goal, rest, (item) => `${item.title.replace(/^[A-Z][A-Z0-9_]*-\d+ /, "")} ${item.detail ?? ""}`)];
   return all.filter((item, i) => all.findIndex((one) => one.app === item.app && one.id === item.id) === i);
 }
