@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
-import type { CanvasAssignment, CanvasBrief, DayEmail, DayEvent, Deadline, FreeSlot, Goal, Memory, Progress, SourceState, Step } from "@/lib/day";
+import type { CanvasAssignment, CanvasBrief, DayEmail, DayEvent, Deadline, DoneStep, FreeSlot, Goal, Memory, Progress, SourceState, Step } from "@/lib/day";
 import { localDate } from "@/lib/tz";
 import type { VaultFact } from "@/lib/vault";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
-import { barCaption, cardSize, clock, openSteps, type ChoiceCard, type Fact, type PanelRow, type Screen } from "@/components/day-flow";
+import { barCaption, cardSize, clock, openSteps, type Fact, type PanelRow, type Screen } from "@/components/day-flow";
 import AccountMenu from "@/components/account-menu";
 import GoalsPanel, { FrontDoor, Suggestions } from "@/components/goals-panel";
 import BookingChip, { type Booking } from "@/components/booking-chip";
@@ -34,6 +34,7 @@ export type Today = {
   free?: FreeSlot[];
   deadlines?: Deadline[];
   mailUrl?: string; // this account's Gmail, for the inbox's "Open Gmail"
+  doneThisWeek?: DoneStep[]; // steps finished since Monday, for the Week (missing from days saved before Nov 4)
 };
 
 export type DayViewProps = {
@@ -45,8 +46,7 @@ export type DayViewProps = {
   you: string; // the person's words: live while listening, then what they sent
   goal: Goal | null;
   goals?: Goal[]; // every open plan, for the goals panel and the Desk (Vi, Nov 3)
-  // shortcut: unused since the Nov 4 goals panel; kept so /preview's fixtures compile until they move to `suggestions`.
-  choices?: ChoiceCard[];
+  held?: Goal[]; // every plan the page holds, finished ones too, so the Week lists steps finished since the day loaded
   suggestions?: PanelRow[]; // the panel's Suggestions: deadlines with no plan and email that asks something (on.choose)
   addWords?: string | null; // words whose plan couldn't be made, back in the add box
   planning?: { title: string; due: string | null; line: string } | null; // a desk whose plan is still being made
@@ -83,6 +83,7 @@ export type DayViewProps = {
     chip(index: number): void;
     choose(index: number): void; // a suggestion: a deadline's new plan or an email's reply
     addGoal?(text: string): void; // the add box's words become a plan (POST /api/goal/add)
+    closeAdd?(): void; // the add box's Cancel: failed words never come back in it
     snap(photo: File): void; // "Add from a photo": Muse Spark reads an assignment's photo, and its plan's desk opens
     home(): void; // the Zeno mark and "← Goals"
     propose(stepId: string): void; // a todo step tapped on the desk becomes the proposed one
@@ -194,7 +195,7 @@ export default function DayView(props: DayViewProps) {
     // After a press, keyboard focus follows the screen to its big button (on the home, its first option), unless it
     // went somewhere else on its own.
     const area = mainRef.current;
-    const button = area?.querySelector<HTMLElement>(".pill-big, .choice");
+    const button = area?.querySelector<HTMLElement>("textarea[data-retry], .pill-big, .choice");
     if (!pressed.current || !button) return;
     pressed.current = false;
     const active = document.activeElement;
@@ -322,7 +323,7 @@ export default function DayView(props: DayViewProps) {
         {frontDoor ? (
           <>
             {/* No goal yet (Nov 4): what Zeno does, a box to write a goal in, and Make a plan. */}
-            <FrontDoor hello={props.hello} line={props.line} words={props.addWords ?? null} onAdd={addGoal} onPhoto={pickPhoto}>
+            <FrontDoor hello={props.hello} line={props.line} words={props.addWords ?? null} note={props.note} onAdd={addGoal} onPhoto={pickPhoto}>
               {youLine}
             </FrontDoor>
             <div className="w-full max-w-[760px]">
@@ -471,7 +472,8 @@ export default function DayView(props: DayViewProps) {
         )}
 
         <p role="status" className="mt-2 max-w-[560px] text-center text-ink-2 empty:mt-0">
-          {screen === "signed-out" && props.signInFailed ? "Google sign-in didn't finish. Try again." : props.note}
+          {/* The front door says its own note under its box, where she is looking (review, Nov 4). */}
+          {screen === "signed-out" && props.signInFailed ? "Google sign-in didn't finish. Try again." : frontDoor ? null : props.note}
         </p>
 
         <div ref={pillsRef} className="mt-4 flex w-full max-w-[760px] flex-col items-center gap-2 empty:mt-0 sm:mt-6 short:mt-4">
@@ -574,6 +576,7 @@ export default function DayView(props: DayViewProps) {
           today={today}
           words={props.addWords ?? null}
           onAdd={addGoal}
+          onCancel={() => on.closeAdd?.()}
           onOpen={openGoal}
           onSuggest={choose}
           onPhoto={pickPhoto}
@@ -623,7 +626,7 @@ export default function DayView(props: DayViewProps) {
         booked={bookedEvents(Object.values(bookings))}
         onClose={() => on.sheet(null)}
         onSignIn={on.signIn}
-        goals={props.goals}
+        goals={props.held ?? props.goals}
         progress={props.progress ?? undefined}
         onGoal={on.openGoal}
         onDeadline={on.openDeadline}

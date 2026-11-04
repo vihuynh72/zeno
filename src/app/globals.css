@@ -957,9 +957,6 @@ button:active .tap {
 .bar [data-state="done"] {
   background: var(--ink);
 }
-.bar [data-state="now"] {
-  background: var(--red);
-}
 
 /* The desk's steps: a card with wide rules (each row a 44px tap target), done ones ticked in the margin. */
 .steps {
@@ -1013,7 +1010,7 @@ button:active .tap {
   scrollbar-color: var(--track) var(--card);
 }
 
-/* "Find sources for this step": a desk card that is one tap. */
+/* "Find helpful links": a desk card that is one tap. */
 .tool {
   display: block;
   width: 100%;

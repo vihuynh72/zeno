@@ -92,17 +92,18 @@ export function quickReplies(options: unknown, offered = false): string[] {
 
 // Zeno's tap answers on a step's screen, less the ones its own buttons already are or that only put it off (Nov 4): a
 // second Start reset a running clock, and a second Done or Stop for now read as another action (live, Nov 3). A bare
-// "Yes" stays: it answers the question.
+// "Yes" stays, as it answers the question, unless the question is "Done?" (`askedDone`): the big Done answers that.
 const ECHOES = new Set(
-  ["start", "start now", "start it", "begin", "go", "go ahead", "ready", "im ready", "lets go", "lets start", "lets do it", "lets do this", "do it",
-    "do it now", "not now", "not yet", "not today", "later", "maybe later", "pause", "take a break", "help", "need help", "i need help", "stuck",
-    "im stuck", "did it", "i did it", "all done", "im done"],
+  ["start", "start now", "start it", "begin", "begin now", "lets begin", "start over", "start again", "restart", "go", "go ahead", "ready", "im ready",
+    "lets go", "lets start", "lets do it", "lets do this", "do it", "do it now", "not now", "not yet", "not today", "later", "maybe later", "pause",
+    "take a break", "help", "need help", "i need help", "stuck", "im stuck", "did it", "i did it", "all done", "im done", "im finished", "i finished",
+    "i finished it", "mark it done", "mark done"],
 );
-export function extraReplies(options: string[]): string[] {
+export function extraReplies(options: string[], askedDone = false): string[] {
   return options.filter((option) => {
     const words = option.toLowerCase().replace(/['’]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
     const rest = words.replace(/^(yes|yeah|yep|ok|okay|sure)\b ?/, "");
-    return rest === "" || !(ECHOES.has(rest) || /^(done|finished|stop)\b/.test(rest));
+    return rest === "" ? !askedDone : !(ECHOES.has(rest) || /^(done|finished|stop)\b/.test(rest));
   });
 }
 
@@ -133,67 +134,18 @@ export function sameTitle(a: string, b: string) {
 
 const DAY_MS = 86_400_000;
 const daysFrom = (today: string, date: string) => Math.round((Date.parse(date) - Date.parse(today)) / DAY_MS);
-const choiceDue = (choice: Choice) => (choice.kind === "plan" ? choice.goal.due ?? null : choice.kind === "deadline" ? choice.deadline.date : null);
 const byDue = (a: string | null, b: string | null) => (a === b ? 0 : a === null ? 1 : b === null ? -1 : a < b ? -1 : 1);
 
-// Every plan with a step open, the current one first and as the page has it now (the day's copy of it may be older).
+// Every plan with a step open, the current one first and as the page has it now (the day's copy of it may be older). A
+// goal that keeps going (rhythm) stays with no session left: opening it plans its next few (Nov 4: it vanished).
 export function openPlans(goal: Goal | null, goals: Goal[]): Goal[] {
   const plans: Goal[] = [];
-  for (const plan of [goal, ...goals]) if (plan && openSteps(plan).length > 0 && !plans.some((one) => one.id === plan.id)) plans.push(plan);
+  for (const plan of [goal, ...goals]) if (plan && (openSteps(plan).length > 0 || plan.rhythm) && !plans.some((one) => one.id === plan.id)) plans.push(plan);
   return plans;
 }
 
-// The home's goal options, at most 3 (a few options raise motivation, many lower it): the current plan first while a
-// step of it is open, then the other open plans and the deadlines due within 7 days that no open plan covers, soonest
-// first (no due date last). The newest email that asks something takes the third slot, unless it already became a plan
-// here (`handled`: email ids, see mailPlan).
-export function homeChoices(goal: Goal | null, goals: Goal[], deadlines: Deadline[], emails: DayEmail[], today: string, handled: string[] = []): Choice[] {
-  const plans = openPlans(goal, goals);
-  const current = goal && plans[0]?.id === goal.id ? plans[0] : null;
-  const soon = deadlines.filter((deadline, i) => {
-    const days = daysFrom(today, deadline.date);
-    const covered = [...plans.map((plan) => plan.title), ...deadlines.slice(0, i).map((one) => one.title)].some((title) => sameTitle(title, deadline.title));
-    return days >= 0 && days <= 7 && !covered;
-  });
-  const rest: Choice[] = [
-    ...plans.filter((plan) => plan !== current).map((plan): Choice => ({ kind: "plan", goal: plan })),
-    ...soon.map((deadline): Choice => ({ kind: "deadline", deadline })),
-  ].sort((a, b) => byDue(choiceDue(a), choiceDue(b)));
-  const list: Choice[] = current ? [{ kind: "plan", goal: current }, ...rest] : rest;
-  const mail = emails.find((email) => email.asks === true && email.id && !handled.includes(email.id));
-  return mail ? [...list.slice(0, 2), { kind: "mail", email: mail }] : list.slice(0, 3);
-}
-
-export type ChoiceCard = { title: string; minutes: number | null; meta: string; last: string };
-
-const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
-// The sender as an option and a plan name them: a bare address by the part before its "@" (titles never hold an address).
+// The sender as a suggestion and a plan name them: a bare address by the part before its "@" (titles never hold an address).
 const sender = (from: string) => senderName(from).split("@")[0] || senderName(from);
-
-// An option card's words: the title (minutes on the right), a grey line, and a last line. `currentId` is the current
-// plan's, which picks up where she stopped.
-export function choiceCard(choice: Choice, currentId: string | null, today: string): ChoiceCard {
-  if (choice.kind === "mail") {
-    const name = sender(choice.email.from);
-    return { title: `Answer ${name}`, minutes: 2, meta: `Email · ${name}`, last: choice.email.subject };
-  }
-  if (choice.kind === "deadline") {
-    const { title, date } = choice.deadline;
-    const due = dueLabel(date, today);
-    return { title, minutes: null, meta: ["not started", dueLabel(date, today, "short")].filter(Boolean).join(" · "), last: due && `${capital(due)}.` };
-  }
-  const { goal } = choice;
-  const done = goal.steps.filter((step) => step.status === "done").length;
-  const next = openSteps(goal)[0];
-  const resumes = goal.id === currentId && (done > 0 || next?.status === "doing");
-  return {
-    title: goal.title,
-    minutes: next?.minutes ?? null,
-    // No count of 0: the font's slashed zero read as "Ø" (Nov 3).
-    meta: [done ? `${done} of ${goal.steps.length} done` : "not started", goal.due ? dueLabel(goal.due, today, "short") : ""].filter(Boolean).join(" · "),
-    last: resumes ? "Picks up where you stopped." : next ? `Next: ${next.title}` : "",
-  };
-}
 
 // The plan an email that asks something becomes: one 2-minute reply, named for its sender and subject (cut to 40
 // characters at a word), or plain words when the API refuses those.
@@ -409,11 +361,13 @@ export function withStatus(goal: Goal, stepId: string, status: StepStatus, now: 
 }
 
 // Nothing resets a running clock (Nov 4): when `next` runs the same step as `before` from a later start (a save's
-// answer, a start said again, or a smaller first piece carrying on its step's clock), the earlier start stays.
+// answer, a start said again), the earlier start stays, within one run only: a step left running 3 hours or more
+// (runningStep's rule) and started again opens fresh, as the server's Start does (found in review, Nov 4).
 export function keepClock(before: Goal | null, next: Goal | null): Goal | null {
   const was = before?.steps.find((step) => step.status === "doing");
   const now = next?.steps.find((step) => step.status === "doing" && step.id === was?.id);
   if (!next || !now?.startedAt || !was?.startedAt || !(Date.parse(was.startedAt) < Date.parse(now.startedAt))) return next;
+  if (!runningStep(before, Date.parse(now.startedAt))) return next;
   return { ...next, steps: next.steps.map((step) => (step === now ? { ...step, startedAt: was.startedAt } : step)) };
 }
 
@@ -532,7 +486,7 @@ export type Fact = { id: string; text: string; group: MemoryGroup; device: boole
 // projects with undated projects, so a deadline is a projects fact that names a day.
 const DATED = /\bdue\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? \d|\b(mon|tues|wednes|thurs|fri|satur|sun)day\b/i;
 export function foundLine(facts: { group: MemoryGroup; text: string }[]): string {
-  if (facts.length === 0) return "I couldn't find much yet. I'll learn as you go.";
+  if (facts.length === 0) return "Nothing to read yet, so let's start with what you want to do.";
   const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const deadlines = facts.filter((fact) => fact.group === "projects" && DATED.test(fact.text)).length;
   return `I read your calendar and email and learned ${count(facts.length, "thing")}${deadlines ? `, including ${count(deadlines, "deadline")}` : ""}.`;
@@ -593,7 +547,11 @@ export function goalRow(goal: Goal, today: string, proposed?: Step | null): Pane
   return {
     title: goal.title,
     aside: "",
-    line: next ? `${next.status === "doing" ? "Now" : "Next"}: ${next.title.replace(/\.+$/, "")}${next.minutes ? ` · ${next.minutes} min` : ""}` : "",
+    line: next
+      ? `${next.status === "doing" ? "Now" : "Next"}: ${next.title.replace(/\.+$/, "")}${next.minutes ? ` · ${next.minutes} min` : ""}`
+      : goal.rhythm
+        ? "Next: plan your next few"
+        : "",
     when: [goal.rhythm?.trim(), goal.due ? dueLine(goal.due, today) : ""].filter(Boolean).join(" · "),
   };
 }

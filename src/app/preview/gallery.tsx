@@ -4,7 +4,7 @@ import { useRef, useSyncExternalStore } from "react";
 import type { CalendarBlock, Choice, Goal, Memory, Progress, Step } from "@/lib/day";
 import type { VaultFact } from "@/lib/vault";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
-import { checkinMinute, choiceCard, FOCUS, foundLine, slotLabel, stoppedLine } from "@/components/day-flow";
+import { checkinMinute, FOCUS, foundLine, slotLabel, stoppedLine, suggestionRow } from "@/components/day-flow";
 import type { Booking } from "@/components/booking-chip";
 import DayView, { type DayViewProps, type Today } from "@/components/day-view";
 import { CANVAS_DEADLINES, CANVAS_MEMORIES, SAMPLE_CANVAS } from "./canvas-samples";
@@ -182,7 +182,7 @@ const LAB: Goal = {
 const QUIZ = { title: "BIO 101: Quiz 6 (Ch. 6)", date: dayFrom(1), daysLeft: 1 };
 const ASKING = TODAY.emails[0];
 const today = () => dayFrom(0);
-const cards = (...choices: Choice[]) => choices.map((choice) => choiceCard(choice, ESSAY.id, today()));
+const suggestions = (...choices: Choice[]) => choices.map((choice) => suggestionRow(choice, today()));
 const zoneNow = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 const HOME_LINE = "You finished two essay steps yesterday. You're free until Biology lecture at 1:30.";
 // The desk's Start and its links, for a plan with more than one step open.
@@ -207,8 +207,8 @@ const offer = (key: string, b: CalendarBlock, state: Booking["state"] = "offer")
 const TOMORROW = block("s3", "History essay draft", 1500, 90);
 
 const chips = (...labels: string[]) => [...labels, "Something else"];
-// First sign-in, once the scan answered: one line, Start my day, and two links.
-const FOUND_CHIPS = ["Start my day", "Paste notes", "See what I learned"];
+// First sign-in, once the scan answered: one line, Start, and two links.
+const FOUND_CHIPS = ["Start", "Paste notes", "See what I learned"];
 const CANVAS = { account: "sample", linked: false };
 
 type Fixture = Partial<Omit<DayViewProps, "voice" | "on">> & { phase?: VoicePhase; level?: number; error?: VoiceError };
@@ -235,18 +235,20 @@ const STATES: Record<string, Fixture> = {
     hear: true,
   },
   "ready-empty": { line: "", chips: ["Let's start"] },
-  // The home (Vi, Nov 3): the hello, then up to 3 goals to choose from; the current plan first, none marked as a pick.
+  // The home (Nov 4): the hello and the goals panel (left on a laptop, under the hello on a phone), Suggestions under it.
   "home-goals": {
     line: HOME_LINE,
-    choices: cards({ kind: "plan", goal: ESSAY }, { kind: "deadline", deadline: QUIZ }, { kind: "plan", goal: LAB }),
-    chips: ["Something else"],
+    goals: [ESSAY, LAB],
+    suggestions: suggestions({ kind: "deadline", deadline: QUIZ }),
+    chips: [],
     hear: true,
   },
-  // An email that asks something takes the third slot.
+  // An email that asks something joins the Suggestions.
   "home-goals-mail": {
     line: HOME_LINE,
-    choices: cards({ kind: "plan", goal: ESSAY }, { kind: "deadline", deadline: QUIZ }, { kind: "mail", email: ASKING }),
-    chips: ["Something else"],
+    goals: [ESSAY, LAB],
+    suggestions: suggestions({ kind: "deadline", deadline: QUIZ }, { kind: "mail", email: ASKING }),
+    chips: [],
   },
   // Nothing open, nothing due this week, no asking mail: Zeno's line and its quick replies.
   "home-empty": { line: "Nothing is due this week, and your afternoon is open.", chips: chips("Start something new", "Plan my week") },

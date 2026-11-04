@@ -33,7 +33,7 @@ export function GoalLines({ title, aside, goal, caption, bold }: { title: string
           {title}
         </span>
         {aside && (
-          <span className="shrink-0 text-ink-2">
+          <span className="max-w-[50%] min-w-0 text-right text-ink-2">
             <span className="sr-only">, </span>
             {aside}
           </span>

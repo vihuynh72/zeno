@@ -43,6 +43,10 @@ assert.deepEqual(ids(deskPlans(null, listed)), ["g-essay:todo,todo", "g-lab:todo
 assert.deepEqual(ids(deskPlans(fresh, undefined)), ["g-essay:done,doing"]);
 assert.deepEqual(deskPlans(goal("g", "G", null, [step("skipped")]), undefined), []);
 assert.deepEqual(deskPlans(null, undefined), []);
+// A goal that keeps going stays with no session left: its next few are planned when it opens (Nov 4).
+const rolling = { ...goal("g-run", "Run a 5K", null, [step("done", 20)]), rhythm: "3 runs a week" };
+assert.deepEqual(ids(deskPlans(rolling, undefined)), ["g-run:done"]);
+assert.equal(leftCaption(rolling), "Next few to plan");
 
 // The bar: done in ink, the running step (else the next to do) in red, the rest (skipped too) in the track color.
 assert.deepEqual(segments(goal("g", "G", null, [step("done"), step("done"), step("doing"), step("todo"), step("skipped")])), [

@@ -17,9 +17,10 @@ export function sameGoal(a: string, b: string) {
 const left = (goal: Goal) => goal.steps.filter((step) => step.status === "todo" || step.status === "doing");
 
 // The Desk's plans: the current one first, as fresh as the page has it (so a plan made since the day loaded joins, and a
-// day saved before Nov 3, which lists none, still shows it), then the other open plans. Only plans with a step left.
+// day saved before Nov 3, which lists none, still shows it), then the other open plans. Only plans with a step left, or
+// that keep going (a rhythm goal waiting for its next few, Nov 4).
 export function deskPlans(goal: Goal | null, goals: Goal[] | undefined): Goal[] {
-  return [...(goal ? [goal] : []), ...(goals ?? []).filter((plan) => plan.id !== goal?.id)].filter((plan) => left(plan).length > 0);
+  return [...(goal ? [goal] : []), ...(goals ?? []).filter((plan) => plan.id !== goal?.id)].filter((plan) => left(plan).length > 0 || plan.rhythm);
 }
 
 export type Segment = "done" | "next" | "todo";
@@ -58,7 +59,7 @@ const stepsLeft = (count: number) => `${count} ${count === 1 ? "step" : "steps"}
 // "4 steps left · about 1 h 30 min": the steps not done yet and their planned minutes.
 export function leftCaption(goal: Goal) {
   const steps = left(goal);
-  if (steps.length === 0) return "All steps done";
+  if (steps.length === 0) return goal.rhythm ? "Next few to plan" : "All steps done";
   const minutes = steps.reduce((sum, step) => sum + (step.minutes ?? 0), 0);
   return minutes > 0 ? `${stepsLeft(steps.length)} · about ${duration(minutes)}` : stepsLeft(steps.length);
 }

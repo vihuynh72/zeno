@@ -22,7 +22,7 @@ async function findSources(stepId: string, canvas: CanvasBrief | undefined): Pro
   }
 }
 
-// A few web sources for the desk's step, opened from "Find sources for this step" inside its card: it looks at once
+// A few web links for the desk's step, opened from "Find helpful links" inside its card: it looks at once
 // unless the step already has some. Key it by step id.
 export default function PrepPack({ step, canvas }: { step: Step; canvas?: CanvasBrief }) {
   const [sources, setSources] = useState<PrepSource[]>(step.prep ?? []);
@@ -48,8 +48,10 @@ export default function PrepPack({ step, canvas }: { step: Step; canvas?: Canvas
   useEffect(() => {
     const bottom = pack.current?.getBoundingClientRect().bottom ?? 0;
     const dockTop = document.querySelector(".dock")?.getBoundingClientRect().top ?? innerHeight;
+    // Never past the step card's top under the sticky goal strip (Nov 4).
     const cardTop = document.querySelector(".card")?.getBoundingClientRect().top ?? 0;
-    const by = Math.min(bottom - (dockTop - 16), cardTop - 16);
+    const strip = document.querySelector<HTMLElement>("[data-strip]")?.offsetHeight ?? 0;
+    const by = Math.min(bottom - (dockTop - 16), cardTop - strip - 8);
     if (by > 0) scrollBy({ top: by, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   }, [status]);
 
@@ -75,7 +77,7 @@ export default function PrepPack({ step, canvas }: { step: Step; canvas?: Canvas
         </ul>
       )}
       <p role="status" className="text-ink-2 empty:hidden">
-        {status === "loading" ? "Looking for good sources…" : status === "failed" ? "Couldn't find sources just now." : ""}
+        {status === "loading" ? "Looking for helpful links…" : status === "failed" ? "Couldn't find links just now." : ""}
       </p>
       {status === "failed" && (
         <button type="button" onClick={() => setStatus("loading")} className="link -ml-1">

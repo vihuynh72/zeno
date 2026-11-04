@@ -38,17 +38,18 @@ type PanelProps = {
   today: string;
   words: string | null; // words whose plan failed, back in the box
   onAdd(text: string): void;
+  onCancel(): void;
   onOpen(goalId: string): void;
   onSuggest(index: number): void;
   onPhoto(): void;
 };
 
-export default function GoalsPanel({ goals, suggestions, openId, proposed, today, words, onAdd, onOpen, onSuggest, onPhoto }: PanelProps) {
+export default function GoalsPanel({ goals, suggestions, openId, proposed, today, words, onAdd, onCancel, onOpen, onSuggest, onPhoto }: PanelProps) {
   return (
     <aside aria-label="Goals" className="panel">
       <h2 className="text-[20px] leading-8 font-bold">Goals</h2>
       {/* Keyed by the words, so failed ones open the box again with them in it. */}
-      <AddBox key={words ?? ""} words={words} onAdd={onAdd} onPhoto={onPhoto} />
+      <AddBox key={words ?? ""} words={words} onAdd={onAdd} onCancel={onCancel} onPhoto={onPhoto} />
       <ul className="mt-2 flex flex-col gap-2">
         {panelGoals(goals).map((goal) => {
           const open = goal.id === openId;
@@ -56,7 +57,7 @@ export default function GoalsPanel({ goals, suggestions, openId, proposed, today
           const done = goal.steps.filter((step) => step.status === "done").length;
           return (
             <li key={goal.id}>
-              <button type="button" onClick={() => onOpen(goal.id)} aria-current={open || undefined} className="choice">
+              <button type="button" data-answer onClick={() => onOpen(goal.id)} aria-current={open || undefined} className="choice">
                 <span className="lines block">
                   {/* The count inside the title: a direct child of .lines is position: relative, so it would take a line. */}
                   <span className="line-clamp-2 font-bold">
@@ -85,12 +86,17 @@ export default function GoalsPanel({ goals, suggestions, openId, proposed, today
 }
 
 // "+ Add a goal": a tap opens the box in place at once, with no AI turn; Make a plan sends the words.
-function AddBox({ words, onAdd, onPhoto }: { words: string | null; onAdd(text: string): void; onPhoto(): void }) {
+// Its buttons are answers (data-answer): a tap while Talk listens never sends the half-heard words.
+function AddBox({ words, onAdd, onCancel, onPhoto }: { words: string | null; onAdd(text: string): void; onCancel(): void; onPhoto(): void }) {
   const [open, setOpen] = useState(words !== null);
   const box = useRef<HTMLTextAreaElement>(null);
+  const close = () => {
+    setOpen(false);
+    onCancel();
+  };
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="add-goal mt-2">
+      <button type="button" data-answer onClick={() => setOpen(true)} className="add-goal mt-2">
         + Add a goal
       </button>
     );
@@ -113,19 +119,19 @@ function AddBox({ words, onAdd, onPhoto }: { words: string | null; onAdd(text: s
             className="write"
             aria-label="What do you want to get done?"
             placeholder="What do you want to get done?"
-            onKeyDown={(event) => onKeys(event, submit, () => setOpen(false))}
+            onKeyDown={(event) => onKeys(event, submit, close)}
           />
         </div>
       </div>
-      <button type="button" onClick={submit} className="pill pill-small pill-ink mt-2 w-full">
+      <button type="button" data-answer onClick={submit} className="pill pill-small pill-ink mt-2 w-full">
         Make a plan
       </button>
       <div className="links mt-1">
-        <button type="button" onClick={onPhoto} className="link">
+        <button type="button" data-answer onClick={onPhoto} className="link">
           Add from a photo
         </button>
         <span aria-hidden="true">·</span>
-        <button type="button" onClick={() => setOpen(false)} className="link">
+        <button type="button" data-answer onClick={close} className="link">
           Cancel
         </button>
       </div>
@@ -134,8 +140,10 @@ function AddBox({ words, onAdd, onPhoto }: { words: string | null; onAdd(text: s
 }
 
 // The front door (zero goals): the hello, one line on what Zeno does, and a visible box with examples from school and
-// life; Make a plan sends the words (POST /api/goal/add). children: the person's words while they talk instead.
-export function FrontDoor({ hello, line, words, onAdd, onPhoto, children }: { hello?: string; line: string; words: string | null; onAdd(text: string): void; onPhoto(): void; children?: ReactNode }) {
+// life; Make a plan sends the words (POST /api/goal/add). A plan that couldn't be made brings the words back with its
+// note under the box, and the box takes focus (data-retry). children: the person's words while they talk instead.
+type DoorProps = { hello?: string; line: string; words: string | null; note: string | null; onAdd(text: string): void; onPhoto(): void; children?: ReactNode };
+export function FrontDoor({ hello, line, words, note, onAdd, onPhoto, children }: DoorProps) {
   const box = useRef<HTMLTextAreaElement>(null);
   const submit = () => take(box.current, onAdd);
   return (
@@ -157,19 +165,23 @@ export function FrontDoor({ hello, line, words, onAdd, onPhoto, children }: { he
             id="goal-words"
             enterKeyHint="go"
             defaultValue={words ?? ""}
+            data-retry={words !== null || undefined}
             className="write"
             placeholder={EXAMPLES}
             onKeyDown={(event) => onKeys(event, submit)}
           />
+          <p role="status" className="text-ink-2 empty:hidden">
+            {note}
+          </p>
           {children}
         </div>
       </article>
       <div className="mt-4 flex w-full max-w-[760px] flex-col items-center gap-2 sm:mt-6 short:mt-4">
-        <button type="button" onClick={submit} className="pill pill-ink pill-big">
+        <button type="button" data-answer onClick={submit} className="pill pill-ink pill-big">
           Make a plan
         </button>
         <div className="links">
-          <button type="button" onClick={onPhoto} className="link">
+          <button type="button" data-answer onClick={onPhoto} className="link">
             Add from a photo
           </button>
         </div>

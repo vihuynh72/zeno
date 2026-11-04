@@ -1,7 +1,7 @@
 // Self-check for day-flow.ts, run like Vercel does, in UTC: TZ=UTC node src/components/day-flow.check.ts
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
-import type { Choice, DayEmail, Deadline, Goal, MemoryGroup, Progress, Step, TalkAction } from "@/lib/day";
+import type { DayEmail, Goal, MemoryGroup, Progress, Step, TalkAction } from "@/lib/day";
 
 registerHooks({
   resolve: (specifier, context, nextResolve) =>
@@ -11,7 +11,7 @@ const flow = await import("./day-flow.ts");
 const { addHeard, asks, canvasFor, cardSize, checkinMinute, clock, dayPart, doneLine, dueLabel, FOCUS, foundLine, greeting, groupFacts } = flow;
 const { isEmailStep, isNotes, laterBlock, laterMinutes, nextScreen, openingReusable, openingSig, openSteps, quickReplies } = flow;
 const { replanOnCanvas, slotLabel, soonEvent, streakLine, withStatus } = flow;
-const { addedStep, barCaption, choiceCard, duration, homeChoices, mailPlan, nextProposal, openPlans, proposedStep, realMinutes, runningStep } = flow;
+const { addedStep, barCaption, duration, goalRow, mailPlan, nextProposal, openPlans, proposedStep, realMinutes, runningStep } = flow;
 const { sameTitle, spoken, stoppedLine, todayLine, untilNext } = flow;
 const { extraReplies, goalLine, isResearchStep, keepClock, nextFewLine, splitLater } = flow;
 
@@ -142,6 +142,9 @@ assert.deepEqual(
 );
 assert.deepEqual(extraReplies(["Found one", "TikTok", "Yes", "Help me pick one", "Later tonight", "Skip it"]), ["Found one", "TikTok", "Yes", "Help me pick one", "Later tonight", "Skip it"]);
 assert.deepEqual(extraReplies(["Start with the intro", "OK, start", "Okay"]), ["Start with the intro", "Okay"], "a choice that begins with start stays");
+// Focus asked "Done?": the big Done is the answer, so a bare yes (a second Done) and finish or restart words go (review, Nov 4).
+assert.deepEqual(extraReplies(["Yes", "Not yet", "One more paragraph"], true), ["One more paragraph"]);
+assert.deepEqual(extraReplies(["I'm finished", "Mark it done", "Let's begin", "Start over", "Restart"]), []);
 
 // Hands-free listens only after a question.
 assert.equal(asks("Want to start the outline?"), true);
@@ -364,7 +367,7 @@ assert.equal(
   "I read your calendar and email and learned 2 things, including 1 deadline.",
   "an undated project is no deadline",
 );
-assert.equal(foundLine([]), "I couldn't find much yet. I'll learn as you go.");
+assert.equal(foundLine([]), "Nothing to read yet, so let's start with what you want to do.", "no apology on a first run (Nov 4)");
 
 // Memory's Add box: one line is one memory; a line break or more than 200 characters is pasted notes.
 assert.equal(isNotes("Works library shifts on Saturdays."), false);
@@ -380,69 +383,24 @@ assert.equal(sameTitle("SOC-15 Field report #2", "soc 15: field report 2"), true
 assert.equal(sameTitle("Lab report", "Essay 2"), false);
 assert.equal(sameTitle("!!!", "Essay"), false, "a title of only symbols matches nothing");
 
-// The home's options: the current plan first, then plans and deadlines by due date (none last), 3 at most; an asking
-// email takes the third slot.
+// Plans for the open-plans list and an asking email for its reply plan.
 const hToday = "2026-11-02"; // a Monday
 const mk = (id: string, title: string, due: string | null, ...steps: Step[]): Goal => ({ id, title, due, steps });
 const current = mk("p1", "SOC 15: Field report", "2026-11-06", step("a", "done"), step("b", "todo", { title: "Outline the findings", minutes: 10 }));
 const other = mk("p2", "Essay 2", "2026-11-04", step("c", "todo", { title: "Read the prompt", minutes: 5 }));
 const undated = mk("p3", "Portfolio site", null, step("d", "todo"));
 const finished = mk("p4", "Lab 5", "2026-11-03", step("e", "done"));
-const dl = (title: string, date: string): Deadline => ({ title, date, daysLeft: 0 });
-const deadlines = [
-  dl("HIST 110: Essay 2", "2026-11-04"), // the plan "Essay 2" covers it
-  dl("BIO 101 quiz", "2026-11-03"),
-  dl("CHEM 1A lab", "2026-11-12"), // 10 days out
-  dl("bio 101 QUIZ!", "2026-11-03"), // the same deadline twice
-  dl("Old thing", "2026-11-01"), // a list kept since yesterday
-  dl("MATH 30 problem set", "2026-11-09"), // 7 days out
-];
 const asking: DayEmail = { from: "Prof. Lin <lin@school.edu>", subject: "Does Wednesday at 2 work?", snippet: "", unread: true, id: "m1", address: "lin@school.edu", asks: true };
-const notAsking: DayEmail = { ...asking, id: "m0", asks: false, subject: "Newsletter" };
-const names = (choices: Choice[]) => choices.map((one) => (one.kind === "plan" ? one.goal.id : one.kind === "deadline" ? one.deadline.title : `mail:${one.email.id}`));
 const plans = [other, undated, finished, current];
-assert.deepEqual(names(homeChoices(current, plans, deadlines, [], hToday)), ["p1", "BIO 101 quiz", "p2"]);
-assert.deepEqual(names(homeChoices(current, plans, deadlines.slice(5), [], hToday)), ["p1", "p2", "MATH 30 problem set"], "7 days out counts");
-assert.deepEqual(names(homeChoices(null, [undated, other], [], [], hToday)), ["p2", "p3"], "no due date last");
-assert.deepEqual(names(homeChoices(finished, [undated], [], [], hToday)), ["p3"], "a finished current plan is no option");
-assert.deepEqual(names(homeChoices(current, plans, deadlines, [notAsking, asking], hToday)), ["p1", "BIO 101 quiz", "mail:m1"]);
-assert.deepEqual(names(homeChoices(other, [], [], [asking], hToday)), ["p2", "mail:m1"]);
-assert.deepEqual(names(homeChoices(null, [], [], [asking], hToday)), ["mail:m1"]);
-assert.deepEqual(names(homeChoices(current, plans, deadlines, [asking], hToday, ["m1"])), ["p1", "BIO 101 quiz", "p2"], "already a plan here");
-assert.deepEqual(names(homeChoices(null, [], [], [{ ...asking, id: undefined }], hToday)), [], "a saved day's email can't open");
-assert.deepEqual(names(homeChoices(null, [], deadlines, [], "")), [], "no deadlines before the browser's clock");
-// The plan as it is now (the page's copy) wins over the day's older copy of it.
-const stale = { ...current, steps: current.steps.map((one) => ({ ...one, status: "todo" as const })) };
-const newest = homeChoices(current, [stale], [], [], hToday)[0];
-assert.equal(newest.kind === "plan" && newest.goal, current);
 // The Desk's Goals: the same open plans, the current one first.
 assert.deepEqual(openPlans(current, plans).map((plan) => plan.id), ["p1", "p2", "p3"]);
 assert.deepEqual(openPlans(finished, [undated]).map((plan) => plan.id), ["p3"]);
 assert.deepEqual(openPlans(null, []), []);
-
-// An option card's words.
-assert.deepEqual(choiceCard({ kind: "plan", goal: current }, "p1", hToday), {
-  title: "SOC 15: Field report",
-  minutes: 10,
-  meta: "1 of 2 done · due Fri",
-  last: "Picks up where you stopped.",
-});
-assert.deepEqual(choiceCard({ kind: "plan", goal: other }, "p1", hToday), { title: "Essay 2", minutes: 5, meta: "not started · due Wed", last: "Next: Read the prompt" });
-assert.equal(choiceCard({ kind: "plan", goal: other }, "p2", hToday).last, "Next: Read the prompt", "nothing to pick up yet");
-assert.equal(choiceCard({ kind: "plan", goal: undated }, null, hToday).meta, "not started", "no slashed zero");
-assert.deepEqual(choiceCard({ kind: "deadline", deadline: dl("BIO 101 quiz", "2026-11-03") }, null, hToday), {
-  title: "BIO 101 quiz",
-  minutes: null,
-  meta: "not started · due tomorrow",
-  last: "Due tomorrow.",
-});
-assert.equal(choiceCard({ kind: "deadline", deadline: dl("x", "2026-11-02") }, null, hToday).last, "Due today.");
-assert.deepEqual(
-  [choiceCard({ kind: "deadline", deadline: dl("x", "2026-11-05") }, null, hToday).meta, choiceCard({ kind: "deadline", deadline: dl("x", "2026-11-05") }, null, hToday).last],
-  ["not started · due Thu", "Due Thursday."],
-);
-assert.equal(choiceCard({ kind: "deadline", deadline: dl("x", "2026-11-09") }, null, hToday).last, "Due Nov 9.");
-assert.deepEqual(choiceCard({ kind: "mail", email: asking }, null, hToday), { title: "Answer Prof. Lin", minutes: 2, meta: "Email · Prof. Lin", last: "Does Wednesday at 2 work?" });
+// A goal that keeps going stays listed with no session left (its next few are planned when it opens), and says so.
+const rolling = { ...finished, id: "p5", rhythm: "3 runs a week" };
+assert.deepEqual(openPlans(rolling, [finished]).map((plan) => plan.id), ["p5"]);
+assert.equal(goalRow(rolling, hToday).line, "Next: plan your next few");
+assert.equal(goalRow(finished, hToday).line, "");
 
 // An asking email's plan: one 2-minute reply; a long subject is cut at a word, within 40 characters.
 assert.deepEqual(mailPlan(asking), { title: "Answer Prof. Lin", steps: [{ title: "Reply to Prof. Lin about Does Wednesday at 2 work?", minutes: 2 }] });
@@ -452,7 +410,6 @@ assert.equal(mailPlan({ ...asking, subject: "x".repeat(60) }).steps[0].title, `R
 assert.equal(mailPlan({ ...asking, subject: "  " }).steps[0].title, "Reply to Prof. Lin");
 assert.equal(mailPlan({ ...asking, from: "dana@school.edu" }).title, "Answer dana", "a title never holds an address");
 assert.equal(mailPlan({ ...asking, from: "<registrar@school.edu>" }).steps[0].title, "Reply to registrar about Does Wednesday at 2 work?");
-assert.equal(choiceCard({ kind: "mail", email: { ...asking, from: "dana@school.edu" } }, null, hToday).meta, "Email · dana");
 assert.deepEqual(mailPlan(null), { title: "Answer an email", steps: [{ title: "Reply to the email", minutes: 2 }] });
 
 // The desk proposes the first open step, or the one she tapped; Another step goes round the open ones.
@@ -500,6 +457,10 @@ assert.equal(keepClock(goal(step("1", "todo")), moved), moved, "a step started f
 const sooner = goal(step("2", "doing", { startedAt: t9 }));
 assert.equal(keepClock(goal(step("2", "doing", { startedAt: later })), sooner), sooner, "an earlier start wins either way");
 assert.equal(keepClock(goal(step("2", "doing", { startedAt: t9 })), null), null);
+// A step left running yesterday and started again opens fresh: the old start is kept only within one run (3 h).
+const yesterday = "2026-11-02T20:00:00.000Z";
+const restarted = goal(step("1", "doing", { startedAt: t9 }));
+assert.equal(keepClock(goal(step("1", "doing", { startedAt: yesterday })), restarted), restarted, "a stale start never stays");
 
 // A step still running when the page opens goes to Focus, unless it was left 3 hours ago or more.
 const t0 = Date.parse("2026-11-03T17:00:00Z");
