@@ -655,7 +655,7 @@ try {
 // count, can't be opened or changed, and Undo brings it back as it was. Removing or finishing the current goal makes the
 // most recently paused one current. Mark done finishes a goal that keeps going too, and closes its open steps without
 // counting them as done or as skips.
-const { closeGoal, restoreGoal, todoMemory } = await import("./goals.ts");
+const { closeGoal, removedGoals, restoreGoal, todoMemory } = await import("./goals.ts");
 const closing = `goals-check-${crypto.randomUUID()}@zeno.local`;
 try {
   const zone = "America/Los_Angeles";
@@ -671,10 +671,14 @@ try {
   assert.deepEqual(await finishedDays(closing, zone), {}, "its finished step counts nowhere");
   assert.deepEqual(await stepsDoneSince(closing, new Date(Date.now() - 86_400_000)), []);
   assert.equal(await closeGoal(closing, paper.id, "removed"), undefined, "removed twice");
+  // Talk can offer it back (round 7: "bring back my Etsy goal"): only their own removed goals, by id and title.
+  assert.deepEqual(await removedGoals(closing), [{ id: paper.id, title: "Write the paper" }]);
+  assert.deepEqual(await removedGoals(`goals-check-${crypto.randomUUID()}@zeno.local`), [], "another person has none of hers");
   // Undo: back in the list, paused, its running step back in line.
   const back = await restoreGoal(closing, paper.id);
   assert.deepEqual([back?.goal.id, back?.current?.id, back?.goal.steps.map((step) => step.status)], [paper.id, running.id, ["done", "todo"]]);
   assert.equal(await restoreGoal(closing, paper.id), null, "only a removed goal comes back");
+  assert.deepEqual(await removedGoals(closing), [], "a restored goal is no longer offered");
   assert.equal(Object.values(await finishedDays(closing, zone)).reduce((a, b) => a + b, 0), 1, "its finished step counts again");
   // Mark done on the current goal, one that keeps going: done, its pasted to-do gone, its open steps closed with no
   // done_at, and the paper current.

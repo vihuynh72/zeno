@@ -185,6 +185,17 @@ export async function restoreGoal(email: string, goalId: string): Promise<{ goal
   return goal && { goal, current: await currentGoal(email) };
 }
 
+// Goals removed in the last 30 days, newest first, at most 10: talk offers restoreGoal for one of them (round 7: "bring it
+// back" made a lookalike).
+export async function removedGoals(email: string): Promise<{ id: string; title: string }[]> {
+  await ensureSchema();
+  const rows = await getSql()`
+    SELECT id, title FROM goals WHERE user_email = ${email} AND status = 'removed' AND updated_at > now() - interval '30 days'
+    ORDER BY updated_at DESC LIMIT 10
+  `;
+  return rows.map((row) => ({ id: String(row.id), title: String(row.title) }));
+}
+
 // Any goal at all, paused, done and removed ones included.
 export async function hasAnyGoal(email: string): Promise<boolean> {
   await ensureSchema();

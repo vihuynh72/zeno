@@ -395,6 +395,6 @@ export type DoneStep = { title: string; goal: string; doneAt: string; minutes: n
 export type CloseGoalRequest = { id: string; undo?: boolean };
 export type CloseGoalResponse = { state: "ok"; current: Goal | null; goal?: Goal } | { state: "signed-out" | "bad-request" | "error" };
 
-// A goal change talk only proposes (Nov 4: "drop the 5K goal", "I finished the paper"): the page shows Remove or Mark
-// done for that goal, and only the tap calls the route above.
-export type GoalConfirm = { id: string; title: string; how: "remove" | "finish" };
+// A goal change talk only proposes (Nov 4: "drop the 5K goal", "I finished the paper", "bring back my Etsy goal"): the
+// page shows Remove, Mark done or Bring it back for that goal, and only the tap calls the route above (restore is its undo).
+export type GoalConfirm = { id: string; title: string; how: "remove" | "finish" | "restore" };
