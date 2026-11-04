@@ -217,8 +217,12 @@ export function duration(minutes: number) {
 
 // The goal strip's caption: "3 of 7 done", and right after a Done, once more than half is done, "4 of 7 · over halfway".
 // None done is said in words: the font's slashed zero read as "Ø of 5 done" (Nov 3).
-export const barCaption = (done: number, total: number, justDone = false) =>
-  done === 0
+// A goal that keeps going (`rolling`) has no end to be halfway to: "5 done · 4 planned" (live, Nov 4: "5 of 9 · over
+// halfway" after its next few were planned).
+export const barCaption = (done: number, total: number, justDone = false, rolling = false) =>
+  rolling
+    ? `${done || "None"} done${total > done ? ` · ${total - done} planned` : ""}`
+    : done === 0
     ? total === 1
       ? "Not done yet"
       : `None of ${total} done yet`

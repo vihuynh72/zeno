@@ -502,6 +502,9 @@ assert.equal(barCaption(2, 4, true), "2 of 4 done", "half is not over half");
 assert.equal(barCaption(7, 7, true), "7 of 7 done");
 // None done is said in words (the font's slashed zero read as "Ø of 5 done").
 assert.equal(barCaption(0, 5), "None of 5 done yet");
+assert.equal(barCaption(5, 9, true, true), "5 done · 4 planned", "a goal that keeps going is never halfway");
+assert.equal(barCaption(0, 4, false, true), "None done · 4 planned");
+assert.equal(barCaption(5, 5, true, true), "5 done");
 assert.equal(barCaption(0, 1), "Not done yet");
 for (const total of [1, 5, 10]) assert.equal(/\b0\b/.test(barCaption(0, total, true)), false, String(total));
 

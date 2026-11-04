@@ -369,7 +369,7 @@ export default function DayView(props: DayViewProps) {
                     rhythm={planning ? null : goal?.rhythm}
                     steps={planning ? [] : steps}
                     marked={marked}
-                    caption={barCaption(done, steps.length, screen === "checkin" && Boolean(props.celebrate))}
+                    caption={barCaption(done, steps.length, screen === "checkin" && Boolean(props.celebrate), Boolean(goal?.rhythm) && !planning)}
                     today={today}
                   />
                 </div>
