@@ -44,22 +44,25 @@ export const appRow = (item: FromApp, today: string): PanelRow => ({
 export const goalText = (item: FromApp) => [item.title, item.due ? `Due ${item.due}` : "", item.app === "canvas" ? "" : (item.detail ?? "")].filter(Boolean).join("\n");
 export const sourceOf = (item: FromApp): GoalSource => ({ app: item.app, id: item.id, url: item.url, title: item.title });
 
+// An item for this goal: an app's, or the page she confirmed under "Is this the one?" (app "web").
+export type GoalItem = Omit<AppItem, "app"> & { app: App | "web" };
+
 // For this goal: the item it was made from (as the app has it now, else as it was saved), its docs, then other items that
 // match it. Canvas has its own card there.
-export function goalItems(goal: Goal, items: AppItem[], docs: AppItem[]): AppItem[] {
+export function goalItems(goal: Goal, items: AppItem[], docs: AppItem[]): GoalItem[] {
   const from = goal.source;
-  const own: AppItem | null =
+  const own: GoalItem | null =
     from && from.app !== "canvas"
       ? (items.find((item) => item.app === from.app && item.id === from.id) ?? {
           ...from,
           app: from.app,
-          kind: from.app === "gdocs" ? "doc" : "task",
+          kind: from.app === "gdocs" ? "doc" : from.app === "web" ? "page" : "task",
           due: null,
           detail: null,
         })
       : null;
   const rest = items.filter((item) => !(own && item.app === own.app && item.id === own.id));
   // An issue's key ("ENG-15", Jira's "MY_APP-7") says which team, not what it is about, so it never makes a match.
-  const all = [...(own ? [own] : []), ...docs, ...forGoal(goal, rest, (item) => `${item.title.replace(/^[A-Z][A-Z0-9_]*-\d+ /, "")} ${item.detail ?? ""}`)];
+  const all: GoalItem[] = [...(own ? [own] : []), ...docs, ...forGoal(goal, rest, (item) => `${item.title.replace(/^[A-Z][A-Z0-9_]*-\d+ /, "")} ${item.detail ?? ""}`)];
   return all.filter((item, i) => all.findIndex((one) => one.app === item.app && one.id === item.id) === i);
 }

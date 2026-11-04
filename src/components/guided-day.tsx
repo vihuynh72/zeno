@@ -39,6 +39,7 @@ import type {
   StepStatus,
   TalkResponse,
   Turn,
+  WebMatch,
 } from "@/lib/day";
 import { canvasBriefs, canvasList, readCanvas, syncCanvas } from "@/lib/canvas-store";
 import { APPS, type App, type AppItem } from "@/lib/connect";
@@ -102,7 +103,7 @@ import DayView, { useToday, type Sheet, type View } from "@/components/day-view"
 import { httpsOnly } from "@/components/desk-rows";
 import { nextBlock } from "@/components/goal-match";
 import { appRow, canvasItems, goalItems, goalText, sourceOf, waiting } from "@/components/app-rows";
-import { PlanAsk, PlanThinking, revealMs } from "@/components/plan-thinking";
+import { PlanAsk, PlanMatch, PlanThinking, revealMs } from "@/components/plan-thinking";
 
 const SIGNED_OUT_LINE = "Zeno helps you start the thing you keep putting off.";
 const THINK_FAIL = "I couldn't think that through just now. Try again?";
@@ -1431,7 +1432,9 @@ export default function GuidedDay() {
   // goals from the same words join the panel. A plan that couldn't be made sends her home with her words back in the box.
   // `was`: the step running when she first asked, carried across Zeno's questions (the desk has left Focus by then).
   // `source`: the app item the words come from (From your apps), kept on the goal.
-  async function addGoal(text: string, answers?: PlanAnswer[], was = runningNow(), source?: GoalSource) {
+  // `web`: "Is this the one?" (Vi, Nov 4): the query to look up (`again` after "A different one"), or her answer to the
+  // match: the match to plan from, or null to plan without the web.
+  async function addGoal(text: string, answers?: PlanAnswer[], was = runningNow(), source?: GoalSource, web: { lookup?: string; match?: WebMatch | null; again?: boolean } = {}) {
     const words = text.trim();
     const key = `add:${words.toLowerCase()}`;
     if (!words || making.current.has(key)) return;
@@ -1441,14 +1444,25 @@ export default function GuidedDay() {
     const planningWith = (view: ReactNode) => setPlanning({ title: "New goal", due: null, line: `Planning: ${shown}…`, view });
     // Only what is true while it waits: the server reads this week's free time only when a calendar is connected.
     const calendar = day?.sources.calendar === "ok" ? ["Checking your calendar"] : [];
-    planningWith(<PlanThinking live={[answers ? "Reading your answers" : "Reading your goal", ...calendar]} />);
-    const res = await post<AddGoalResponse>("/api/goal/add", { text: words, ...(answers && { answers }), ...(source && { source }) } satisfies AddGoalRequest);
+    planningWith(<PlanThinking live={web.lookup ? [`Looking up ${web.lookup} on the web`] : [answers ? "Reading your answers" : "Reading your goal", ...calendar]} />);
+    const res = await post<AddGoalResponse>(
+      "/api/goal/add",
+      { text: words, ...(answers && { answers }), ...(source && { source }), ...(web.lookup && { lookup: web.lookup }), ...(web.match !== undefined && { match: web.match }) } satisfies AddGoalRequest,
+    );
     making.current.delete(key);
     if (res.state === "signed-out") return showSignedOut();
     if (res.state === "ask" && Array.isArray(res.questions)) {
       // She left the desk while Muse read it: her words wait in the box.
       if (ticket !== opened.current) return setAddWords(words);
       return askNext(words, res.questions, [], was, source);
+    }
+    if ((res.state === "lookup" || res.state === "confirm") && ticket !== opened.current) return setAddWords(words);
+    if (res.state === "lookup" && typeof res.query === "string") return addGoal(words, answers, was, source, { lookup: res.query, again: web.again });
+    if (res.state === "confirm" && typeof res.match?.title === "string") {
+      const { query, match } = res;
+      const plan = (next: typeof web) => void addGoal(words, answers, was, source, next);
+      const other = web.again ? undefined : (detail: string) => plan({ lookup: `${query} ${detail}`, again: true });
+      return setPlanning({ title: "New goal", due: null, line: "Is this the one?", view: <PlanMatch match={match} onYes={() => plan({ match })} onOther={other} onSkip={() => plan({ match: null })} /> });
     }
     // Only whole plans join the panel: a bad entry must never take the page down.
     const others = res.state === "ok" && Array.isArray(res.others) ? res.others.filter((one) => typeof one?.id === "string" && Array.isArray(one.steps)) : [];
