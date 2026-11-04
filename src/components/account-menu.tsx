@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import AppsSheet from "@/components/apps-sheet";
 
-// The person's initial in the top bar opens Memory, Sound, Canvas, Connect an app, Privacy and Sign out. canvas is null
+// The person's initial in the top bar opens Memory, Sound, Privacy and Sign out, then under a small "Connections"
+// heading Canvas and Connect an app (Nov 4: those scared people who are not students or developers). canvas is null
 // until the page knows whose account it is (the link is kept per account), true once Canvas is linked on this device.
 // onCalendar is set only when they unticked calendar access on Google's consent screen, so a block they ask for has a
 // way through. Connect an app opens its own sheet (apps-sheet.tsx).
@@ -59,33 +60,6 @@ export default function AccountMenu({
         <button type="button" role="switch" aria-checked={!muted} onClick={onMute} className="pill pill-small pill-quiet w-full">
           Sound<span aria-hidden="true"> · {muted ? "off" : "on"}</span>
         </button>
-        {canvas !== null && (
-          <button
-            type="button"
-            onClick={() => {
-              menu.current?.hidePopover();
-              onCanvas();
-            }}
-            className="pill pill-small pill-quiet w-full"
-          >
-            {canvas ? "Canvas · connected" : "Connect Canvas"}
-          </button>
-        )}
-        {onCalendar && (
-          <button type="button" onClick={onCalendar} className="pill pill-small pill-quiet w-full">
-            Let Zeno add to your calendar
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => {
-            menu.current?.hidePopover();
-            setApps(true);
-          }}
-          className="pill pill-small pill-quiet w-full"
-        >
-          Connect an app
-        </button>
         {/* A full load, not a client navigation: Back must not repaint the page from this load's saved day. */}
         <a href="/privacy" className="pill pill-small pill-quiet w-full">
           Privacy
@@ -93,6 +67,38 @@ export default function AccountMenu({
         <button type="button" onClick={onSignOut} className="pill pill-small w-full">
           Sign out
         </button>
+        <p id="menu-connections" className="menu-heading">
+          Connections
+        </p>
+        <div role="group" aria-labelledby="menu-connections" className="flex flex-col gap-2">
+          {canvas !== null && (
+            <button
+              type="button"
+              onClick={() => {
+                menu.current?.hidePopover();
+                onCanvas();
+              }}
+              className="pill pill-small pill-quiet w-full"
+            >
+              {canvas ? "Canvas · connected" : "Connect Canvas"}
+            </button>
+          )}
+          {onCalendar && (
+            <button type="button" onClick={onCalendar} className="pill pill-small pill-quiet w-full">
+              Let Zeno add to your calendar
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              menu.current?.hidePopover();
+              setApps(true);
+            }}
+            className="pill pill-small pill-quiet w-full"
+          >
+            Connect an app
+          </button>
+        </div>
       </div>
       {/* Outside the popover, which hides everything inside it when it closes. */}
       <AppsSheet open={apps} onClose={() => setApps(false)} />

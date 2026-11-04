@@ -4,6 +4,7 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalSt
 import { signIn, signOut } from "next-auth/react";
 import type {
   ActivateRequest,
+  AddGoalRequest,
   BookResponse,
   CalendarBlock,
   CanvasAssignment,
@@ -34,7 +35,7 @@ import { canvasBriefs, canvasList, readCanvas, syncCanvas } from "@/lib/canvas-s
 import { listenAuto, type ListenHandlers } from "@/lib/listen";
 import { audioContext, playDone, wakeAudio } from "@/lib/speak";
 import { formatTime, localDate } from "@/lib/tz";
-import { useVoice } from "@/lib/use-voice";
+import { useVoice, type VoiceError } from "@/lib/use-voice";
 import { addToVault, readVault, removeFromVault, vaultRemoved, vaultTexts, type VaultFact } from "@/lib/vault";
 import {
   addedStep,
@@ -42,13 +43,11 @@ import {
   asks,
   canvasFor,
   checkinMinute,
-  choiceCard,
   dayPart,
   doneLine,
   FOCUS,
   foundLine,
   greeting,
-  homeChoices,
   isEmailStep,
   isNotes,
   isTomorrow,
@@ -61,6 +60,7 @@ import {
   openingSig,
   openPlans,
   openSteps,
+  panelSuggestions,
   proposedStep,
   quickReplies,
   replanOnCanvas,
@@ -70,6 +70,7 @@ import {
   soonEvent,
   spoken,
   stoppedLine,
+  suggestionRow,
   todayLine,
   untilNext,
   withStatus,
@@ -84,7 +85,13 @@ const SIGNED_OUT_LINE = "Zeno helps you start the thing you keep putting off.";
 const THINK_FAIL = "I couldn't think that through just now. Try again?";
 const SAVE_FAIL = "I couldn't save that just now. Try again?";
 const OPEN_FAIL = "Couldn't open that. Try again.";
-const SNAP_FAIL = "I couldn't find an assignment in that photo.";
+const SNAP_FAIL = "I couldn't find a to-do list in that photo.";
+// The goals panel and the front door (Nov 4): a plan from the person's words, the line for no goal yet, and the
+// first run's line when there was nothing to read, which never apologizes.
+const ADD_FAIL = "I couldn't make that plan just now. Try again?";
+const NO_GOAL = "I couldn't find a goal in that. Try one thing you want to get done.";
+const FRONT_DOOR = "Tell me a goal. I'll break it into small steps and stay with you while you do them.";
+const NOTHING_YET = "Nothing to read yet, so let's start with what you want to do.";
 // This browser can't open the file (an iPhone HEIC photo in Chrome): say so, never that the photo holds nothing.
 const PHOTO_UNREADABLE = "I can't open that kind of photo here. Try a screenshot or a JPEG.";
 const WRAP_LINE = "Saved. I'll bring it back next time.";
@@ -319,12 +326,17 @@ export default function GuidedDay() {
   const [planning, setPlanning] = useState<Planning | null>(null);
   const [stuck, setStuck] = useState(false); // Stuck? in Focus: a smaller step or another goal, no question
   const [mailGoals, setMailGoals] = useState<Record<string, string>>({});
+  const [addWords, setAddWords] = useState<string | null>(null); // words whose plan couldn't be made, back in the box
   const today = useToday();
-  const choices = homeChoices(goal, goals, base?.deadlines ?? [], day?.emails ?? [], today, Object.values(mailGoals));
+  // The goals panel (Nov 4): every open plan, and as Suggestions the deadlines and asking email with no plan yet.
+  const plans = openPlans(goal, goals);
+  const choices = panelSuggestions(plans, base?.deadlines ?? [], day?.emails ?? [], today, Object.values(mailGoals));
   const proposed = proposedStep(goal, proposedId);
   // Focus and the screen after Done are always on the desk; the card and talk are while its plan is made or has a step
   // open; otherwise the home.
   const onDesk = screen === "focus" || screen === "checkin" || (view === "desk" && (planning !== null || proposed !== null));
+  // No open plan: the home is the front door, whose line says what Zeno does (Nov 4: never "your goals are below").
+  const frontDoor = screen === "ready" && !onDesk && plans.length === 0;
   const history = useRef<Turn[]>([]);
   const cache = useRef<Saved | null>(null);
   const tapped = useRef(false); // the turn in flight came from a chip, not the type box
@@ -364,6 +376,19 @@ export default function GuidedDay() {
     },
     { listen: (handlers, opts) => (talking.current ? listenAuto(handlers, opts) : micClosed(handlers)) },
   );
+
+  // A voice error opens the text box, the way that still works, and says why once: the next thing she does clears the
+  // note (Nov 4: it sat on every screen, even in Memory). Talk's slashed mic keeps showing a blocked one.
+  const [voiceError, setVoiceError] = useState<VoiceError>(null);
+  if (voice.error !== voiceError) {
+    setVoiceError(voice.error);
+    if (voice.error) {
+      setTyping(true);
+      setNote(VOICE_NOTE[voice.error]);
+    }
+  }
+  // What the home shows is what it says: with no open plan, the front door's line.
+  const homeLine = (text: string) => (openPlans(latest.current.goal, latest.current.goals).length === 0 ? FRONT_DOOR : text);
 
   // Another tab signed out or loaded another account: this tab must not write its day back over that.
   useEffect(() => {
@@ -576,7 +601,7 @@ export default function GuidedDay() {
     if (spoke.current || voice.muted) return;
     spoke.current = true;
     // Never over another line (a heads-up) or the person: Hear Zeno offers it instead.
-    if (allowed && voice.phase === "idle" && !typing) void voice.speak(`${hello} ${text}`);
+    if (allowed && voice.phase === "idle" && !typing) void voice.speak(`${hello} ${homeLine(text)}`);
     else setHear(true);
   });
 
@@ -1022,13 +1047,40 @@ export default function GuidedDay() {
     setNote(OPEN_FAIL);
   }
 
+  // "+ Add a goal" and the front door (Nov 4): her words go to Muse as they are (POST /api/goal/add), with no talk turn,
+  // and stay on the desk until it answers. More goals from the same words join the panel. A plan that couldn't be made
+  // sends her home with her words back in the box.
+  async function addGoal(text: string) {
+    const words = text.trim();
+    if (!words || making.current.has("add")) return;
+    making.current.add("add");
+    setAddWords(null);
+    const ticket = openDesk();
+    const shown = words.length > 160 ? words.slice(0, 160).trimEnd() : words.replace(/[.!?…\s]+$/, "");
+    setPlanning({ title: "New goal", due: null, line: `Planning: ${shown}…` });
+    const res = await post<GoalResponse>("/api/goal/add", { text: words } satisfies AddGoalRequest);
+    making.current.delete("add");
+    if (res.state === "signed-out") return showSignedOut();
+    if (res.state === "ok") for (const other of Array.isArray(res.others) ? res.others : []) takeGoal(other);
+    if (ticket !== opened.current) {
+      if (res.state === "ok") takeNew(res.goal);
+      else setAddWords(words);
+      return;
+    }
+    setPlanning(null);
+    if (res.state === "ok") return changeGoal(res.goal);
+    goHome();
+    setAddWords(words);
+    setNote(res.state === "bad-request" ? NO_GOAL : ADD_FAIL);
+  }
+
   // "Add from a photo" (Vi, Nov 3 night): Muse Spark reads a photo or screenshot of an assignment once, and its plan
   // opens as a deadline's does. The desk says it is reading at once; the photo is shrunk here and never kept.
   async function snapAssignment(photo: File) {
     if (making.current.has("snap")) return;
     making.current.add("snap");
     const ticket = openDesk();
-    setPlanning({ title: "Your assignment", due: null, line: "Reading your photo…" });
+    setPlanning({ title: "New goal", due: null, line: "Reading your photo…" });
     const image = await shrinkPhoto(photo).catch(() => null);
     const res = image ? await post<GoalResponse>("/api/goal/snap", { image } satisfies SnapRequest) : ({ state: "unreadable" } as const);
     making.current.delete("snap");
@@ -1073,6 +1125,14 @@ export default function GuidedDay() {
       talking.current = false;
       voice.stop();
     }
+  }
+
+  // The keyboard and "Something else": the text box, never the mic (Nov 4). Typing ends hands-free, so the mic never
+  // opens over the box.
+  function openTyping() {
+    talking.current = false;
+    if (voice.phase === "listening") voice.stop();
+    setTyping(true);
   }
 
   // Hands-free: any tap that isn't an answer or Talk itself is done talking, like Talk: words heard go at once; with none
@@ -1359,11 +1419,11 @@ export default function GuidedDay() {
     keepOpening(res.opening, quickReplies(res.options), sig, res.noticed);
     setLine(res.opening);
     setOptions(quickReplies(res.options));
-    speakLine(res.opening);
+    speakLine(homeLine(res.opening));
   }
 
   // ---------- The screen's answers ----------
-  const setupLine = scanning ? READING_LINE : pasting ? PASTE_LINE : foundLine(learned);
+  const setupLine = scanning ? READING_LINE : pasting ? PASTE_LINE : learned.length > 0 ? foundLine(learned) : NOTHING_YET;
   const offers = offerKeys.flatMap((key) => (bookings[key] ? [bookings[key]] : []));
   const step = openSteps(goal)[0];
   // The desk's materials read this device's Canvas list only once /api/day said whose it is.
@@ -1377,13 +1437,14 @@ export default function GuidedDay() {
   function screenAnswers(): Answer[] {
     const say = (label: string, run: () => void): Answer => ({ label, run });
     const replies = options.map((option) => say(option, () => tap(option)));
-    // "Something else": talk if this browser can listen, otherwise type.
-    const other = say("Something else", () => (voice.supported ? talk() : setTyping(true)));
+    // "Something else" opens the text box; only Talk opens the mic (Nov 4).
+    const other = say("Something else", openTyping);
     if (screen === "signed-out") return [say("Sign in with Google", () => void signIn("google", { redirectTo: "/" }))];
     if (screen === "setup") {
       if (scanning) return [];
       if (pasting) return [say("Skip", finishSetup)];
-      return [say("Start my day", finishSetup), say("Paste notes", () => setPasting(true)), say("See what I learned", () => openSheet("memory"))];
+      const learnedSome = learned.length > 0 ? [say("See what I learned", () => openSheet("memory"))] : [];
+      return [say("Start", finishSetup), say("Paste notes", () => setPasting(true)), ...learnedSome];
     }
     if (draft) {
       // A draft written in Focus leaves her in Focus: she sends it from Gmail, then taps Done.
@@ -1411,12 +1472,8 @@ export default function GuidedDay() {
         ...(openSteps(goal).length > 1 ? [say("Another step", () => setProposedId(nextProposal(goal, start.id)))] : []),
       ];
     }
-    if (screen === "ready") {
-      // A saved home paints at once, but its answers wait for /api/day.
-      if (!fresh) return [];
-      if (choices.length > 0) return [other];
-      return options.length ? [...replies, other] : [say("Let's start", () => tap("Let's start."))];
-    }
+    // The home's actions are the goals panel and the front door (Nov 4), never a model option such as "Plan tomorrow".
+    if (screen === "ready") return [];
     if (screen === "talk") {
       // An offer with no replies left beside it (they went with a booking that was then undone) still has a way home.
       if (options.length) return [...replies, other];
@@ -1457,7 +1514,7 @@ export default function GuidedDay() {
     answers[i]?.run();
   }
 
-  // A home option: its plan's desk, a deadline's new plan, or an email's reply (the options as this render drew them).
+  // A suggestion: a deadline's new plan or an email's reply (the panel's rows as this render drew them).
   function choose(i: number) {
     const choice = latest.current.choices[i];
     if (!choice || !fresh || busy || performance.now() - cardAt.current < 400) return;
@@ -1471,11 +1528,12 @@ export default function GuidedDay() {
       screen={screen}
       view={shown}
       hello={hello}
-      line={screen === "setup" ? setupLine : line}
+      line={screen === "setup" ? setupLine : frontDoor ? FRONT_DOOR : line}
       you={voice.phase === "listening" ? voice.partial : heard}
       goal={goal}
-      goals={openPlans(goal, goals)}
-      choices={screen === "ready" && !onDesk ? choices.map((choice) => choiceCard(choice, goal?.id ?? null, today)) : []}
+      goals={plans}
+      suggestions={choices.map((choice) => suggestionRow(choice, today))}
+      addWords={addWords}
       planning={onDesk ? planning : null}
       proposed={proposed}
       materials={
@@ -1495,7 +1553,7 @@ export default function GuidedDay() {
       typing={typing && screen !== "setup"}
       stamping={stamping}
       leaving={leaving}
-      note={voice.error ? VOICE_NOTE[voice.error] : note}
+      note={note}
       signInFailed={signInFailed}
       busy={busy || voice.phase === "thinking" || (screen === "ready" && !fresh)}
       chips={answers.map((one) => one.label)}
@@ -1516,6 +1574,7 @@ export default function GuidedDay() {
       on={{
         chip,
         choose,
+        addGoal: (text) => void addGoal(text),
         snap(photo) {
           if (fresh) void snapAssignment(photo);
         },
@@ -1523,16 +1582,11 @@ export default function GuidedDay() {
         propose: (stepId) => setProposedId(stepId),
         hear() {
           setHear(false);
-          void voice.speak(`${hello} ${line}`);
+          void voice.speak(`${hello} ${homeLine(line)}`);
         },
         paste: savePaste,
         talk,
-        type() {
-          // Typing ends hands-free, so the mic never opens over the box.
-          talking.current = false;
-          if (voice.phase === "listening") voice.stop();
-          setTyping(true);
-        },
+        type: openTyping,
         closeTyping: () => setTyping(false),
         send: (text) => void voice.submit(text),
         sheet: openSheet,
@@ -1561,7 +1615,7 @@ export default function GuidedDay() {
           void signOut({ redirectTo: "/" });
         },
         canvasSynced: (assignments) => void canvasSynced(assignments),
-        // The Desk's working cards (Vi, Nov 3): each closes the Desk, then does what the home's option does.
+        // The goals panel's rows and the Desk's working cards (Vi, Nov 3): each closes the Desk, then opens its desk.
         openGoal(goalId) {
           setSheet(null);
           const plan = openPlans(goal, goals).find((one) => one.id === goalId);

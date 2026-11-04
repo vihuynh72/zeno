@@ -5,8 +5,9 @@ import type { CanvasAssignment, CanvasBrief, DayEmail, DayEvent, Deadline, FreeS
 import { localDate } from "@/lib/tz";
 import type { VaultFact } from "@/lib/vault";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
-import { barCaption, cardSize, clock, openSteps, type ChoiceCard, type Fact, type Screen } from "@/components/day-flow";
+import { barCaption, cardSize, clock, openSteps, type ChoiceCard, type Fact, type PanelRow, type Screen } from "@/components/day-flow";
 import AccountMenu from "@/components/account-menu";
+import GoalsPanel, { FrontDoor, Suggestions } from "@/components/goals-panel";
 import BookingChip, { type Booking } from "@/components/booking-chip";
 import CanvasSheet from "@/components/canvas-sheet";
 import Desk from "@/components/desk";
@@ -43,8 +44,11 @@ export type DayViewProps = {
   line: string; // Zeno's latest line
   you: string; // the person's words: live while listening, then what they sent
   goal: Goal | null;
-  goals?: Goal[]; // every open plan, for the home's options and the Desk (Vi, Nov 3)
-  choices?: ChoiceCard[]; // the home's goal options, 3 at most
+  goals?: Goal[]; // every open plan, for the goals panel and the Desk (Vi, Nov 3)
+  // shortcut: unused since the Nov 4 goals panel; kept so /preview's fixtures compile until they move to `suggestions`.
+  choices?: ChoiceCard[];
+  suggestions?: PanelRow[]; // the panel's Suggestions: deadlines with no plan and email that asks something (on.choose)
+  addWords?: string | null; // words whose plan couldn't be made, back in the add box
   planning?: { title: string; due: string | null; line: string } | null; // a desk whose plan is still being made
   proposed?: Step | null; // the step Zeno proposes on the desk
   materials?: Materials; // what lies on the desk beside the step
@@ -77,7 +81,8 @@ export type DayViewProps = {
   voice: { phase: VoicePhase; levelRef: { current: number }; muted: boolean; supported: boolean; error: VoiceError };
   on: {
     chip(index: number): void;
-    choose(index: number): void; // a home option: its plan's desk
+    choose(index: number): void; // a suggestion: a deadline's new plan or an email's reply
+    addGoal?(text: string): void; // the add box's words become a plan (POST /api/goal/add)
     snap(photo: File): void; // "Add from a photo": Muse Spark reads an assignment's photo, and its plan's desk opens
     home(): void; // the Zeno mark and "← All goals"
     propose(stepId: string): void; // a todo step tapped on the desk becomes the proposed one
@@ -142,18 +147,14 @@ export default function DayView(props: DayViewProps) {
   const marked = next?.id ?? top?.id ?? (screen === "checkin" ? openSteps(goal)[0]?.id : props.proposed?.id);
   const steps = goal?.steps ?? [];
   const done = steps.filter((s) => s.status === "done").length;
-  const choices = home ? props.choices ?? [] : [];
   const lineOnCard = !top && !next;
-  // "Add from a photo" ends the home's links, with goal options or without them, once its answers are live.
-  const photo = home && screen === "ready" && !props.busy;
   const doneCount = done - (props.leaving ? 1 : 0);
   const pile = (screen === "focus" || screen === "checkin") && doneCount > 0;
   const blocked = voice.error === "blocked";
   // A booking offer that answers Zeno's line (in talk, or after stopping) is the big button; the answers are then links.
-  // Once booked it is a status line, so the first answer is the big button again. On the home the options are the
-  // choice, so its answers are links under them.
+  // Once booked it is a status line, so the first answer is the big button again.
   const lead = screen === "talk" || screen === "wrap" ? props.offers?.[0] : undefined;
-  const big = (lead && lead.state !== "booked") || props.pasting || choices.length > 0 ? null : props.chips[0] ?? null;
+  const big = (lead && lead.state !== "booked") || props.pasting ? null : props.chips[0] ?? null;
   const firstLink = big === null ? 0 : 1;
   const links = props.chips.slice(firstLink);
   const otherOffers = (props.offers ?? []).filter((offer) => offer !== lead);
@@ -162,7 +163,7 @@ export default function DayView(props: DayViewProps) {
   const [firstLine] = useState(props.line);
   const listening = voice.phase === "listening";
   const youHint =
-    screen === "talk" && !props.you && !listening && props.chips.length === 0 && !props.offers?.length
+    screen === "talk" && !props.you && !listening && !props.typing && props.chips.length === 0 && !props.offers?.length
       ? voice.supported && !props.note
         ? "Tap Talk or the keyboard to answer."
         : "Tap the keyboard to answer."
@@ -170,6 +171,11 @@ export default function DayView(props: DayViewProps) {
   const today = useToday();
   const streak = progress?.streak ?? 0;
   const signedIn = screen !== null && screen !== "signed-out" && screen !== "setup";
+  // The goals panel (Nov 4): the left column beside every screen on a laptop, the home under the hello on a phone. With
+  // no goal yet, the home is the front door instead.
+  const planGoals = signedIn ? props.goals ?? [] : [];
+  const panelOn = planGoals.length > 0;
+  const frontDoor = home && screen === "ready" && !panelOn;
   // Sources are found for the step the desk shows (after a Done, the one up next).
   const sourceStep = next ?? top ?? (screen === "checkin" ? openSteps(goal)[0] : props.proposed) ?? null;
 
@@ -178,7 +184,7 @@ export default function DayView(props: DayViewProps) {
   const typeRef = useRef<HTMLButtonElement>(null);
   const photoRef = useRef<HTMLInputElement>(null);
   const pressed = useRef(false);
-  const answersKey = `${screen}:${desk}:${next?.id}:${hear}:${props.chips.join("|")}:${choices.length}:${(props.offers ?? []).map((offer) => offer.state).join(",")}`;
+  const answersKey = `${screen}:${desk}:${next?.id}:${hear}:${props.chips.join("|")}:${frontDoor}:${(props.offers ?? []).map((offer) => offer.state).join(",")}`;
   // Home, a plan's desk or a card: each opens at the top of the page, so the strip and the hello are never scrolled off.
   const place = desk ? `desk:${planning?.title ?? goal?.id}` : home ? "home" : "card";
   useEffect(() => {
@@ -202,35 +208,19 @@ export default function DayView(props: DayViewProps) {
     const { top, bottom } = pills.getBoundingClientRect();
     const dockTop = document.querySelector(".dock")?.getBoundingClientRect().top ?? innerHeight;
     // On a goal's desk the scroll stops where the goal strip would leave the top, so a Done shows its bar fill (live,
-    // Nov 3: Done scrolled the bar off a 1440x900 laptop); the links may then sit in the dock's fade.
+    // Nov 3: Done scrolled the bar off a 1440x900 laptop); the links may then sit in the dock's fade. On a phone the
+    // answers win: no button or chip stays under the dock (Nov 4: Keep going sat under it).
     const strip = document.querySelector<HTMLElement>('main section[aria-label="Goal"]');
-    const room = strip ? Math.max(0, strip.getBoundingClientRect().top - 8) : Infinity;
+    const room = strip && innerWidth >= 640 ? Math.max(0, strip.getBoundingClientRect().top - 8) : Infinity;
     const need = Math.min(bottom - (dockTop - 16), room);
     if (top < innerHeight && need > 0) {
       window.scrollBy({ top: need, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     }
   }, [answersKey]);
 
-  const youLine = props.typing ? (
-    <>
-      {props.you && (
-        <p>
-          <span className="hand text-ink-2">{props.you}</span>
-        </p>
-      )}
-      {/* The box comes back with Zeno's reply, so nothing invites a second send while Zeno thinks. */}
-      {voice.phase !== "thinking" && (
-        <Write
-          busy={props.busy}
-          onSend={on.send}
-          onClose={() => {
-            typeRef.current?.focus();
-            on.closeTyping();
-          }}
-        />
-      )}
-    </>
-  ) : props.you || youHint || listening ? (
+  // The person's words; the text box itself docks above the dock (Nov 4), never on the card.
+  const youLine =
+    props.you || youHint || listening ? (
     <p>
       <span className={`hand text-ink-2 ${listening ? "pen" : ""}`}>{props.you || youHint || "Listening. Tap anywhere to stop."}</span>
     </p>
@@ -250,6 +240,15 @@ export default function DayView(props: DayViewProps) {
     pressed.current = true;
     on.home();
   };
+  const openGoal = (goalId: string) => {
+    pressed.current = true;
+    on.openGoal(goalId);
+  };
+  const addGoal = (text: string) => {
+    pressed.current = true;
+    on.addGoal?.(text);
+  };
+  const pickPhoto = () => photoRef.current?.click();
   const offerChip = (booking: Booking, isBig = false) => (
     <BookingChip key={booking.key} booking={booking} big={isBig} onBook={() => on.book(booking.key)} onUndo={() => on.unbook(booking.key)} />
   );
@@ -264,10 +263,11 @@ export default function DayView(props: DayViewProps) {
   );
 
   return (
-    <div className="flex min-h-dvh flex-col overflow-x-clip bg-desk text-ink">
+    // .page: with the goals panel, a laptop's grid (the panel left, main right) and a phone's home under the hello.
+    <div className="page flex min-h-dvh flex-col overflow-x-clip bg-desk text-ink" data-panel={panelOn || undefined} data-away={!home || undefined}>
       <header className="mx-auto flex w-full max-w-[1224px] items-center justify-between gap-2 px-4 pt-4 sm:px-8 sm:pt-6 short:pt-3">
         <div className="flex items-center gap-3 sm:gap-6">
-          {/* The mark goes home, to the goal options; Desk opens the working cards (Vi, Nov 3). */}
+          {/* The mark goes home, to the goals; Today opens the sheet with Today and Week (Nov 4: "Desk" meant nothing). */}
           {signedIn ? (
             <button type="button" onClick={goHome} className="flex items-center gap-2 rounded-xl text-[24px] font-bold" aria-label="Zeno: all goals">
               {mark}
@@ -277,7 +277,7 @@ export default function DayView(props: DayViewProps) {
           )}
           {signedIn && (
             <button type="button" onClick={() => on.sheet("today")} className="link" data-lead>
-              Desk
+              Today
             </button>
           )}
         </div>
@@ -311,9 +311,19 @@ export default function DayView(props: DayViewProps) {
           {cardLine}
         </p>
 
-        {home ? (
+        {frontDoor ? (
           <>
-            {/* The hello (Vi, Nov 3): her name and Zeno's line on one card, then the goals to choose from. */}
+            {/* No goal yet (Nov 4): what Zeno does, a box to write a goal in, and Make a plan. */}
+            <FrontDoor hello={props.hello} line={props.line} words={props.addWords ?? null} onAdd={addGoal} onPhoto={pickPhoto}>
+              {youLine}
+            </FrontDoor>
+            <div className="w-full max-w-[760px]">
+              <Suggestions rows={props.suggestions ?? []} onPick={choose} />
+            </div>
+          </>
+        ) : home ? (
+          <>
+            {/* The hello (Vi, Nov 3): her name and Zeno's line on one card; the goals are in the panel. */}
             <article className="card hello rise z-10 mt-6 w-full max-w-[760px] short:mt-4">
               <div className="lines">
                 {props.hello && <h1 className="font-bold">{props.hello}</h1>}
@@ -327,37 +337,15 @@ export default function DayView(props: DayViewProps) {
                 {screen !== null && youLine}
               </div>
             </article>
-            {choices.length > 0 && (
-              <section aria-labelledby="choices" className="mt-6 w-full max-w-[760px] short:mt-4">
-                <h2 id="choices" className="text-[20px] leading-8 font-bold">
-                  What are we working on?
-                </h2>
-                {/* A few options, each one big tap target; none is marked as Zeno's pick. */}
-                <ul className="mt-2 flex flex-col gap-2">
-                  {choices.map((choice, i) => (
-                    <li key={`${i}:${choice.title}`}>
-                      <button type="button" data-answer aria-disabled={props.busy} onClick={() => choose(i)} className="choice">
-                        <span className="lines block">
-                          <span className="flex items-baseline justify-between gap-4">
-                            <span className="line-clamp-2 min-w-0 font-bold">{choice.title}</span>
-                            {choice.minutes ? <span className="shrink-0 font-mono text-ink-2">{choice.minutes} min</span> : null}
-                          </span>
-                          <span className="block truncate text-[18px] text-ink-2">{choice.meta}</span>
-                          {choice.last && <span className="block truncate text-[18px]">{choice.last}</span>}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
+            {panelOn && <p className="mt-6 text-center text-ink-2 max-lg:hidden">Pick a goal on the left, or add one.</p>}
           </>
         ) : (
           <>
             {desk && (
               <div className="mt-2 w-full max-w-[760px] sm:mt-4 short:mt-0">
-                <button type="button" onClick={goHome} className="link -ml-1">
-                  ← All goals
+                {/* A phone's way back to the goals; a laptop's goals panel stands in for it. */}
+                <button type="button" onClick={goHome} className="back link -ml-1">
+                  ← Goals
                 </button>
                 <GoalStrip
                   title={planning?.title ?? goal?.title ?? ""}
@@ -479,7 +467,7 @@ export default function DayView(props: DayViewProps) {
             </button>
           )}
           {otherOffers.length > 0 && <div className="flex flex-wrap justify-center gap-2">{otherOffers.map((offer) => offerChip(offer))}</div>}
-          {(links.length > 0 || hear || photo) && (
+          {(links.length > 0 || hear) && (
             <div className="links">
               {/* Each "·" travels with the link after it; on a phone, where the row wraps, space alone sets them apart. */}
               {links.map((label, i) => (
@@ -510,18 +498,6 @@ export default function DayView(props: DayViewProps) {
                     className="link"
                   >
                     Hear Zeno
-                  </button>
-                </span>
-              )}
-              {photo && (
-                <span className="flex items-center gap-2">
-                  {(links.length > 0 || hear) && (
-                    <span aria-hidden="true" className="max-sm:hidden">
-                      ·
-                    </span>
-                  )}
-                  <button type="button" onClick={() => photoRef.current?.click()} className="link">
-                    Add from a photo
                   </button>
                 </span>
               )}
@@ -572,13 +548,51 @@ export default function DayView(props: DayViewProps) {
         )}
       </main>
 
+      {panelOn && (
+        <GoalsPanel
+          goals={planGoals}
+          suggestions={props.suggestions ?? []}
+          openId={desk && !planning ? goal?.id ?? null : null}
+          proposed={props.proposed}
+          today={today}
+          words={props.addWords ?? null}
+          onAdd={addGoal}
+          onOpen={openGoal}
+          onSuggest={choose}
+          onPhoto={pickPhoto}
+        />
+      )}
+
       {/* First sign-in is one card and its links, so the dock waits until it's done. Talk, and typing one tap beside it. */}
       {signedIn && (
         <nav aria-label="Zeno" className="dock">
+          {/* The text box docks here, in one place above Talk, and closes after Send (Nov 4). */}
+          {props.typing && (
+            <Write
+              busy={props.busy}
+              onSend={(text) => {
+                on.send(text);
+                typeRef.current?.focus();
+                on.closeTyping();
+              }}
+              onClose={() => {
+                typeRef.current?.focus();
+                on.closeTyping();
+              }}
+            />
+          )}
           <div className="dock-row">
             <VoiceRing phase={voice.phase} levelRef={voice.levelRef} blocked={blocked} onClick={on.talk} />
             {/* A blocked mic makes typing the way that still works, so it fills in ink. */}
-            <button ref={typeRef} type="button" onClick={on.type} className="kbd" aria-label="Type to Zeno" data-lead={blocked || undefined}>
+            <button
+              ref={typeRef}
+              type="button"
+              onClick={props.typing ? on.closeTyping : on.type}
+              className="kbd"
+              aria-label="Type to Zeno"
+              aria-expanded={props.typing}
+              data-lead={blocked || undefined}
+            >
               <svg viewBox="0 0 24 24" className="h-6 w-6" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="2.5" y="6" width="19" height="12" rx="2" />
                 <path d="M6.5 10h.01M10 10h.01M13.5 10h.01M17 10h.5M7.5 14h9" />
@@ -646,7 +660,7 @@ function Said({ text, fade }: { text: string; fade: boolean }) {
   );
 }
 
-// The box stays, empty and focused, after each send, so the conversation can go on.
+// The text box, a slip of card docked above Talk (Nov 4): Send closes it, so Zeno's answer has the screen.
 function Write({ busy, onSend, onClose }: { busy: boolean; onSend(text: string): void; onClose(): void }) {
   const box = useRef<HTMLTextAreaElement>(null);
   const send = () => {
@@ -654,11 +668,9 @@ function Write({ busy, onSend, onClose }: { busy: boolean; onSend(text: string):
     // While Zeno is busy the words wait in the box for the next Enter, so two turns never run at once.
     if (!box.current || !text || busy) return;
     onSend(text);
-    box.current.value = "";
-    box.current.focus();
   };
   return (
-    <div className="flex items-start gap-4">
+    <div className="slip">
       <textarea
         ref={box}
         autoFocus
@@ -677,7 +689,7 @@ function Write({ busy, onSend, onClose }: { busy: boolean; onSend(text: string):
           }
         }}
       />
-      <button type="button" aria-disabled={busy} onClick={send} className="pill pill-small pill-ink send shrink-0">
+      <button type="button" aria-disabled={busy} onClick={send} className="pill pill-small pill-ink shrink-0">
         Send
       </button>
     </div>

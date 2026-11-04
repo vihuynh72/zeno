@@ -466,3 +466,59 @@ export function groupFacts(facts: Fact[]): { group: MemoryGroup; name: string; f
     (entry) => entry.facts.length > 0,
   );
 }
+
+// ---------- The goals panel (Nov 4: a sidebar on a laptop, the home on a phone; docs/PLAN-NOV4-GOALS.md, shell) ----------
+
+// The panel's goals: the open plans by due date (undated last), then by title, so the order holds across reloads and
+// never follows which plan is current.
+export const panelGoals = (plans: Goal[]) =>
+  [...plans].sort((a, b) => byDue(a.due ?? null, b.due ?? null) || a.title.localeCompare(b.title) || (a.id < b.id ? -1 : 1));
+
+// "Suggestions" under the goals: deadlines due within 7 days that no open plan covers, soonest first, then the newest
+// email that asks something and has no plan here yet (`handled`: email ids). 3 at most; the email keeps its slot.
+export function panelSuggestions(plans: Goal[], deadlines: Deadline[], emails: DayEmail[], today: string, handled: string[] = []): Choice[] {
+  const soon = deadlines
+    .filter((deadline, i) => {
+      const days = daysFrom(today, deadline.date);
+      const titles = [...plans.map((plan) => plan.title), ...deadlines.slice(0, i).map((one) => one.title)];
+      return days >= 0 && days <= 7 && !titles.some((title) => sameTitle(title, deadline.title));
+    })
+    .sort((a, b) => byDue(a.date, b.date));
+  const list: Choice[] = soon.map((deadline) => ({ kind: "deadline", deadline }));
+  const mail = emails.find((email) => email.asks === true && email.id && !handled.includes(email.id));
+  return mail ? [...list.slice(0, 2), { kind: "mail", email: mail }] : list.slice(0, 3);
+}
+
+// "due Thu Nov 12 · 9 days left", "due today", "due tomorrow", or "was due Mon Nov 2" once it has passed, from
+// YYYY-MM-DD dates; "" before the browser's clock.
+export function dueLine(due: string, today: string): string {
+  const days = daysFrom(today, due);
+  if (Number.isNaN(days)) return "";
+  if (days === 0) return "due today";
+  if (days === 1) return "due tomorrow";
+  const date = new Date(`${due}T12:00:00Z`);
+  const named = date.toLocaleDateString("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" }).replace(",", "");
+  return days < 0 ? `was due ${named}` : `due ${named} · ${days} days left`;
+}
+
+export type PanelRow = { title: string; aside: string; line: string; when: string };
+
+// A goal row's words: its next step ("Now:" while it runs; the desk's own pick for the open goal, so the two never
+// disagree), and when it is due or how often it repeats.
+export function goalRow(goal: Goal, today: string, proposed?: Step | null): PanelRow {
+  const open = openSteps(goal);
+  const next = open.find((step) => step.id === proposed?.id) ?? open[0];
+  return {
+    title: goal.title,
+    aside: "",
+    line: next ? `${next.status === "doing" ? "Now" : "Next"}: ${next.title.replace(/\.+$/, "")}${next.minutes ? ` · ${next.minutes} min` : ""}` : "",
+    when: [goal.rhythm?.trim(), goal.due ? dueLine(goal.due, today) : ""].filter(Boolean).join(" · "),
+  };
+}
+
+// A suggestion row's words: a deadline to plan, or an email to answer in 2 minutes.
+export function suggestionRow(choice: Choice, today: string): PanelRow {
+  if (choice.kind === "mail") return { title: `Answer ${sender(choice.email.from)}`, aside: "2 min", line: choice.email.subject.trim(), when: "" };
+  if (choice.kind === "deadline") return { title: choice.deadline.title, aside: "Plan it", line: "", when: dueLine(choice.deadline.date, today) };
+  return goalRow(choice.goal, today);
+}
