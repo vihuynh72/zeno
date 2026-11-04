@@ -58,6 +58,7 @@ import {
   laterBlock,
   laterMinutes,
   mailPlan,
+  namedStep,
   nextFewLine,
   nextProposal,
   nextScreen,
@@ -847,6 +848,9 @@ export default function GuidedDay() {
       const kept = now.chosen !== null && openSteps(res.goal).some((one) => one.id === now.chosen) ? now.chosen : null;
       setProposedId(/\b(smaller|too big|first piece)\b/i.test(text) && now.chosen !== null ? addedStep(now.goal, res.goal) : kept);
     }
+    // On the desk, the step Zeno's line names is the one Start starts (round 5: the line and the button disagreed).
+    const named = next === "ready" && (now.view === "desk" || changed) ? namedStep(res.reply, res.goal) : null;
+    if (named) setProposedId(named.id);
     // Goals Zeno saved for later (several named at once, or one named mid-step) join the list now, not at the next load:
     // the turn's answer carries only the current one (found in review, Nov 4).
     if ((res.actions ?? []).some((one) => one.type === "goal-set" && one.label !== res.goal?.title)) void getJson<DayResponse>("/api/day").then(joinGoals);

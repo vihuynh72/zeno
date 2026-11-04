@@ -173,6 +173,17 @@ export function mailPlan(email: DayEmail | null) {
 export const proposedStep = (goal: Goal | null, id: string | null): Step | null =>
   openSteps(goal).find((step) => step.id === id) ?? openSteps(goal)[0] ?? null;
 
+// The open step Zeno's last sentence names, so the big button starts the step the line proposes (round 5: "Start with
+// List the 10 products?" sat over a Start for another step). Only one whole title counts; null for none or several.
+export function namedStep(line: string, goal: Goal | null): Step | null {
+  const last = titleKey(line.trim().split(/(?<=[.!?])\s+/).at(-1) ?? "");
+  const named = openSteps(goal).filter((step) => {
+    const title = titleKey(step.title);
+    return title.split(" ").length >= 2 && ` ${last} `.includes(` ${title} `);
+  });
+  return named.length === 1 ? named[0] : null;
+}
+
 // "Another step": the open step after the proposed one, round again after the last.
 export function nextProposal(goal: Goal | null, id: string | null): string | null {
   const open = openSteps(goal);

@@ -11,7 +11,7 @@ const flow = await import("./day-flow.ts");
 const { addHeard, asks, canvasFor, cardSize, checkinMinute, clock, dayPart, doneLine, dueLabel, FOCUS, foundLine, greeting, groupFacts } = flow;
 const { isEmailStep, isNotes, laterBlock, laterMinutes, nextScreen, openingReusable, openingSig, openSteps, quickReplies } = flow;
 const { replanOnCanvas, slotLabel, soonEvent, streakLine, withStatus } = flow;
-const { addedStep, barCaption, duration, goalRow, mailPlan, nextProposal, openPlans, proposedStep, realMinutes, resumePlan, runningStep } = flow;
+const { addedStep, barCaption, duration, goalRow, mailPlan, namedStep, nextProposal, openPlans, proposedStep, realMinutes, resumePlan, runningStep } = flow;
 const { sameTitle, spoken, stoppedLine, todayLine, untilNext } = flow;
 const { asksBig, extraReplies, goalLine, isResearchStep, keepClock, nextFewLine, splitLater } = flow;
 
@@ -439,6 +439,16 @@ assert.deepEqual(mailPlan(null), { title: "Answer an email", steps: [{ title: "R
   assert.equal(back(null, []), null);
   assert.deepEqual(back(null, [exam, paper]), ["pp", "p2", true], "no current goal: the urgent one");
   assert.equal(back(null, [exam]), null, "no current goal and nothing urgent: pick on the left");
+}
+
+// The step Zeno's last sentence names leads, so the line and the big button agree (round 5).
+{
+  const shop = mk("sh", "Open my Etsy shop", null, step("k1", "todo", { title: "Set shop policies" }), step("k2", "todo", { title: "List the 10 products" }), step("k3", "done", { title: "Pick a shop name" }));
+  assert.equal(namedStep("Digital it is. Start with List the 10 products?", shop)?.id, "k2");
+  assert.equal(namedStep("Start with list the 10 products!", shop)?.id, "k2", "any case and punctuation");
+  assert.equal(namedStep("List the 10 products comes later. Ready?", shop), null, "only the last sentence");
+  assert.equal(namedStep("Pick a shop name again?", shop), null, "a done step never leads");
+  assert.equal(namedStep("Start now?", shop), null);
 }
 
 // The desk proposes the first open step, or the one she tapped; Another step goes round the open ones.
