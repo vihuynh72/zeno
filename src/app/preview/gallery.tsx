@@ -1,10 +1,10 @@
 "use client";
 
 import { useRef, useSyncExternalStore } from "react";
-import type { CalendarBlock, Choice, Goal, Memory, Progress, Step } from "@/lib/day";
+import type { CalendarBlock, Goal, Memory, Progress, Step } from "@/lib/day";
 import type { VaultFact } from "@/lib/vault";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
-import { checkinMinute, FOCUS, foundLine, slotLabel, suggestionRow } from "@/components/day-flow";
+import { checkinMinute, feedStack, FOCUS, foundLine, slotLabel, suggestionRow, type StackInput } from "@/components/day-flow";
 import type { Booking } from "@/components/booking-chip";
 import DayView, { type DayViewProps, type Today } from "@/components/day-view";
 import { CANVAS_DEADLINES, CANVAS_MEMORIES, SAMPLE_CANVAS } from "./canvas-samples";
@@ -182,7 +182,17 @@ const LAB: Goal = {
 const QUIZ = { title: "BIO 101: Quiz 6 (Ch. 6)", date: dayFrom(1), daysLeft: 1 };
 const ASKING = TODAY.emails[0];
 const today = () => dayFrom(0);
-const suggestions = (...choices: Choice[]) => choices.map((choice) => suggestionRow(choice, today()));
+// Suggestions as the page ranks them, its top 3.
+const suggestions = (input: Partial<StackInput>) =>
+  feedStack({ plans: [], deadlines: [], emails: [], handled: [], apps: [], canvas: [], memories: [], kept: [], today: today(), timeZone: zone(), now: new Date(), ...input })
+    .slice(0, 3)
+    .map((card) => suggestionRow(card, today()));
+// The stack's other sources: an app's item, a Canvas assignment, and what Zeno noticed yesterday.
+const STACK: Partial<StackInput> = {
+  apps: [{ app: "notion", id: "n1", title: "Club budget for Friday", url: "https://www.notion.so/sample", kind: "page", due: dayFrom(5), detail: null }],
+  canvas: [{ id: "c1", course: "CHEM 1A", title: "Lab 7 prelab", due: `${dayFrom(1)}T23:59:00`, kind: "assignment", url: "https://school.instructure.com/sample" }],
+  memories: [{ id: "noticed-1", text: "You get more done before noon.", createdAt: ago(60 * 20), group: "patterns", source: "pattern" }],
+};
 const HOME_LINE = "You finished two essay steps yesterday. You're free until Biology lecture at 1:30.";
 // The desk's Start and its links, for a plan with more than one step open.
 const DESK_CHIPS = (minutes: number) => [`Start · ${minutes} min`, "Skip", "Adjust"];
@@ -238,7 +248,7 @@ const STATES: Record<string, Fixture> = {
   "home-goals": {
     line: HOME_LINE,
     goals: [ESSAY, LAB],
-    suggestions: suggestions({ kind: "deadline", deadline: QUIZ }),
+    suggestions: suggestions({ deadlines: [QUIZ] }),
     chips: [],
     hear: true,
   },
@@ -246,9 +256,26 @@ const STATES: Record<string, Fixture> = {
   "home-goals-mail": {
     line: HOME_LINE,
     goals: [ESSAY, LAB],
-    suggestions: suggestions({ kind: "deadline", deadline: QUIZ }, { kind: "mail", email: ASKING }),
+    suggestions: suggestions({ deadlines: [QUIZ], emails: [ASKING] }),
     chips: [],
   },
+  // The stack (Vi, Nov 4): a Canvas assignment due tomorrow, the email, the essay's next step (due in 3 days); an app's
+  // item and what Zeno noticed wait under them.
+  "home-stack": {
+    line: HOME_LINE,
+    goals: [ESSAY, LAB],
+    suggestions: suggestions({ ...STACK, plans: [ESSAY, LAB], emails: [ASKING] }),
+    chips: [],
+  },
+  // Further down the stack: the app's item and what Zeno noticed, with Keep and Forget.
+  "home-stack-noticed": {
+    line: HOME_LINE,
+    goals: [ESSAY, LAB],
+    suggestions: suggestions({ ...STACK, canvas: [] }),
+    chips: [],
+  },
+  // Everything hidden or done.
+  "home-caught-up": { line: HOME_LINE, goals: [ESSAY, LAB], suggestions: [], chips: [] },
   // Nothing open, nothing due this week, no asking mail: Zeno's line and its quick replies.
   "home-empty": { line: "Nothing is due this week, and your afternoon is open.", chips: chips("Start something new", "Plan my week") },
   // A goal's desk: the strip, Zeno's next step with Start, the steps, and what lies on the desk.

@@ -58,11 +58,11 @@ export async function GET() {
     // The day is kept in the browser, and codes are kept nowhere: code and bank mail shows that it came, not what it says,
     // and never asks; its row opens it in Gmail, never in Zeno (Nov 4: it couldn't be clicked). Mail the person sent never
     // asks either.
-    emails: context.emails.map(({ id, from, subject, snippet, unread }) => {
+    emails: context.emails.map(({ id, from, subject, snippet, unread, at }) => {
       const address = addressOf(from);
       return sensitiveEmail({ from, subject, snippet })
-        ? { id, from, address, subject: scrub(subject), snippet: "", unread, asks: false, sensitive: true }
-        : { id, from, address, subject, snippet, unread, asks: asks(subject, snippet, address === email.toLowerCase()) };
+        ? { id, from, address, subject: scrub(subject), snippet: "", unread, asks: false, sensitive: true, at }
+        : { id, from, address, subject, snippet, unread, asks: asks(subject, snippet, address === email.toLowerCase()), at };
     }),
     unreadEmail: context.emails.filter((item) => item.unread).length,
     mailUrl: `https://mail.google.com/mail/?authuser=${encodeURIComponent(email)}`,

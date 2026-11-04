@@ -39,6 +39,7 @@ import type {
   Turn,
 } from "@/lib/day";
 import { canvasBriefs, canvasList, readCanvas, syncCanvas } from "@/lib/canvas-store";
+import type { AppItem } from "@/lib/connect";
 import { listenAuto, type ListenHandlers } from "@/lib/listen";
 import { audioContext, playDone, wakeAudio } from "@/lib/speak";
 import { formatTime, localDate } from "@/lib/tz";
@@ -72,7 +73,8 @@ import {
   openingSig,
   openPlans,
   openSteps,
-  panelSuggestions,
+  feedStack,
+  hiddenOn,
   proposedStep,
   quickReplies,
   replanOnCanvas,
@@ -87,6 +89,7 @@ import {
   untilNext,
   withStatus,
   type Fact,
+  type Hidden,
   type Screen,
 } from "@/components/day-flow";
 import type { Booking } from "@/components/booking-chip";
@@ -221,6 +224,16 @@ function readMailGoals(account: string): Record<string, string> {
     return Object.fromEntries(Object.entries(map).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
   } catch {
     return {};
+  }
+}
+
+// The Suggestions this device hid today, and the noticed ones she kept (hiddenOn). Cleared at sign out.
+const hiddenKey = (account: string) => `zeno.hidden.${account}`;
+function readHidden(account: string, today: string): Hidden {
+  try {
+    return hiddenOn(JSON.parse(readLocal(hiddenKey(account)) ?? "null"), today);
+  } catch {
+    return hiddenOn(null, today);
   }
 }
 
@@ -379,9 +392,28 @@ export default function GuidedDay() {
   const [toast, setToast] = useState<{ text: string; undo?: { id: string; current: boolean } } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const today = useToday();
-  // The goals panel (Nov 4): every open plan, and as Suggestions the deadlines and asking email with no plan yet.
+  const [hidden, setHidden] = useState<Hidden | null>(null); // Suggestions hidden today and noticed ones kept (readHidden)
+  // shortcut: no app items until the connectors round fills DayView's appItems; pass the same list here then.
+  const appItems: AppItem[] = [];
+  // The goals panel (Nov 4): every open plan. Suggestions (Vi, Nov 4): the stack ranked as the app opened, less what she
+  // hid today, 3 at a time; this device's Canvas list only once /api/day said whose it is.
   const plans = openPlans(goal, goals);
-  const choices = panelSuggestions(plans, base?.deadlines ?? [], day?.emails ?? [], today, Object.values(mailGoals));
+  const hiddenNow = hiddenOn(hidden, today);
+  const choices = feedStack({
+    plans,
+    deadlines: base?.deadlines ?? [],
+    emails: day?.emails ?? [],
+    handled: Object.values(mailGoals),
+    apps: appItems,
+    canvas: (daySet && canvasOn ? canvasList(daySet.account) : null) ?? [],
+    memories: Array.isArray(memories) ? memories : [],
+    kept: hiddenNow.kept,
+    today,
+    timeZone: zone(),
+    now: new Date(booted?.at ?? 0),
+  })
+    .filter((card) => !hiddenNow.ids.includes(card.id))
+    .slice(0, 3);
   const proposed = proposedStep(goal, proposedId);
   // Focus and the screen after Done are always on the desk; the card and talk are while its plan is made or has a step
   // open; otherwise the home.
@@ -614,6 +646,9 @@ export default function GuidedDay() {
     setCanvasOn(Boolean(readCanvas(data.account)));
     setMailGoals(readMailGoals(data.account));
     setNotes(readNotes(data.account));
+    setHidden(readHidden(data.account, localDate(zone())));
+    // What Zeno noticed joins the Suggestions; a failed read waits for the Memory sheet's own.
+    void getJson<MemoryResponse>("/api/memory").then((res) => res.state === "ok" && setMemories(res.memories));
     if (moved.current) return false;
     setGoal(plan);
     setGoals(null);
@@ -1905,13 +1940,30 @@ export default function GuidedDay() {
     answers[i]?.run();
   }
 
-  // A suggestion: a deadline's new plan or an email's reply (the panel's rows as this render drew them).
+  // A suggestion (the panel's rows as this render drew them): a goal opens with its step ready (Start stays her tap), a
+  // deadline gets a new plan, an email its reply, and an app's item becomes a goal as the add box's words do.
   function choose(i: number) {
     const choice = latest.current.choices[i];
     if (!choice || !fresh || busy || performance.now() - cardAt.current < 400) return;
-    if (choice.kind === "plan") void openPlan(choice.goal);
+    if (choice.kind === "step") void openPlan(choice.goal);
     else if (choice.kind === "deadline") void planDeadline(choice.deadline);
-    else void answerMail(choice.email);
+    else if (choice.kind === "mail") void answerMail(choice.email);
+    // shortcut: POST /api/goal/add takes no `source` yet; send the item's app with it once the connectors round adds it.
+    else if (choice.kind === "app") void addGoal(`${choice.item.title}${choice.item.detail ? ` (${choice.item.detail})` : ""}${choice.item.due ? `, due ${choice.item.due}` : ""}`);
+  }
+
+  // A suggestion's ✕ hides it for today on this device; on what Zeno noticed it forgets it, as Memory's Forget does (the
+  // row comes back with a note if that fails). Keep takes a noticed card out of the stack for good.
+  function hideCard(id: string, keep = false) {
+    const card = latest.current.choices.find((one) => one.id === id);
+    if (card?.kind === "noticed" && !keep) return forget({ id: card.memory.id, text: card.memory.text, group: card.memory.group, device: false });
+    const mine = account();
+    if (!mine) return;
+    // Read again, so two quick ✕ both stay hidden.
+    const was = readHidden(mine, localDate(zone()));
+    const next = keep ? { ...was, kept: [...was.kept, id] } : { ...was, ids: [...was.ids, id] };
+    writeLocal(hiddenKey(mine), JSON.stringify(next));
+    setHidden(next);
   }
 
   return (
@@ -1923,7 +1975,8 @@ export default function GuidedDay() {
       you={voice.phase === "listening" ? voice.partial : heard}
       goal={goal}
       goals={plans}
-      suggestions={choices.map((choice) => suggestionRow(choice, today))}
+      // Nothing claims she is caught up before the day is read.
+      suggestions={fresh || choices.length > 0 ? choices.map((choice) => suggestionRow(choice, today)) : null}
       addWords={addWords}
       planning={onDesk ? planning : null}
       resume={
@@ -1983,6 +2036,8 @@ export default function GuidedDay() {
       on={{
         chip,
         choose,
+        hide: (id) => hideCard(id),
+        keep: (id) => hideCard(id, true),
         // Before /api/day answers, the words wait in the box (as every other action waits for it).
         addGoal: (text) => (fresh ? void addGoal(text) : setAddWords(text)),
         closeAdd() {
@@ -2021,9 +2076,9 @@ export default function GuidedDay() {
         },
         signOut() {
           // The next person at a shared computer must not read anyone's private facts or Canvas link, even before
-          // /api/day said whose browser this is (keys as in src/lib/vault.ts and src/lib/canvas-store.ts).
+          // /api/day said whose browser this is (keys as in src/lib/vault.ts and src/lib/canvas-store.ts), nor what they hid.
           try {
-            for (const key of Object.keys(localStorage)) if (/^zeno\.(vault|canvas)\.|^zeno:notes:/.test(key)) localStorage.removeItem(key);
+            for (const key of Object.keys(localStorage)) if (/^zeno\.(vault|canvas|hidden)\.|^zeno:notes:/.test(key)) localStorage.removeItem(key);
           } catch {
             // Unreadable storage holds nothing to clear.
           }
