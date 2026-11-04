@@ -130,7 +130,7 @@ function Connect() {
                     Copy
                   </button>
                 </div>
-                <code className="block font-mono text-[16px] leading-6 break-all whitespace-pre-wrap">{row.text}</code>
+                <code className="block font-mono break-all whitespace-pre-wrap">{row.text}</code>
               </div>
             ))}
           </div>
