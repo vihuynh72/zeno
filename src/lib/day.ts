@@ -24,7 +24,9 @@ export type Step = {
 };
 
 // The one goal Zeno is helping with now; steps are in roadmap order. due is YYYY-MM-DD when known.
-export type Goal = { id: string; title: string; steps: Step[]; due?: string | null };
+// rhythm marks a goal that keeps going (Vi, Nov 3: a rolling plan): a short line such as "3 runs a week". Its steps are
+// the next few only; when they are done, POST /api/goal/next plans the next few. Null or missing: a project that ends.
+export type Goal = { id: string; title: string; steps: Step[]; due?: string | null; rhythm?: string | null };
 
 // The grouped profile, in the order Memory shows it.
 export const MEMORY_GROUPS = ["about", "routines", "projects", "interests", "people", "work-style", "patterns"] as const;
@@ -105,6 +107,8 @@ export type DayResponse =
       // Every open plan (the current one first, then by due date, at most 5): the home's goal options, the Desk's Goals
       // card and the Week (Vi, Nov 3). Missing from days saved before Nov 3.
       goals?: Goal[];
+      // Steps finished this week (Monday to now, the person's time zone), newest first, for the Week (Nov 4).
+      doneThisWeek?: DoneStep[];
       sources: { calendar: SourceState; email: SourceState; goals: SourceState };
       // Today's events from all of the person's calendars, Zeno blocks marked.
       events: DayEvent[];
@@ -186,7 +190,8 @@ export type EmailDraft = { to: string; subject: string; body: string; url: strin
 // POST /api/goal body: { title, due?, steps: { title, minutes }[], start?: boolean }. Saves the plan without
 // the model; start: true also starts step 1, so a tap starts the timer at once.
 export type GoalResponse =
-  | { state: "ok"; goal: Goal }
+  // others: more goals made from the same words (POST /api/goal/add, when one message named several goals).
+  | { state: "ok"; goal: Goal; others?: Goal[] }
   | { state: "signed-out" | "bad-request" | "error" };
 
 // POST /api/prep body: { stepId; canvas?: CanvasBrief }; up to 3 sources, found from the goal and step titles, and the
@@ -327,3 +332,17 @@ export type CompanionNow =
     }
   | { state: "unauthorized" | "error" };
 // POST /api/companion/done (token auth) finishes the running step and answers with CompanionNow for what comes next.
+
+// ---------- The Nov 4 overnight round: goals for anyone (docs/PLAN-NOV4-GOALS.md) ----------
+
+// POST /api/goal/add body: the person's own words for a goal ("Run a 5K by January 10, I've never run"). Muse turns
+// them into a short title, a due date when one is said, a rhythm when the goal keeps going, and the first steps, and
+// saves it as the current plan. Answers with GoalResponse; bad-request when the words hold no goal.
+export type AddGoalRequest = { text: string };
+
+// POST /api/goal/next body: a goal that keeps going (rhythm set) gets its next few steps from what is done so far.
+// Answers with GoalResponse.
+export type NextStepsRequest = { id: string };
+
+// A finished step for the Week: its title, its goal's title, when it was done (ISO) and its real minutes when known.
+export type DoneStep = { title: string; goal: string; doneAt: string; minutes: number | null };
