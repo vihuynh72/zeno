@@ -61,8 +61,10 @@ then review fixes, Claude's own Chrome test, round 2 of the simulation and its f
   left" on a deadline's day; no plan opens on "pick your days"; Zeno never says it tracks or keeps things.
 - **After round 5:** coming back's Start works when the card's goal is already the current one (a one-goal account; it
   did nothing in `7ae25a2`); on the desk, Start starts the step Zeno's line names; Zeno says it can't set reminders.
-- **Production:** `bf171f8`, deployed eight times overnight (`64043a5`, `65edf91`, `2b3377f`, `2a91a12`, `33cec97`,
-  `7ae25a2`, `3e612ea`, `bf171f8`); no runtime errors in production. Each deploy passed all 31 checks, tsc, eslint and
+- **After round 5, last:** the first box opens with "Type your goal here, like:"; a finished step's notes stay under
+  the next step until it has its own; a sidebar's due line may wrap to two lines.
+- **Production:** `749af72`, deployed nine times overnight (`64043a5`, `65edf91`, `2b3377f`, `2a91a12`, `33cec97`,
+  `7ae25a2`, `3e612ea`, `bf171f8`, `749af72`); no runtime errors in production. Each deploy passed all 31 checks, tsc, eslint and
   the build.
 - **Questions for Vi (from the simulation):** Make it smaller: keep the inserted piece (your design) or split the step
   so the plan never grows (7 of 10 asked)? Coming back: keep "a goal due within 2 days leads" (Claude's call tonight)?
