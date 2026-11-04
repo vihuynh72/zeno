@@ -84,6 +84,13 @@ assert.equal(
   ].join("\n"),
 );
 assert.equal(goalsText([], null), "No open goals. plan_goal makes one.");
+// A goal that keeps going never runs out (Nov 4): with no step left, apps say nothing is next yet and to open Zeno, which
+// plans the next few (no model call here); its rhythm shows beside its title. The Mac clock gets no step and the goal's
+// summary, which it shows above Open Zeno.
+const runs: Goal = { id: "g3", title: "Run a 5K", rhythm: "3 runs a week", due: null, steps: [step("r", "done", 25)] };
+assert.equal(nextText(runs, now), "Nothing next yet in Run a 5K: open Zeno to plan the next few.");
+assert.equal(goalsText([runs], "g3", now), "Run a 5K · 3 runs a week · 1 of 1 done · current\n- Nothing next yet in Run a 5K: open Zeno to plan the next few.");
+assert.deepEqual(nowOf(runs), { state: "ok", step: null, goal: { title: "Run a 5K", done: 1, total: 1, due: null } });
 assert.deepEqual(
   APP_TOOLS.map((tool) => tool.name),
   ["list_goals", "next_step", "plan_goal", "start_step", "finish_step"],
@@ -93,7 +100,7 @@ if (!process.env.DATABASE_URL) {
   console.log("app-token check: pure parts ok; the database parts need DATABASE_URL (node --env-file=.env.local).");
 } else {
   const { getSql } = await import("./db.ts");
-  const { currentGoal, openGoals } = await import("./goals.ts");
+  const { currentGoal, openGoals, setGoal } = await import("./goals.ts");
   const { localDate } = await import("./tz.ts");
   const sql = getSql();
   const maya = `app-token-check-${crypto.randomUUID()}@zeno.local`;
@@ -196,6 +203,16 @@ if (!process.env.DATABASE_URL) {
     assert.equal((await openGoals(maya)).flatMap((one) => one.steps).filter((one) => one.status === "doing").length, 1, "one running step");
     assert.equal((await run(token, "finish_step")).text, "Done: Do the first part. That's all of PHIL 134 essay.");
     assert.equal((await currentGoal(maya))?.id, quiz.id, "the paused plan comes back");
+
+    // A goal that keeps going stays current and listed when its last planned session is finished from an app (Nov 4: it
+    // was marked done and vanished); Zeno plans its next few when it opens there.
+    const rolling = await setGoal(maya, "Run a 5K", [{ title: "Walk-jog 20 minutes", minutes: 20 }], null, { rhythm: "3 runs a week" });
+    await run(token, "start_step", { step_id: rolling.steps[0].id });
+    assert.equal((await run(token, "finish_step")).text, "Done: Walk-jog 20 minutes. Nothing next yet in Run a 5K: open Zeno to plan the next few.");
+    assert.equal((await currentGoal(maya))?.id, rolling.id, "still current");
+    assert.equal((await run(token, "next_step")).text, "Nothing next yet in Run a 5K: open Zeno to plan the next few.");
+    assert.match((await run(token, "list_goals")).text, /^Run a 5K · 3 runs a week · 1 of 1 done · current\n- Nothing next yet in Run a 5K: open Zeno to plan the next few\.\n\nCalc quiz prep/);
+    assert.deepEqual(await companionNow(maya), { state: "ok", step: null, goal: { title: "Run a 5K", done: 1, total: 1, due: null } });
 
     // At most 20 new plans a day, per person.
     await sql`INSERT INTO goals (user_email, title, status) SELECT ${maya}, 'Filler ' || n, 'done' FROM generate_series(1, ${PLANS_PER_DAY}) n`;

@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { cleanHeard, newPattern, OPENING_SCHEMA, openingPrompt, parseOpening, systemPrompt, type Refs, withoutRefs } from "@/lib/agent";
+import { cleanHeard, newPattern, OPENING_SCHEMA, openingNews, openingPrompt, parseOpening, systemPrompt, type Refs, withoutRefs } from "@/lib/agent";
 import { aiConfigured, askModel } from "@/lib/ai";
 import { ruleOpening, ruleOptions } from "@/lib/brief";
 import { loadUserContext } from "@/lib/context";
@@ -43,7 +43,9 @@ async function opening(privateFacts: string[], heard: string[] = []) {
   const pattern = newPattern(context.memories, heard, timeZone);
   const rule = () =>
     NextResponse.json({ state: "ok", opening: ruleOpening(context, finished), options: ruleOptions(context), pick: null } satisfies OpeningResponse);
-  if (!aiConfigured()) return rule();
+  // Nothing real to say: no model call, and the rule line GET /api/day already gave (empty, or naming a source that
+  // failed), so the home keeps the same line and its hello.
+  if (!aiConfigured() || !openingNews(context, finished, new Date(), pattern?.text)) return rule();
 
   try {
     const refs: Refs = new Map();

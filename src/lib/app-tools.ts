@@ -32,12 +32,18 @@ export const stepLine = (step: Step, now = new Date()) =>
     .join(" · ");
 
 export const goalLine = (goal: Goal) =>
-  [goal.title, `${doneOf(goal)} of ${goal.steps.length} done`, goal.due && `due ${goal.due}`].filter(Boolean).join(" · ");
+  [goal.title, goal.rhythm, `${doneOf(goal)} of ${goal.steps.length} done`, goal.due && `due ${goal.due}`].filter(Boolean).join(" · ");
 
-const stepsText = (goal: Goal, now = new Date()) =>
-  openOf(goal).map((step) => `- ${step.status === "doing" ? "running" : "todo"}: ${stepLine(step, now)}`);
+// A goal that keeps going never runs out (Nov 4): with no step left, Zeno plans its next few when it opens there. No model
+// call here.
+const planNext = (goal: Goal) => `Nothing next yet in ${goal.title}: open Zeno to plan the next few.`;
 
-// list_goals: each open plan (openGoals' order and limit of 5) with its open steps.
+const stepsText = (goal: Goal, now = new Date()) => {
+  const open = openOf(goal).map((step) => `- ${step.status === "doing" ? "running" : "todo"}: ${stepLine(step, now)}`);
+  return open.length === 0 && goal.rhythm ? [`- ${planNext(goal)}`] : open;
+};
+
+// list_goals: every open plan, in openGoals' order, with its open steps.
 export function goalsText(goals: Goal[], currentId: string | null, now = new Date()): string {
   if (goals.length === 0) return "No open goals. plan_goal makes one.";
   return goals
@@ -58,7 +64,7 @@ export function nextText(raw: Goal | null, now = new Date()): string {
   const goal = settled(raw, now.getTime());
   if (!goal) return "No current goal. list_goals shows your goals, and plan_goal makes one.";
   const step = openOf(goal)[0];
-  if (!step) return `Every step of ${goal.title} is done. plan_goal makes a new goal.`;
+  if (!step) return goal.rhythm ? planNext(goal) : `Every step of ${goal.title} is done. plan_goal makes a new goal.`;
   return `${step.status === "doing" ? "Running" : "Next"}: ${stepLine(step, now)}\nGoal: ${goalLine(goal)}`;
 }
 
@@ -102,7 +108,6 @@ export async function companionReply(request: Request, act: (email: string) => P
 }
 
 // One of this person's open steps (todo or running) with its plan, or null.
-// shortcut: only the 5 plans openGoals returns (the ones list_goals shows); look the step up directly if people keep more open.
 async function openStep(email: string, id: unknown): Promise<{ goal: Goal; step: Step } | null> {
   if (!isId(id)) return null;
   for (const goal of await openGoals(email)) {
@@ -151,8 +156,9 @@ async function finishStep(owner: TokenOwner, args: Record<string, unknown>): Pro
     done = { step: found.step, changed: await changeStepStatus(owner.email, found.step.id, "done") };
   }
   if (!done.changed) return refuse(NO_STEP);
-  const next = openOf(done.changed.goal)[0];
-  return { text: `Done: ${done.step.title}. ${next ? `Next: ${stepLine(next)}` : `That's all of ${done.changed.goal.title}.`}` };
+  const goal = done.changed.goal;
+  const next = openOf(goal)[0];
+  return { text: `Done: ${done.step.title}. ${next ? `Next: ${stepLine(next)}` : goal.rhythm ? planNext(goal) : `That's all of ${goal.title}.`}` };
 }
 
 const NONE: JsonSchemaType = { type: "object", properties: {} };

@@ -65,7 +65,8 @@ export async function currentGoal(email: string): Promise<Goal | null> {
 export type OpenGoal = { goal: Goal; current: boolean; updatedAt: number };
 
 // The home's goal options, the Desk and the Week (Vi, Nov 3): the current plan first, then by due date with undated
-// ones last, then the most recently updated; at most 5.
+// ones last, then the most recently updated. Every one of them: the goals panel lists them all, and adding a goal checks
+// them for its twin (Nov 4: with a cap of 5, a 6th goal was made twice).
 export function orderGoals(open: OpenGoal[]): Goal[] {
   return [...open]
     .sort(
@@ -75,11 +76,9 @@ export function orderGoals(open: OpenGoal[]): Goal[] {
         (a.goal.due ?? "").localeCompare(b.goal.due ?? "") ||
         b.updatedAt - a.updatedAt,
     )
-    .slice(0, 5)
     .map((item) => item.goal);
 }
 
-// Every active or paused plan with a todo or doing step, with its steps, in orderGoals' order.
 // A plan title as two screens compare it: lowercase, every run of other characters one space (as day-flow's sameTitle).
 export const titleKey = (title: string) => title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
@@ -91,6 +90,8 @@ export async function doneTitles(email: string, today: string): Promise<string[]
   return rows.map((row) => String(row.title));
 }
 
+// Every active or paused plan with a todo or doing step, and every one that keeps going (rhythm) even with none left
+// (its next few are planned when it opens), with its steps, in orderGoals' order.
 export async function openGoals(email: string): Promise<Goal[]> {
   await ensureSchema();
   const rows = await getSql()`
@@ -99,7 +100,7 @@ export async function openGoals(email: string): Promise<Goal[]> {
       s.id, s.title, s.minutes, s.status, s.started_at, s.done_at, s.prep, s.event_id, s.scheduled_at
     FROM goals g JOIN steps s ON s.goal_id = g.id AND s.user_email = ${email}
     WHERE g.user_email = ${email} AND g.status IN ('active', 'paused')
-      AND EXISTS (SELECT 1 FROM steps o WHERE o.goal_id = g.id AND o.user_email = ${email} AND o.status IN ('todo', 'doing'))
+      AND (g.rhythm IS NOT NULL OR EXISTS (SELECT 1 FROM steps o WHERE o.goal_id = g.id AND o.user_email = ${email} AND o.status IN ('todo', 'doing')))
     ORDER BY g.id, s.position
   `;
   const groups = Map.groupBy(rows, (row) => String(row.goal_id));
@@ -207,9 +208,14 @@ export async function replaceRemainingSteps(email: string, goalId: string, steps
             VALUES (${goalId}, ${email}, ${step.title}, ${step.minutes}, ${start + index})
           `,
     ),
-    // New todo steps reopen a finished goal; a paused one stays paused.
+    // New todo steps reopen a finished goal; a paused one stays paused. A goal that keeps going and was finished before
+    // Nov 4 (changeStepStatus never finishes one now) comes back paused while another goal is current, so planning its
+    // next few never changes the current goal.
     sql`
-      UPDATE goals SET updated_at = now(), status = CASE WHEN status = 'done' THEN 'active' ELSE status END
+      UPDATE goals SET updated_at = now(), status = CASE
+          WHEN status <> 'done' THEN status
+          WHEN rhythm IS NOT NULL AND EXISTS (SELECT 1 FROM goals WHERE user_email = ${email} AND status = 'active') THEN 'paused'
+          ELSE 'active' END
       WHERE id = ${goalId} AND user_email = ${email}
     `,
     goalQuery(email, goalId),
@@ -330,12 +336,14 @@ export async function changeStepStatus(
         AND (${status} <> 'todo' OR status = 'doing')
     `,
     // Nothing left to do finishes the goal, a paused one too (a step finished from an app while another plan was
-    // current); reopening a step brings it back. A paused goal with steps left stays paused, untouched.
+    // current); reopening a step brings it back. A paused goal with steps left stays paused, untouched. A goal that keeps
+    // going (rhythm) never finishes by running out of steps: it keeps its status until its next few are planned, so it
+    // never drops out of their lists (Nov 4).
     sql`
       UPDATE goals SET
         status = CASE
           WHEN NOT EXISTS (SELECT 1 FROM steps WHERE goal_id = ${goalId} AND user_email = ${email} AND status IN ('todo', 'doing'))
-            THEN 'done'
+            THEN CASE WHEN rhythm IS NULL THEN 'done' ELSE status END
           WHEN status = 'paused' THEN 'paused'
           ELSE 'active' END,
         updated_at = CASE
@@ -356,8 +364,9 @@ export async function changeStepStatus(
   ]);
   const goal = goalFrom(results[results.length - 1]);
   // Its last step done finishes the pasted to-do it came from: one the plan's title says all of, never a longer one
-  // ("Email Prof Patel" finishes neither "…about an extension" nor "…my project group").
-  if (goal && status === "done" && goal.steps.every((one) => one.status === "done" || one.status === "skipped")) {
+  // ("Email Prof Patel" finishes neither "…about an extension" nor "…my project group"). A goal that keeps going never
+  // finishes.
+  if (goal && !goal.rhythm && status === "done" && goal.steps.every((one) => one.status === "done" || one.status === "skipped")) {
     const todos = await sql`SELECT id, text FROM memories WHERE user_email = ${email} AND text LIKE 'To do: %'`;
     await dropMemories(email, todos.filter((row) => within(String(row.text), todoMemory(goal.title))).map((row) => String(row.id)));
   }

@@ -8,12 +8,13 @@ import { databaseConfigured } from "@/lib/db";
 import { activateGoal, openGoals, setGoal, titleKey } from "@/lib/goals";
 import { localDate, timeZoneFrom } from "@/lib/tz";
 
-// One model call with the photo, then the save.
+// One model call with the photo (a second when its title was refused for a private detail), then the save.
 export const maxDuration = 30;
 
 // Body { image } (src/lib/day.ts SnapRequest): a photo or screenshot of an assignment becomes the current plan, as a
-// deadline does in /api/goal/plan. Muse Spark reads it once; the image is never stored or logged. bad-request (422) when
-// it holds no assignment.
+// deadline does in /api/goal/plan. Muse Spark reads it; the image is never stored or logged. bad-request (422) when it
+// holds nothing to get done; what it found but couldn't word without a private detail is an error (502), as for
+// /api/goal/add.
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.email) {

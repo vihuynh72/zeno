@@ -151,11 +151,15 @@ const RULES = [
 
 // How talk changes plans (Nov 4), said once more beside the turn: the tools' rules, which ten simulated people broke.
 const PLAN_RULES = [
-  "Call finish_step only when they say they finished or skipped that step, like 'done' or 'I sent it'. A question, a choice they tap or an answer to your question never finishes a step: ask 'Done?' instead. A step marked doing is already running: never ask to start it.",
+  "Call finish_step only when they say they finished or skipped that step, like 'done' or 'I sent it'. A question, a choice they tap or an answer to your question never finishes a step: ask 'Done?' instead.",
+  "A step marked doing is already running and they are working on it: never ask to start it or anything else, end with no question (ask 'Done?' only when what they said sounds like they finished it), and send them back to it in a few words, like 'Back to the intro.'",
+  "Never open with 'Done' unless they finished or skipped a step this turn. After any other change, say what changed in a few words, like 'Friday is the due date now.' or 'Invites now come right after the place.'",
+  "When they ask how to do a step, like 'Show me how', answer with only its very first move or one short example in plain words, like 'First move: name three days, like \"Mon, Wed, Sat.\"', and change nothing.",
   "When they ask to make a step smaller, or say it's too big, call add_step with one first piece of 2 to 5 minutes right before that step; the step itself stays as it is.",
-  "update_steps keeps every step they didn't mention, with its ref, its title, its minutes and its place: never drop, merge, reword or reorder a step they didn't ask about. After a change, say what changed in a few words, like 'Invites now come right after the place.', never just 'Done.'",
+  "update_steps keeps every step they didn't mention, with its ref, its title, its minutes and its place: never drop, merge, reword or reorder a step they didn't ask about.",
   "When they give a date for the current goal, like 'it's due Friday', call set_due with it, read from the dates listed.",
-  "Another thing they want to get done is its own goal: call set_goal for it and never add its steps to the current goal. Several at once: call set_goal once for each, the most urgent first; the first becomes current and the others wait in their goals list (all of them wait while a step is running). Never make a goal again that is already in their other goals.",
+  "Another thing they want to get done is its own goal: call set_goal for it and never add its steps to the current goal. Its title never holds its date, like 'by Friday' or 'before December': the date goes in due. Several at once: call set_goal once for each, the most urgent first; the first becomes current and the others wait in their goals list (all of them wait while a step is running). Never make a goal again that is already in their other goals.",
+  "A goal saved while a step is running waits in their goals: say so with its date, like 'Saved for later: Renew my passport, due December 1.', then send them back to the running step, and never suggest starting anything in the new goal.",
   "A goal that keeps going, like training, practice, a habit or a job hunt, gets a rhythm in set_goal, like '3 runs a week', and its steps are the next few sessions. Any other goal's steps finish the whole job: the last one sends, submits, pays, books or hands it in.",
 ].join(" ");
 
@@ -372,9 +376,9 @@ const SNAP_PROMPT = [
 export type Snap = { title: string; due: string | null; steps: NewStep[] };
 
 // Muse's reading of a photo, untrusted: null unless it found schoolwork with a title of 1 to 120 characters and no private
-// detail. A due date that isn't a real one from `today` on becomes null. The steps are checked as a deadline's are
-// (planFrom reads the same reply's steps), with the rule plan when they don't fit.
-export function snapFrom(text: string, today: string): Snap | null {
+// detail (a private one goes to `refused`). A due date that isn't a real one from `today` on becomes null. The steps are
+// checked as a deadline's are (planFrom reads the same reply's steps), with the rule plan when they don't fit.
+export function snapFrom(text: string, today: string, refused: string[] = []): Snap | null {
   let data: { found?: unknown; title?: unknown; due?: unknown } | null;
   try {
     data = JSON.parse(text);
@@ -382,21 +386,31 @@ export function snapFrom(text: string, today: string): Snap | null {
     return null;
   }
   const title = titleOf(data?.title);
-  if (data?.found !== true || !title || privateTitle([title])) return null;
+  if (data?.found !== true || !title) return null;
+  if (privateTitle([title])) return (refused.push(title), null);
   return { title, due: isDate(data.due) && data.due >= today ? data.due : null, steps: planFrom(text) ?? rulePlan(title) };
 }
 
-// POST /api/goal/snap: one Muse Spark call reads the photo and plans it as planDeadline plans a deadline. The photo goes
-// to this call only and is never stored or logged. null when it shows no assignment; throws when the model fails.
+// POST /api/goal/snap: one Muse Spark call reads the photo and plans it as planDeadline plans a deadline, and once more
+// with unsavedText (as readGoals does) when its title was refused for a private detail, inside the same 25 seconds. The
+// photo goes to these calls only and is never stored or logged. null when it shows nothing to get done; throws when the
+// model fails or what it found could not be worded without the detail (the route's error, never "nothing in that photo").
 export async function snapPlan(image: string, today: string): Promise<Snap | null> {
-  const text = await askModel(
-    [
-      { role: "system", content: SNAP_PROMPT },
-      { role: "user", content: [{ type: "text", text: `Today is ${today}.` }, { type: "image_url", image_url: { url: image } }] },
-    ],
-    { effort: "minimal", maxTokens: 2048, schema: SNAP_SCHEMA },
-  );
-  return snapFrom(text, today);
+  const deadline = Date.now() + 25_000;
+  const ask = (text: string) =>
+    askModel(
+      [
+        { role: "system", content: SNAP_PROMPT },
+        { role: "user", content: [{ type: "text", text }, { type: "image_url", image_url: { url: image } }] },
+      ],
+      { effort: "minimal", maxTokens: 2048, schema: SNAP_SCHEMA, totalMs: Math.max(1, deadline - Date.now()) },
+    );
+  const refused: string[] = [];
+  const snap = snapFrom(await ask(`Today is ${today}.`), today, refused);
+  if (snap || refused.length === 0) return snap;
+  const again = snapFrom(await ask(`Today is ${today}.\n${unsavedText(refused)}`), today);
+  if (!again) throw new Error("The photo's goal held a private detail");
+  return again;
 }
 
 // POST /api/goal/plan: Muse breaks one deadline into small steps that get her started and prepared, never the work
@@ -467,12 +481,13 @@ export function datesText(timeZone: string, now = new Date()): string {
 export type NewGoal = { title: string; due: string | null; rhythm: string | null; steps: NewStep[] };
 
 // Model steps, untrusted: titles of 1 to 80 characters (a longer one is dropped), whole minutes kept to 2 to 180 and the
-// first one's to `firstMax` when set, none with a private detail, at most `max`.
-function cleanSteps(raw: unknown, max: number, firstMax: number | null): NewStep[] {
+// first one's to `firstMax` when set, none with a private detail (those titles go to `refused`), at most `max`.
+function cleanSteps(raw: unknown, max: number, firstMax: number | null, refused: string[] = []): NewStep[] {
   return (Array.isArray(raw) ? (raw as { title?: unknown; minutes?: unknown }[]) : [])
     .flatMap((item) => {
       const title = typeof item?.title === "string" ? item.title.trim() : "";
-      return title && title.length <= 80 && Number.isInteger(item?.minutes) && !privateTitle([title]) ? [{ title, minutes: item.minutes as number }] : [];
+      if (title && privateTitle([title])) return (refused.push(title), []);
+      return title && title.length <= 80 && Number.isInteger(item?.minutes) ? [{ title, minutes: item.minutes as number }] : [];
     })
     .slice(0, max)
     .map((step, index) => ({ ...step, minutes: Math.min(Math.max(step.minutes, 2), index === 0 && firstMax ? firstMax : 180) }));
@@ -510,8 +525,9 @@ const ADD_PROMPT = [
 // The model's goals, untrusted: up to 3 with a title of 1 to 120 characters and no private detail, each title once. A due
 // date that isn't a real one from `today` on is dropped; a rhythm of more than 40 characters is none. A goal with a rhythm
 // keeps its starter and up to 5 sessions; any other keeps up to 10 steps; either way the first is cut to 5 minutes, so it
-// can start now. A goal left with no step is dropped. Throws when the reply is not JSON.
-export function goalsFrom(text: string, today: string): NewGoal[] {
+// can start now. A goal left with no step is dropped. A goal dropped for a private detail (its title, or every step it
+// had) leaves those titles in `refused`. Throws when the reply is not JSON.
+export function goalsFrom(text: string, today: string, refused: string[] = []): NewGoal[] {
   let data: { goals?: unknown } | null;
   try {
     data = JSON.parse(text);
@@ -522,26 +538,54 @@ export function goalsFrom(text: string, today: string): NewGoal[] {
   const seen = new Set<string>();
   return (Array.isArray(data?.goals) ? (data.goals as Record<string, unknown>[]) : []).slice(0, 3).flatMap((item) => {
     const title = titleOf(item?.title);
-    if (!title || privateTitle([title]) || seen.has(titleKey(title))) return [];
+    if (!title || seen.has(titleKey(title))) return [];
+    if (privateTitle([title])) return (refused.push(title), []);
     const rhythm = typeof item.rhythm === "string" && item.rhythm.trim().length <= 40 ? item.rhythm.trim() || null : null;
-    const steps = cleanSteps(item.steps, rhythm ? 6 : 10, 5);
-    if (steps.length === 0) return [];
+    const hidden: string[] = [];
+    const steps = cleanSteps(item.steps, rhythm ? 6 : 10, 5, hidden);
+    if (steps.length === 0) return (refused.push(...hidden), []);
     seen.add(titleKey(title));
     return [{ title, due: isDate(item.due) && item.due >= today ? item.due : null, rhythm, steps }];
   });
 }
 
-// POST /api/goal/add: one Muse call reads their words into goals; nothing else about them is sent. Throws when the model
-// fails; an empty list means their words held no goal.
+// What Muse hears when titles it gave were refused for a private detail (Nov 4: "Renew my visa" or "Pay off my credit
+// card" came back as no goal on every try). Titles are saved on Zeno's servers, so the detail stays out and the title
+// names the action, as PRIVATE_TITLE asks of talk; the refused titles came from their own words, so they are data.
+const unsavedText = (refused: string[]) =>
+  [
+    `Zeno couldn't save ${refused.map((title) => `<<<${title.replace(/[<>]{3,}/g, "")}>>>`).join(", ")}: titles are stored on Zeno's servers, so they never name health or care (a doctor, a check-up, therapy, medicine, a prescription, a pharmacy), money owed or paying off (a debt, a loan, a card balance) or immigration (a visa, a green card, citizenship).`,
+    "Give the same goals again, each title and step naming only the action in words they'll still recognize, like 'Make the appointment call', 'Sort out the card payment plan' or 'Fill in the renewal form'.",
+  ].join(" ");
+
+// POST /api/goal/add: one Muse call reads their words into goals; nothing else about them is sent. When a goal was
+// refused only for a private detail, Muse gets one more try with unsavedText, inside the same 25 seconds, and the reply
+// that saves more goals wins. Throws when the model fails, and when their words held goals but none could be saved (the
+// route's error, never "no goal in that"); an empty list means their words held no goal.
 export async function readGoals(words: string, timeZone: string, now = new Date()): Promise<NewGoal[]> {
-  const reply = await askModel(
-    [
-      { role: "system", content: ADD_PROMPT },
-      { role: "user", content: `${datesText(timeZone, now)}\nWhat they typed: <<<${words.replace(/[<>]{3,}/g, "")}>>>` },
-    ],
-    { effort: "minimal", maxTokens: 4096, schema: ADD_SCHEMA },
-  );
-  return goalsFrom(reply, localDate(timeZone, now));
+  const today = localDate(timeZone, now);
+  const deadline = Date.now() + 25_000;
+  const question = `${datesText(timeZone, now)}\nWhat they typed: <<<${words.replace(/[<>]{3,}/g, "")}>>>`;
+  const ask = (content: string) =>
+    askModel(
+      [
+        { role: "system", content: ADD_PROMPT },
+        { role: "user", content },
+      ],
+      { effort: "minimal", maxTokens: 4096, schema: ADD_SCHEMA, totalMs: Math.max(1, deadline - Date.now()) },
+    );
+  const refused: string[] = [];
+  const goals = goalsFrom(await ask(question), today, refused);
+  if (refused.length === 0) return goals;
+  const again = await ask(`${question}\n${unsavedText(refused)}`)
+    .then((reply) => goalsFrom(reply, today))
+    .catch((error) => {
+      console.error("Add goal second try failed:", error instanceof Error ? error.message.split(":")[0].slice(0, 80) : "unknown");
+      return [];
+    });
+  const kept = again.length >= goals.length ? again : goals;
+  if (kept.length === 0) throw new Error("Every goal held a private detail");
+  return kept;
 }
 
 // Saves read goals: the first becomes the current plan and the others wait, paused. A goal they already have open (the
@@ -613,8 +657,10 @@ export async function planSessions(goal: Goal, today: string): Promise<NewStep[]
 }
 
 // POST /api/goal/next: a goal with a rhythm and no step left gets its next sessions (Muse's, or the last ones again when the
-// model fails) and becomes the current plan, as it is the one on screen. One with steps left comes back as it is, so a
-// second tap never adds twice. null for a goal with no rhythm. Throws only when a save fails.
+// model fails), and keeps its status: the person may have opened another goal while Muse planned, so this never changes
+// which goal is current or stops a running step (one finished before Nov 4 comes back paused, as replaceRemainingSteps
+// says). One with steps left comes back as it is, so a second tap never adds twice. null for a goal with no rhythm.
+// Throws only when a save fails.
 // shortcut: two calls in the same instant can both add; add a lock if a double tap ever shows it.
 export async function nextSessions(email: string, goal: Goal, today: string): Promise<Goal | null> {
   if (!goal.rhythm) return null;
@@ -625,15 +671,19 @@ export async function nextSessions(email: string, goal: Goal, today: string): Pr
         return null;
       })
     : null;
-  const added = await replaceRemainingSteps(email, goal.id, steps ?? ruleSessions(goal));
-  return added && ((await activateGoal(email, goal.id)) ?? added);
+  return replaceRemainingSteps(email, goal.id, steps ?? ruleSessions(goal));
 }
 
 // The line under the home's greeting: strict JSON with options, which Talk shows. The model picks nothing since Nov 3.
 export const OPENING_SCHEMA = { ...REPLY_SCHEMA, name: "opening" };
 
+// Where their goals are and which to pick are the home's to show (live, Nov 4: "Your goals are below. Pick what matters
+// most right now.").
+const GOALS_TALK = /\bgoals?\b[^.!?]*\b(below|above|left|listed|list|ready|here)\b|\b(pick|choose)\b/i;
+
 // The opening reply, or null when it is not JSON or greets them (the home already did). A question Muse adds anyway
-// (its persona ends a nudge with one) is cut; options stay without a question, since Talk shows them.
+// (its persona ends a nudge with one) is cut, and so is a sentence about where their goals are or picking one; options
+// stay without a question, since Talk shows them.
 export function parseOpening(text: string | null, firstName: string | null): { say: string; options: string[] } | null {
   let data: { say?: unknown; options?: unknown } | null;
   try {
@@ -642,7 +692,7 @@ export function parseOpening(text: string | null, firstName: string | null): { s
     return null;
   }
   const sentences = (typeof data?.say === "string" ? data.say : "").match(/[^.!?]+[.!?]*/g) ?? [];
-  const say = sentences.filter((sentence) => !sentence.trim().endsWith("?")).join("").trim();
+  const say = sentences.filter((sentence) => !sentence.trim().endsWith("?") && !GOALS_TALK.test(sentence)).join("").trim();
   const escaped = firstName ? firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : "";
   const name = escaped ? `|${escaped}` : "";
   // A bare time of day greets only with punctuation or the name after it ("Evening, Maya."): "Evening is when you get the
@@ -651,6 +701,13 @@ export function parseOpening(text: string | null, firstName: string | null): { s
   const greets = new RegExp(`^(good (morning|afternoon|evening|day)|hey|hi|hello|still up${name})\\b|^${daypart}`, "i");
   return say && !greets.test(say) ? { say, options: shortStrings(data?.options, 3, 48) } : null;
 }
+
+// Whether the opening has anything real to say, as openingPrompt grounds it: what they finished yesterday, a streak worth
+// saying or at risk tonight, a pattern new since their last day, or their free time from a calendar that was read. With
+// none, Muse made filler (live, Nov 4: "Your goals are below. Pick what matters most right now."), so the route skips it
+// and answers the rule line, which is then empty unless a source failed to load.
+export const openingNews = (context: UserContext, finished: string[], now = new Date(), pattern: string | null = null) =>
+  finished.length > 0 || context.progress.streak > 1 || context.progress.atRisk || pattern !== null || freeLine(context, now) !== null;
 
 // The model-written line under the home's greeting for POST /api/day/opening (Vi, Nov 3). The home greets them and lists
 // their goals, so the line greets nobody, picks nothing and asks nothing: what they finished yesterday (or their streak),
@@ -663,7 +720,7 @@ export function openingPrompt(context: UserContext, finished: string[], refs: Re
   const done = finished.length > 0 ? "what they finished yesterday (one step by name, or how many), then " : streak > 1 ? `their ${streak}-day streak, then ` : "";
   return [
     context.goal
-      ? "Write the line Zeno says under the app's greeting when they open it. The app already greets them by name and lists their goals for them to pick, so never start with a greeting or their name, never pick or suggest one thing to start, and ask no question."
+      ? "Write the line Zeno says under the app's greeting when they open it. The app already greets them by name and shows their goals, so never start with a greeting or their name, never say where their goals are or that they are below, listed or ready, never tell them to pick one, never pick or suggest one thing to start, and ask no question."
       : "Write the line Zeno says under the app's greeting when they open it. The app already greets them by name, so never start with a greeting or their name, and ask no question. They have no goal yet and the app shows a box to type one: never say their goals or a list are below, listed or ready.",
     `say: one or two short spoken sentences, at most 25 words in all, all statements. Say ${done}their free time until their next event, like "You're free until PHIL 134 at 1:30." Never mention what they didn't finish, a streak they don't have, or anything they missed.`,
     "Never say it's late, and never suggest planning tomorrow, winding down or sleep: many people work at night. If their calendar or inbox could not be read, don't mention it.",
@@ -1105,6 +1162,11 @@ function stepsOf(value: unknown, goal: Goal | null, refs: Refs): NewStep[] | str
 
 const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 
+// A date said in a new goal's title (live, Nov 4: "Renew passport before December") belongs in due, as the add prompt
+// keeps it. Weekly words stay ("Run on Mondays").
+const DATED =
+  /\b(by|before|until|till|due|on|in)\s+((this|next)\s+(week(end)?|month)|((this|next)\s+)?((mon|tues?|wed(nes)?|thu(rs)?|fri|sat(ur)?|sun)(day)?|jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sept?(ember)?|oct(ober)?|nov(ember)?|dec(ember)?)|tomorrow|tonight|today|the \d{1,2}(st|nd|rd|th)|\d{1,2}[/-]\d{1,2}|\d+ (days?|weeks?|months?))\b/i;
+
 // The model's arguments are untrusted: check every type, length, range and ref. A goal's due date is never before
 // the person's today. A proposed block must fit inside one of `slots` (from roundSlots), the free time the model
 // was shown, written with the person's own offset at that moment so the time Zeno says is the time that gets booked;
@@ -1123,6 +1185,7 @@ export function checkCall(call: ToolCall, goal: Goal | null, refs: Refs, slots: 
       const due = args?.due === undefined || args.due === "" ? null : args.due;
       const rhythm = typeof args?.rhythm === "string" && args.rhythm.trim() ? args.rhythm.trim() : null;
       if (!title) return { error: "title must be 1 to 120 characters" };
+      if (DATED.test(title)) return { error: "leave the date out of the title, like 'Renew my passport', and put it in due, from the dates listed" };
       if (due !== null && !isDate(due)) return { error: "due must be a date written YYYY-MM-DD" };
       if (due !== null && due < localDate(timeZone, now)) return { error: "due is already past: leave it out, or ask when it is really due" };
       if (args?.rhythm !== undefined && args.rhythm !== null && typeof args.rhythm !== "string") return { error: "rhythm must be text, like '3 runs a week', or left out" };
@@ -1231,17 +1294,31 @@ const FINISHED = new RegExp(
   ].join("|"),
   "i",
 );
+// A sentence that opens with a past verb, after an "ok" or a "just" at most: "Sent the email", "Submitted", "Did my run",
+// "Ya lo envié" (Nov 4: each was refused). Never "Did I…" or "Ran out…". "Read" and "got" are left out: "Read the rubric"
+// is a step's own title, and "Got it" means they understood.
+const OPENS_PAST = new RegExp(
+  [
+    "^((ok|okay|yes|yeah|yep|so|and|well|just|already|finally|also|ya)[\\s,!]+)*((lo|la|los|las) )?(sent|paid|submitted|ran(?! out)",
+    "did(?! (i|you|we|they|he|she)\\b)|wrote|called|bought|booked|emailed|texted|replied|finished|completed|(turned|handed) (it )?in|mailed|posted",
+    "ordered|cleaned|cooked|practi[cs]ed|studied|reviewed|signed|returned|walked|made|picked|chose|found|filled|fixed|applied|uploaded|published",
+    "packed|washed|envi[eé]|mand[eé]|pagu[eé]|corr[ií]|escrib[ií]|llam[eé]|compr[eé]|reserv[eé]|entregu[eé]|limpi[eé]|practiqu[eé]|hice)(?![\\p{L}\\p{N}'’])",
+  ].join("|"),
+  "iu",
+);
 const SKIPPED = /\b(skip\w*|not doing|won'?t do|don'?t need|no need|not needed|pass on)\b/i;
 const QUESTION = /^(am|is|are|was|were|do|does|did|can|could|should|will|would|have|has|how|what|why|when|where|which|who)\b/i;
-const YES = /^\W*(yes|yeah|yep|yup|sure|i am|i have|i did|correct|right|ok|okay)\b/i;
+const YES = /^[^\p{L}\p{N}]*(yes|yeah|yep|yup|sure|i am|i have|i did|correct|right|ok|okay|sí|si|claro|vale|listo|lista|ya)(?![\p{L}\p{N}])/iu;
 
 // finish_step only on a finish they said (Nov 4: "is this correct?" and a tapped choice each finished a step): a finish or
-// skip word in what they said, outside a question like "Am I done?", or a yes to Zeno's "Done?".
+// skip word in what they said, outside a question like "Am I done?", a sentence that opens with a past verb and asks
+// nothing, or a yes to Zeno's "Done?" (in Spanish too).
 export function saidFinish(message: string, lastReply: string, outcome: "done" | "skipped"): boolean {
   const words = outcome === "done" ? FINISHED : SKIPPED;
-  const said = (message.match(/[^.!?]+[.!?]*/g) ?? []).filter((sentence) => !(sentence.trim().endsWith("?") && QUESTION.test(sentence.trim())));
-  const asked = outcome === "done" ? /\b(done|finished|did you|all set)\b[^.!?]*\?/i : /\bskip\w*\b[^.!?]*\?/i;
-  return words.test(said.join(" ")) || (YES.test(message) && asked.test(lastReply));
+  const said = (message.match(/[^.!?]+[.!?]*/g) ?? []).map((sentence) => sentence.trim()).filter((sentence) => !(sentence.endsWith("?") && QUESTION.test(sentence)));
+  const opens = outcome === "done" && said.some((sentence) => !sentence.endsWith("?") && OPENS_PAST.test(sentence));
+  const asked = outcome === "done" ? /\b(done|finished|did you|all set|listo|lista|termin\w*)\b[^.!?]*\?/i : /\bskip\w*\b[^.!?]*\?/i;
+  return words.test(said.join(" ")) || opens || (YES.test(message) && asked.test(lastReply));
 }
 
 // A request to make a step smaller, which add_step serves: update_steps there reworded or dropped the step (Nov 4).
@@ -1266,6 +1343,18 @@ export function unasked(goal: Goal | null, steps: NewStep[], said: string): Step
     const kept = steps.find((item) => item.id === step.id);
     return step.status === "todo" && kept?.title !== step.title && !stems(step.title).some((stem) => named.has(stem));
   });
+}
+
+// The words talk says, kept true and quiet (live, Nov 4): Muse opened with "Done." after a due date changed, and while a
+// step ran it still ended with a question ("That is your story. Start now?", "Still yours to pick?"). "Done" opens only a
+// turn that finished or skipped a step; while a step runs, a question to start anything goes, and so does any other last
+// question unless it asks "Done?" or is all there is.
+export function finalSay(say: string, finished: boolean, running: boolean): string {
+  const sentences = (finished ? say : say.replace(/^\s*done\s*[.,!:;–—-]+/i, "")).trim().split(/(?<=[.!?]["”’']?)\s+/);
+  const last = sentences.at(-1) ?? "";
+  const quiet = running && /\?["”’']?$/.test(last) && (/\bstart/i.test(last) || (sentences.length > 1 && !/\b(done|finished|all set)\b/i.test(last)));
+  const said = (quiet ? sentences.slice(0, -1) : sentences).join(" ").trim();
+  return said ? said[0].toUpperCase() + said.slice(1) : "Got it.";
 }
 
 // The other open goals, so a goal they name again is never made twice and their steps never land in the wrong goal.
@@ -1405,7 +1494,14 @@ export async function talk(
         const saved = await setGoal(email, checked.title, checked.steps, checked.due, { rhythm: checked.rhythm, paused: true });
         waiting.push(saved);
         actions.push({ type: "goal-set", label: saved.title });
-        return { ok: true, note: "Saved as its own goal; it waits in their goals list." };
+        // Live, Nov 4: "Saved. December 1 is the cutoff so start the form check first." while a run was going.
+        const doing = goal?.steps.find((step) => step.status === "doing");
+        return {
+          ok: true,
+          note: doing
+            ? `Saved for later: it waits in their goals list${saved.due ? `, due ${dueDay(saved.due)}` : ""}. Say that in a few words, then send them back to "${doing.title}", which is still running; suggest nothing from the new goal now.`
+            : "Saved as its own goal; it waits in their goals list.",
+        };
       }
       if (checked.name === "set_goal" || checked.name === "update_steps" || checked.name === "add_step" || checked.name === "set_due") {
         const changed =
@@ -1482,19 +1578,22 @@ export async function talk(
     if (actions.length === 0 && proposal.length === 0 && !draft) throw error;
     console.error("Talk stopped after saving a change:", error instanceof Error ? error.message.slice(0, 120) : "unknown");
   }
+  const finished = actions.some((action) => action.type === "step-finished");
+  const said = reply && finalSay(withoutRefs(reply.say, goal, refs), finished, goal?.steps.some((step) => step.status === "doing") ?? false);
   return {
-    reply: reply
-      ? withoutRefs(reply.say, goal, refs)
-      : actions.length > 0
+    reply:
+      said ??
+      (actions.length > 0
         ? "I made that change, but lost my words for a second. Keep going?"
         : proposal.length > 0
           ? "I found a time for that. Book it?"
           : draft
             ? "I wrote a draft. Open it in Gmail?"
-            : "Sorry, I got tangled up there. Could you say that again?",
+            : "Sorry, I got tangled up there. Could you say that again?"),
     goal,
     actions,
-    options: reply?.options ?? [],
+    // Tap answers answer a question, so they go when finalSay took it out.
+    options: said?.includes("?") ? (reply?.options ?? []) : [],
     proposal,
     progress,
     private: kept,

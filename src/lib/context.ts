@@ -1,6 +1,6 @@
 import type { Session } from "next-auth";
 import { dueIn } from "@/lib/brief";
-import { calendarWriteFor, freeSlots, getTodayEvents, localDays, upcomingDeadlines, type CalendarEvent } from "@/lib/calendar";
+import { CALENDAR_WRITE, calendarFailure, calendarWriteFor, freeSlots, getTodayEvents, localDays, upcomingDeadlines, type CalendarEvent } from "@/lib/calendar";
 import type { CalendarWrite, CanvasBrief, Deadline, FreeSlot, Goal, Memory, Progress } from "@/lib/day";
 import { databaseConfigured } from "@/lib/db";
 import { getRecentEmail, type EmailSummary } from "@/lib/gmail";
@@ -50,13 +50,27 @@ export function forgetCalendar(email: string) {
   for (const key of ["calendar", "free", "deadlines"]) googleCache.delete(`${key}:${email}`);
 }
 
+const CALENDAR_READ = "https://www.googleapis.com/auth/calendar.readonly";
+const MAIL_READ = "https://www.googleapis.com/auth/gmail.readonly";
+
+// A Google read that fails for want of access (a revoked token, or a scope Google says is missing; a Gmail error carries
+// the same status and body) is no access, as GET /api/calendar/week has it; anything else is an error.
+const failed = (error: unknown) => (calendarFailure(error) === "error" ? "error" : "no-access");
+
 export async function loadUserContext(
   email: string,
   session: Pick<Session, "accessToken" | "error" | "scope">,
   timeZone: string,
 ): Promise<UserContext> {
-  // After a failed refresh the token is dead, so Google sources count as unavailable.
+  // After a failed refresh the token is dead, so Google sources count as unavailable. Google's consent screen lets people
+  // untick Gmail or Calendar, and a read whose scope was never granted is skipped as no access, never an error (Nov 4:
+  // "Zeno couldn't read your inbox just now."). A session from before scopes were kept lists none: all count as granted.
   const accessToken = session.error ? undefined : session.accessToken;
+  const granted = (...scopes: string[]) => (session.scope ? scopes.some((scope) => session.scope?.split(" ").includes(scope)) : true);
+  const calendarToken = granted(CALENDAR_READ) ? accessToken : undefined;
+  // The Zeno calendar's own deadlines can also be read with the scope that made it.
+  const deadlineToken = granted(CALENDAR_READ, CALENDAR_WRITE) ? accessToken : undefined;
+  const mailToken = granted(MAIL_READ) ? accessToken : undefined;
   let events: CalendarEvent[] = [];
   let calendarState: UserContext["calendarState"] = "no-access";
   let goal: Goal | null = null;
@@ -72,12 +86,12 @@ export async function loadUserContext(
 
   await Promise.all([
     (async () => {
-      if (!accessToken) return;
+      if (!calendarToken) return;
       try {
-        events = await cached(`calendar:${email}`, () => getTodayEvents(accessToken, timeZone));
+        events = await cached(`calendar:${email}`, () => getTodayEvents(calendarToken, timeZone));
         calendarState = "ok";
-      } catch {
-        calendarState = "error";
+      } catch (error) {
+        calendarState = failed(error);
       }
     })(),
     // Goal and memories are always read fresh so a goal added a moment ago is never missing.
@@ -93,31 +107,31 @@ export async function loadUserContext(
       }
     })(),
     (async () => {
-      if (!accessToken) return;
+      if (!mailToken) return;
       try {
-        emails = await cached(`email:${email}`, () => getRecentEmail(accessToken));
+        emails = await cached(`email:${email}`, () => getRecentEmail(mailToken));
         emailState = "ok";
-      } catch {
-        emailState = "error";
+      } catch (error) {
+        emailState = failed(error);
       }
     })(),
     // Free time and deadlines are extras: a failure marks them unread and the day still loads.
     (async () => {
-      if (!accessToken) return;
+      if (!calendarToken) return;
       try {
-        free = await cached(`free:${email}`, () => freeSlots(accessToken, timeZone, { minutes: 5, days: 1 }));
+        free = await cached(`free:${email}`, () => freeSlots(calendarToken, timeZone, { minutes: 5, days: 1 }));
         freeState = "ok";
-      } catch {
-        freeState = "error";
+      } catch (error) {
+        freeState = failed(error);
       }
     })(),
     (async () => {
-      if (!accessToken) return;
+      if (!deadlineToken) return;
       try {
-        deadlines = await cached(`deadlines:${email}`, () => upcomingDeadlines(accessToken, email, timeZone));
+        deadlines = await cached(`deadlines:${email}`, () => upcomingDeadlines(deadlineToken, email, timeZone));
         deadlinesState = "ok";
-      } catch {
-        deadlinesState = "error";
+      } catch (error) {
+        deadlinesState = failed(error);
       }
     })(),
     (async () => {
