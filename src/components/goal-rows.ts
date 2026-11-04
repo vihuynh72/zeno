@@ -36,6 +36,15 @@ export function segments(goal: Goal): Segment[] {
   return goal.steps.map((step) => (step.status === "done" ? "done" : step === next ? "next" : "todo"));
 }
 
+// Today's line for a goal: what to do next ("Next: Find the readings · 20 min"), so Today says what to do, not only how
+// far along (round 2, Nov 4: "just a copy of the sidebar"). A goal that keeps going with no session left, and a finished
+// one, say so instead.
+export function nextCaption(goal: Goal) {
+  const next = goal.steps.find((step) => step.status === "doing") ?? goal.steps.find((step) => step.status === "todo");
+  if (!next) return goal.rhythm ? "Next few to plan" : doneCaption(goal);
+  return `${next.status === "doing" ? "Now" : "Next"}: ${next.title.replace(/\.+$/, "")}${next.minutes ? ` · ${duration(next.minutes)}` : ""}`;
+}
+
 // "2 of 5 done"; none in words, since both Atkinson fonts slash their zero and a lone "Ø of 5" was misread (Nov 4).
 export function doneCaption(goal: Goal) {
   const done = goal.steps.filter((step) => step.status === "done").length;

@@ -8,7 +8,7 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { comingCaption, deskPlans, doneCaption, doneSteps, dueShort, duration, freeMinutes, leftCaption, mergeDone, sameGoal, segments, weekPlan } =
+const { comingCaption, deskPlans, doneCaption, doneSteps, dueShort, duration, freeMinutes, leftCaption, mergeDone, nextCaption, sameGoal, segments, weekPlan } =
   await import("./goal-rows.ts");
 
 const step = (status: Step["status"], minutes: number | null = 10): Step => ({
@@ -51,6 +51,8 @@ assert.deepEqual(deskPlans(null, undefined), []);
 const rolling = { ...goal("g-run", "Run a 5K", null, [step("done", 20)]), rhythm: "3 runs a week" };
 assert.deepEqual(ids(deskPlans(rolling, undefined)), ["g-run:done"]);
 assert.equal(leftCaption(rolling), "Next few to plan");
+assert.equal(nextCaption(rolling), "Next few to plan");
+assert.equal(nextCaption(goal("g", "G", null, [step("done", 5), step("todo", 20)])), "Next: A step · 20 min");
 
 // The bar: done in ink, the running step (else the next to do) in red, the rest (skipped too) in the track color.
 assert.deepEqual(segments(goal("g", "G", null, [step("done"), step("done"), step("doing"), step("todo"), step("skipped")])), [

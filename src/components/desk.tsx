@@ -4,7 +4,7 @@ import { type CSSProperties, type KeyboardEvent, type MouseEvent, useEffect, use
 import type { DayEmail, DayEvent, Deadline, DoneStep, Goal, MailResponse, Progress, SourceState } from "@/lib/day";
 import type { Today } from "@/components/day-view";
 import { browserZone, freeGaps, httpsOnly, markEvents, senderName, snippetLine, timeRange } from "@/components/desk-rows";
-import { deskPlans, doneCaption, doneSteps, dueShort, mergeDone, sameGoal } from "@/components/goal-rows";
+import { deskPlans, doneCaption, doneSteps, dueShort, duration, mergeDone, nextCaption, sameGoal } from "@/components/goal-rows";
 import WeekGoals, { GoalLines } from "@/components/week-goals";
 import WeekGrid from "@/components/week-grid";
 import { formatTime, localDate } from "@/lib/tz";
@@ -225,6 +225,7 @@ function DeskBody({ tab: opensOn = "today", today, goal, goals, progress, onSign
               Without mail, one column the home card's width. */}
           <div className={`grid grid-cols-1 items-start gap-6 ${mailOn ? "lg:grid-cols-2 lg:grid-rows-[auto_auto_1fr]" : "max-w-[760px]"}`}>
             <Goals plans={plans} date={date} hint={deadlines.length > 0} failed={Boolean(today && today.sources.goals !== "ok")} onGoal={onGoal} />
+            <DoneToday done={done} date={date} />
             {today && mailOn && <Mail today={today} onReply={onReply} />}
             {deadlines.length > 0 && <Deadlines deadlines={deadlines} plans={plans} onGoal={onGoal} onDeadline={onDeadline} />}
             {today && calendarOn && <Calendar today={today} now={now} booked={booked} />}
@@ -259,12 +260,41 @@ function Goals({ plans, date, hint, failed, onGoal }: { plans: Goal[]; date: str
                   bold
                   aside={plan.due && date ? dueShort(plan.due, date) : (plan.rhythm ?? undefined)}
                   goal={plan}
-                  caption={doneCaption(plan)}
+                  caption={nextCaption(plan)}
                 />
               </button>
             </li>
           ))
         )}
+      </ul>
+    </section>
+  );
+}
+
+// The steps finished today, ticked as the Week ticks them (round 2, Nov 4: Today said nothing about today without a
+// calendar). Nothing yet, no card.
+const DONE_TODAY = 8;
+function DoneToday({ done, date }: { done: DoneStep[]; date: string }) {
+  const zone = browserZone();
+  const todays = date ? done.filter((step) => localDate(zone, new Date(step.doneAt)) === date) : [];
+  if (todays.length === 0) return null;
+  return (
+    <section className="mini lg:col-start-1">
+      <h3 className="text-[20px] leading-8 font-bold">Done today</h3>
+      <ul className="lines mt-2">
+        {todays.slice(0, DONE_TODAY).map((step, i) => (
+          <li key={`${i}:${step.doneAt}`} className="relative flex items-baseline gap-4 text-ink-2">
+            <span aria-hidden="true" className="absolute -left-10 w-6 text-center">
+              ✓
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="sr-only">Done: </span>
+              {step.title}
+            </span>
+            {step.minutes ? <span className="shrink-0 whitespace-nowrap">{duration(step.minutes)}</span> : null}
+          </li>
+        ))}
+        {todays.length > DONE_TODAY && <li className="text-ink-2">and {todays.length - DONE_TODAY} more done</li>}
       </ul>
     </section>
   );
