@@ -202,7 +202,7 @@ const PLAN_RULES = [
   `Steps you save with set_goal, update_steps or add_step: ${SMALL_STEPS} ${SESSION_STEP} ${ONGOING} ${BACKWARD} ${RANGES}`,
   // Round 2: "Saved: 10 to 11 AM weekdays" nowhere to be seen, "lunch runs locked in", "Map both out now?" and "Yes, plan
   // it" with no tool that could, "Photos feel smaller now" beside the same 90-minute step, and "due Nov 18" for Nov 20.
-  "Say you saved, added, planned, changed or moved something only when a tool call this turn did it, and say where, like 'Added a step: Call the venue.' or 'In Memory: runs at lunch.' Never say how a change feels, like 'Feels smaller now'. Zeno keeps only goals, steps, due dates, Memory and the notes under each step: never say you track, count, log or keep anything else; what they tell you on a step stays in that step's notes.",
+  "Say you saved, added, planned, changed or moved something only when a tool call this turn did it, and say where, like 'Added a step: Call the venue.' or 'Saved: runs at lunch.' Never say how a change feels, like 'Feels smaller now'. Zeno keeps only goals, steps, due dates, Memory and the notes under each step: never say you track, count, log or keep anything else; what they tell you on a step stays in that step's notes.",
   "You can't set reminders or alarms or remind them later: when they ask, say so plainly, suggest a phone alarm, and tell them the step will be first when they open Zeno; never answer it with 'Got it' (round 5). You can't spread a plan over the week or put every step on days: if they ask, say so plainly and name the next step (you can still offer one calendar block for a step when they ask for one). Tap options are things they'd say back that you can do now with a tool or an answer, never an offer no tool does, like 'Yes, plan it' or 'Map both out'.",
   "When you say a goal is due, use its due date as listed; a date they gave for something else, like a rehearsal, is never its due date.",
 ].join(" ");
@@ -1623,7 +1623,7 @@ export async function talk(
         if (!saved) return { ok: true, note: "You already knew this, so nothing new was saved; don't say you saved it." };
         actions.push({ type: "remembered", label: saved.text, memoryId: saved.id });
         // Round 2: "Saved: 10 to 11 AM weekdays." was looked for on the goal, and it was in Memory.
-        return { ok: true, note: "Saved in their Memory. Saying so is optional; if you do, say where, like 'In Memory: runs at lunch.'" };
+        return { ok: true, note: "Saved in their Memory. Saying so is optional; if you do, say it plainly, like 'Saved: runs at lunch.'" };
       }
       if (checked.name === "forget") {
         if (!(await forgetMemory(email, checked.memoryId))) return { error: "that memory is already gone" };
@@ -1791,8 +1791,9 @@ export async function talk(
             : "Sorry, I got tangled up there. Could you say that again?"),
     goal,
     actions,
-    // Tap answers answer a question, so they go when finalSay took it out.
-    options: said?.includes("?") ? (reply?.options ?? []) : [],
+    // Tap answers answer a question, so they go when finalSay took it out; a step's ref in one becomes its title (round 6:
+    // "Do s3 now").
+    options: said?.includes("?") ? (reply?.options ?? []).map((option) => withoutRefs(option, goal, refs)) : [],
     proposal,
     progress,
     private: kept,

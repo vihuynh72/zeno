@@ -1388,7 +1388,7 @@ for (const rule of [
   /Steps you save with set_goal, update_steps or add_step: No step is longer than 25 minutes: split bigger work into parts named for what each part covers[^.]*\. The one exception: each session of a goal that keeps going, like a run or a practice interview, is one step of up to 45 minutes\. Size the whole job honestly first:[^\n]*Zeno plans more as they get done\. Plan backward from the due date:[^\n]*shop policies\. Write a number range with 'to', like '900 to 1200 words', never with a dash\./,
   // Round 2: "Saved: 10 to 11 AM weekdays", "locked in", "Map both out now?" with "Yes, plan it", "Photos feel smaller now",
   // and "due Nov 18" for a talk due Nov 20.
-  /Say you saved, added, planned, changed or moved something only when a tool call this turn did it, and say where, like 'Added a step: Call the venue\.' or 'In Memory: runs at lunch\.' Never say how a change feels, like 'Feels smaller now'\./,
+  /Say you saved, added, planned, changed or moved something only when a tool call this turn did it, and say where, like 'Added a step: Call the venue\.' or 'Saved: runs at lunch\.' Never say how a change feels, like 'Feels smaller now'\./,
   /You can't set reminders or alarms or remind them later: when they ask, say so plainly, suggest a phone alarm, and tell them the step will be first when they open Zeno; never answer it with 'Got it' \(round 5\)\. You can't spread a plan over the week or put every step on days: if they ask, say so plainly and name the next step \(you can still offer one calendar block for a step when they ask for one\)\. Tap options are things they'd say back that you can do now with a tool or an answer, never an offer no tool does, like 'Yes, plan it' or 'Map both out'\./,
   /When you say a goal is due, use its due date as listed; a date they gave for something else, like a rehearsal, is never its due date\./,
   // Round 3: Jordan's "I can do 4 hours a day" made a second goal, Priya's "the party is at home" got "Got it" beside "Book
@@ -1557,6 +1557,13 @@ replies.push(say("Lunch works for runs."));
 assert.equal((await talk(idle, null, [], "Weekdays at lunch")).reply, "Lunch works for runs.");
 reset();
 saved = { id: "mem-12", text: "Runs at lunch on weekdays.", group: "routines", source: "you", createdAt: "" };
+// A step's ref never shows in a tap answer (round 6: "Do s3 now"): it becomes the step's title.
+reset();
+replies.push({ content: JSON.stringify({ say: "Rest or run?", options: ["Do s3 now", "Rest today"] }) });
+turn = await talk(idle, null, [], "should I rest or run");
+assert.equal(turn.options.length, 2);
+assert.ok(turn.options.every((option: string) => !/\bs\d+\b/.test(option)), turn.options.join(" | "));
+reset();
 replies.push(tools(call("remember", { text: "Runs at lunch on weekdays.", group: "routines", private: false })), say("In Memory: runs at lunch on weekdays."));
 assert.equal((await talk(idle, null, [], "Weekdays at lunch")).reply, "In Memory: runs at lunch on weekdays.", "a real save is said");
 saved = null;
@@ -1607,7 +1614,7 @@ saved = { id: "mem-9", text: "Ten-minute first steps work best.", group: "work-s
 replies.push(tools(call("remember", { text: "Ten-minute first steps work best.", group: "work-style", private: false })), say("Noted."));
 turn = await talk(talkContext, null, [], "Ten minute first steps work for me");
 assert.deepEqual(turn.actions, [{ type: "remembered", label: "Ten-minute first steps work best.", memoryId: "mem-9" }]);
-assert.equal(results()[0].note, "Saved in their Memory. Saying so is optional; if you do, say where, like 'In Memory: runs at lunch.'", "a save Zeno mentions says where");
+assert.equal(results()[0].note, "Saved in their Memory. Saying so is optional; if you do, say it plainly, like 'Saved: runs at lunch.'", "a save Zeno mentions says so plainly");
 
 // A private fact goes to the device: a "kept-private" action backs the Noted line, it comes back in `private`, and nothing
 // reaches the database. The device's facts reach the model with this turn only.

@@ -1099,10 +1099,12 @@ export default function GuidedDay() {
 
   // ---------- A goal's desk (Vi, Nov 3: she picks the goal, Zeno picks the step) ----------
   // Opening a desk is choosing, so a late opening line never moves the screen, and Zeno stops talking.
-  function openDesk(): number {
-    // A step running in Focus goes back in line, and the note says so (round 3: its clock vanished with no word).
-    const left = latest.current.screen === "focus" ? openSteps(latest.current.goal).find((one) => one.status === "doing") : undefined;
-    void letGo();
+  function openDesk(keepRunning = false): number {
+    // A step running in Focus goes back in line, and the note says so (round 3: its clock vanished with no word). A plan
+    // that may still fail to be made (an add, a photo) keeps it running until the new plan is saved (round 6: a failed
+    // add lost a running step's time).
+    const left = !keepRunning && latest.current.screen === "focus" ? openSteps(latest.current.goal).find((one) => one.status === "doing") : undefined;
+    if (!keepRunning) void letGo();
     moved.current = true;
     voice.stop();
     talking.current = false;
@@ -1211,6 +1213,28 @@ export default function GuidedDay() {
     setNote(OPEN_FAIL);
   }
 
+  // An add or a photo begun mid-step: the step that ran (`running`, never stopped) and the plan it is in. Saved: the
+  // server put that step back in line as the new plan became current, so the page does too and says so. Not saved: back
+  // to Focus on it, its clock untouched, with the reason under it (round 6).
+  function runningNow() {
+    const { screen: on, goal: plan } = latest.current;
+    const running = on === "focus" ? openSteps(plan).find((one) => one.status === "doing") : undefined;
+    return running && plan ? { running, plan } : null;
+  }
+  function pausedFor(was: { running: Step; plan: Goal } | null) {
+    if (!was) return;
+    takeGoal(withStatus(was.plan, was.running.id, "todo", new Date()));
+    setNote(`Paused "${was.running.title.replace(/[.!?]+$/, "")}". It waits in its goal.`);
+  }
+  function backToFocus(note: string) {
+    setView("desk");
+    setScreen("focus");
+    latest.current.view = "desk";
+    latest.current.screen = "focus";
+    quiet(FOCUS.calm);
+    setNote(note);
+  }
+
   // "+ Add a goal" and the front door (Nov 4): her words go to Muse as they are (POST /api/goal/add), with no talk turn,
   // and stay on the desk until it answers. More goals from the same words join the panel. A plan that couldn't be made
   // sends her home with her words back in the box.
@@ -1219,7 +1243,8 @@ export default function GuidedDay() {
     const key = `add:${words.toLowerCase()}`;
     if (!words || making.current.has(key)) return;
     making.current.add(key);
-    const ticket = openDesk();
+    const was = runningNow();
+    const ticket = openDesk(true);
     const shown = words.length > 160 ? words.slice(0, 160).trimEnd() : words.replace(/[.!?…\s]+$/, "");
     setPlanning({ title: "New goal", due: null, line: `Planning: ${shown}…` });
     const res = await post<GoalResponse>("/api/goal/add", { text: words } satisfies AddGoalRequest);
@@ -1235,15 +1260,20 @@ export default function GuidedDay() {
     }
     setPlanning(null);
     if (res.state === "ok") {
+      // A goal she already had opens instead of a copy, and the line says so (round 6: a repeat came back without a word).
+      const known = latest.current.goals.some((one) => one.id === res.goal.id);
+      pausedFor(was);
       changeGoal(res.goal);
       // More goals from the same words are in the list now, and the line says so (live, Nov 4: one just appeared there).
       const titles = others.map((one) => one.title.replace(/[.!?]+$/, ""));
       if (titles.length > 0) setLine(`Also added to your goals: ${new Intl.ListFormat("en", { type: "conjunction" }).format(titles)}.`);
+      else if (known) setLine("You already have this goal, so here it is.");
       return;
     }
+    setAddWords(words);
+    if (was) return backToFocus(res.state === "bad-request" ? NO_GOAL : ADD_FAIL);
     goHome();
     keepCurrent();
-    setAddWords(words);
     setNote(res.state === "bad-request" ? NO_GOAL : ADD_FAIL);
   }
 
@@ -1252,7 +1282,8 @@ export default function GuidedDay() {
   async function snapAssignment(photo: File) {
     if (making.current.has("snap")) return;
     making.current.add("snap");
-    const ticket = openDesk();
+    const was = runningNow();
+    const ticket = openDesk(true);
     setPlanning({ title: "New goal", due: null, line: "Reading your photo…" });
     const image = await shrinkPhoto(photo).catch(() => null);
     const res = image ? await post<GoalResponse>("/api/goal/snap", { image } satisfies SnapRequest) : ({ state: "unreadable" } as const);
@@ -1263,10 +1294,18 @@ export default function GuidedDay() {
       return;
     }
     setPlanning(null);
-    if (res.state === "ok") return changeGoal(res.goal);
+    if (res.state === "ok") {
+      const known = latest.current.goals.some((one) => one.id === res.goal.id);
+      pausedFor(was);
+      changeGoal(res.goal);
+      if (known) setLine("That photo is a goal you already have, so here it is.");
+      return;
+    }
+    const why = res.state === "unreadable" ? PHOTO_UNREADABLE : res.state === "bad-request" ? SNAP_FAIL : OPEN_FAIL;
+    if (was) return backToFocus(why);
     goHome();
     keepCurrent();
-    setNote(res.state === "unreadable" ? PHOTO_UNREADABLE : res.state === "bad-request" ? SNAP_FAIL : OPEN_FAIL);
+    setNote(why);
   }
 
   // Stuck? in Focus, "Make it smaller" (Nov 4): Zeno adds a 2-5 minute first piece before the step (add_step), and the
