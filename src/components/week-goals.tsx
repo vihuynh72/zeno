@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Deadline, DoneStep, Goal, Progress, WeekResponse } from "@/lib/day";
 import { addDays, browserZone, dateLabel, mondayOf, weekLabel } from "@/components/desk-rows";
-import { comingCaption, dueShort, duration, freeMinutes, leftCaption, segments, weekPlan, type Segment } from "@/components/goal-rows";
+import { comingCaption, dueShort, duration, freeMinutes, leftCaption, segments, stepsLeftCaption, weekPlan, type Segment } from "@/components/goal-rows";
 import { localDate } from "@/lib/tz";
 
 // Only finished steps fill the bar; the one up next is outlined (Nov 4: a red one read as progress at 0 done).
@@ -157,10 +157,12 @@ export default function WeekGoals({ now, goals, deadlines, done, calendar: conne
                         >
                           <GoalLines
                             title={item.title}
-                            // A plan due before the week sits on Today, saying when it was due.
-                            aside={item.goal?.due && item.goal.due < date ? dueShort(item.goal.due, today) : undefined}
+                            // A plan due before the week sits on Today, saying when it was due; otherwise "Due" on its day,
+                            // with what is left, and not hours of work on the deadline itself (round 4: an exam day read
+                            // "about 2 h 30 min", as if the work were planned there).
+                            aside={item.goal?.due && item.goal.due < date ? dueShort(item.goal.due, today) : "Due"}
                             goal={item.goal}
-                            caption={item.goal ? leftCaption(item.goal) : "Not started"}
+                            caption={item.goal ? stepsLeftCaption(item.goal) : "Not started"}
                           />
                         </button>
                       </li>

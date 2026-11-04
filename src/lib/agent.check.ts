@@ -1535,7 +1535,7 @@ openList = [];
 // weekdays."); advice stays, and so does a claim when a tool really saved something.
 assert.equal(unclaimed("Got it, lunch runs locked in. Back to picking your days."), "Back to picking your days.");
 assert.equal(unclaimed("Saved: 10 to 11 AM weekdays. Done with picking the time?"), "Done with picking the time?");
-for (const claim of ["Noted.", "I've added it to your plan.", "Planned both out.", "Okay, booked it for 4.", "I'll remember that.", "Updated your steps."]) {
+for (const claim of ["Noted.", "I've added it to your plan.", "Planned both out.", "Okay, booked it for 4.", "I'll remember that.", "Updated your steps.", "Daily counts and weekly progress tracked.", "I'll keep your best lines."]) {
   assert.equal(unclaimed(claim), "", claim);
 }
 // Advice that only starts with such a word, and a question, stay (review, Nov 4: "Added sugar hides in sauces." went).
@@ -1904,7 +1904,7 @@ for (const rule of [
   /'before' a month is the day before it, like 'before April' is March 31\. Never a date before today, and never one they didn't say\./,
   /rhythm: only for a goal that keeps going/,
   /4 to 12 steps in order that finish the whole job\. The first takes at most 5 minutes[^.]*\. The last one finishes it/,
-  /first one step of at most 5 minutes that gets them ready and can start right now, like picking the days; then the next 3 to 5 sessions in order/,
+  /first one step of at most 5 minutes that is a small real piece of the work and can start right now, like a 5-minute walk or one practice question, never picking days or times \(nothing schedules them yet\); then the next 3 to 5 sessions in order/,
   /minutes is an honest whole number, the same as any time the title says\./,
   /a step never holds the finished work, an answer or a draft/,
   /Write titles and steps in the language they wrote in\./,

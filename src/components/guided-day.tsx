@@ -69,6 +69,7 @@ import {
   proposedStep,
   quickReplies,
   replanOnCanvas,
+  resumePlan,
   runningStep,
   sameTitle,
   slotLabel,
@@ -368,8 +369,8 @@ export default function GuidedDay() {
   const onDesk = screen === "focus" || screen === "checkin" || (view === "desk" && (planning !== null || proposed !== null));
   // No open plan: the home is the front door, whose line says what Zeno does (Nov 4: never "your goals are below").
   const frontDoor = screen === "ready" && !onDesk && plans.length === 0;
-  // Coming back: the goal she was last on (the server's current one, her own last pick) and its next step, never a new pick.
-  const resume = fresh && screen === "ready" && !onDesk && goal && goal.id !== leftId ? openSteps(goal)[0] ?? null : null;
+  // Coming back: her last goal's next step, or a goal of hers due within 2 days and sooner (resumePlan).
+  const resume = fresh && screen === "ready" && !onDesk ? resumePlan(goal, plans, today, leftId) : null;
   const history = useRef<Turn[]>([]);
   const cache = useRef<Saved | null>(null);
   const tapped = useRef<string | null>(null); // the turn in flight came from a chip, not the type box: the words it shows
@@ -734,8 +735,10 @@ export default function GuidedDay() {
     history.current = [...history.current, ...turns].slice(-12);
   }
 
-  // Zeno says a line it chose itself (a template, no model wait); hands-free listens after it only if it asks.
+  // Zeno says a line it chose itself (a template, no model wait) after a tap only while she talks hands-free: a tapped
+  // Done stays on screen (round 4: it talked out loud in a library). Hands-free listens after it only if it asks.
   function speakLine(text: string) {
+    if (!talking.current) return;
     if (!voice.muted) void voice.speak(text);
   }
 
@@ -809,7 +812,7 @@ export default function GuidedDay() {
       { role: "assistant", content: res.reply },
     ]);
     // A turn that only put the step off ("Not now": the server's instant "Okay, it'll be here.") leaves no note.
-    if (about && res.reply.trim() && res.reply !== "Okay, it'll be here.") keepNote(about.id, { you: theirs, zeno: res.reply });
+    if (about && res.reply.trim() && res.reply !== "Okay, it'll be here." && (!fromChip || theirs === "Show me how")) keepNote(about.id, { you: theirs, zeno: res.reply });
     // What the turn remembered stays quiet (Vi, Nov 2): it shows in Memory, and private facts only on this device.
     keep(res.private);
     // shortcut: a step already on the calendar is not offered again (booking it would double-book); add "Move to …?" if people ask.
@@ -841,7 +844,8 @@ export default function GuidedDay() {
     }
     if (next === "ready" && changed) {
       setStuck(false);
-      setProposedId(now.chosen !== null ? addedStep(now.goal, res.goal) : null);
+      const kept = now.chosen !== null && openSteps(res.goal).some((one) => one.id === now.chosen) ? now.chosen : null;
+      setProposedId(/\b(smaller|too big|first piece)\b/i.test(text) && now.chosen !== null ? addedStep(now.goal, res.goal) : kept);
     }
     // Goals Zeno saved for later (several named at once, or one named mid-step) join the list now, not at the next load:
     // the turn's answer carries only the current one (found in review, Nov 4).
@@ -993,15 +997,21 @@ export default function GuidedDay() {
   }
 
   async function startStep(step: Step) {
-    const before = goal;
+    const before = latest.current.goal;
     const back = screen ?? "ready";
     moved.current = true;
     setTimer(null);
-    if (goal) changeGoal(withStatus(goal, step.id, "doing", new Date()));
+    if (before) changeGoal(withStatus(before, step.id, "doing", new Date()));
     enterFocus();
     const res = await patchStep(step.id, "doing");
     if (res.state === "ok") takeGoal(res.goal);
     else failStart(res, before, back);
+  }
+
+  // Coming back's Start: a goal other than the current one opens first (made current), then its step starts.
+  async function resumeStart(plan: Goal, step: Step) {
+    if (latest.current.goal?.id !== plan.id) await openPlan(plan);
+    if (latest.current.goal?.id === plan.id && latest.current.view === "desk") void startStep(step);
   }
 
   // Words a chip says for the person; onUserTurn shows `label` as theirs.
@@ -1437,7 +1447,7 @@ export default function GuidedDay() {
     warned.current.add(keyOf(soon));
     const minutes = Math.max(1, Math.round((Date.parse(soon.start) - Date.now()) / 60_000));
     if (screen === "focus") hush(`Heads up, ${soon.title} at ${formatTime(soon.start, zone())}.`);
-    else if (voice.phase === "idle" || voice.phase === "speaking") speakLine(`Heads up, ${soon.title} in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`);
+    else if ((voice.phase === "idle" || voice.phase === "speaking") && !voice.muted) void voice.speak(`Heads up, ${soon.title} in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`);
   });
   const watching = screen !== null && screen !== "signed-out" && screen !== "setup";
   useEffect(() => {
@@ -1579,7 +1589,7 @@ export default function GuidedDay() {
     if (res.state !== "ok" || moved.current) return;
     keepOpening(res.opening, quickReplies(res.options), sig, res.noticed);
     setLine(res.opening);
-    speakLine(homeLine(res.opening));
+    if (!voice.muted) void voice.speak(homeLine(res.opening));
   }
 
   // ---------- The screen's answers ----------
@@ -1649,7 +1659,7 @@ export default function GuidedDay() {
     }
     // The home's actions are the goals panel and the front door (Nov 4), never a model option such as "Plan tomorrow";
     // coming back, the goal she was last on starts with one tap.
-    if (screen === "ready") return resume && fresh ? [say(resume.minutes ? `Start · ${resume.minutes} min` : "Start", () => void startStep(resume))] : [];
+    if (screen === "ready") return resume ? [say(resume.step.minutes ? `Start · ${resume.step.minutes} min` : "Start", () => void resumeStart(resume.plan, resume.step))] : [];
     if (screen === "talk") {
       // An offer with no replies left beside it (they went with a booking that was then undone) still has a way home.
       if (options.length) return [...replies, other];
@@ -1723,7 +1733,9 @@ export default function GuidedDay() {
       suggestions={choices.map((choice) => suggestionRow(choice, today))}
       addWords={addWords}
       planning={onDesk ? planning : null}
-      resume={resume && goal ? { goal: goal.title, step: resume.title, minutes: resume.minutes ?? null } : null}
+      resume={
+        resume && { goal: resume.plan.title, step: resume.step.title, minutes: resume.step.minutes ?? null, started: resume.started, due: resume.plan.due ?? null }
+      }
       stuck={screen === "focus" && stuck}
       proposed={proposed}
       materials={

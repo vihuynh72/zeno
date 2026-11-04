@@ -152,7 +152,8 @@ export function DeskMaterials({ materials, step, brief }: { materials?: Material
         )}
         {stopped && (
           <article className="mini">
-            <h3 className="font-bold text-ink-2">Where you stopped</h3>
+            {/* The newest finished step (round 4: "Where you stopped" read as this step's place). */}
+            <h3 className="font-bold text-ink-2">Last done</h3>
             <p className="mt-1">{stopped}</p>
           </article>
         )}

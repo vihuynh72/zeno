@@ -77,6 +77,12 @@ export function leftCaption(goal: Goal) {
   return minutes > 0 ? `${stepsLeft(steps.length)} · about ${duration(minutes)}` : stepsLeft(steps.length);
 }
 
+// "4 steps left" alone: a deadline's day says what is left without hours of work, since nothing is planned on it yet.
+export function stepsLeftCaption(goal: Goal) {
+  const count = left(goal).length;
+  return count === 0 ? (goal.rhythm ? "Next few to plan" : "All steps done") : stepsLeft(count);
+}
+
 // "42 days · 4 steps left": a plan due after the week on screen, its days counted from today.
 export function comingCaption(goal: Goal, today: string) {
   const days = Math.round((Date.parse(goal.due ?? "") - Date.parse(today)) / 86_400_000);

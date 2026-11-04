@@ -11,7 +11,7 @@ const flow = await import("./day-flow.ts");
 const { addHeard, asks, canvasFor, cardSize, checkinMinute, clock, dayPart, doneLine, dueLabel, FOCUS, foundLine, greeting, groupFacts } = flow;
 const { isEmailStep, isNotes, laterBlock, laterMinutes, nextScreen, openingReusable, openingSig, openSteps, quickReplies } = flow;
 const { replanOnCanvas, slotLabel, soonEvent, streakLine, withStatus } = flow;
-const { addedStep, barCaption, duration, goalRow, mailPlan, nextProposal, openPlans, proposedStep, realMinutes, runningStep } = flow;
+const { addedStep, barCaption, duration, goalRow, mailPlan, nextProposal, openPlans, proposedStep, realMinutes, resumePlan, runningStep } = flow;
 const { sameTitle, spoken, stoppedLine, todayLine, untilNext } = flow;
 const { asksBig, extraReplies, goalLine, isResearchStep, keepClock, nextFewLine, splitLater } = flow;
 
@@ -422,6 +422,24 @@ assert.equal(mailPlan({ ...asking, subject: "  " }).steps[0].title, "Reply to Pr
 assert.equal(mailPlan({ ...asking, from: "dana@school.edu" }).title, "Answer dana", "a title never holds an address");
 assert.equal(mailPlan({ ...asking, from: "<registrar@school.edu>" }).steps[0].title, "Reply to registrar about Does Wednesday at 2 work?");
 assert.deepEqual(mailPlan(null), { title: "Answer an email", steps: [{ title: "Reply to the email", minutes: 2 }] });
+
+// Coming back: her last goal, unless another of hers is due within 2 days and sooner; a never-started goal says Start here.
+{
+  const paper = mk("pp", "PHIL 134 paper", "2026-11-04", step("p1", "done"), step("p2", "todo", { title: "Outline", minutes: 15 }));
+  const exam = mk("ex", "CS 146 exam", "2026-11-12", step("e1", "todo", { title: "List topics", minutes: 5 }));
+  const run = mk("rn", "Run a 5K", null, step("r1", "todo"));
+  const back = (current: Goal | null, list: Goal[], left: string | null = null) => {
+    const found = resumePlan(current, list, hToday, left);
+    return found && [found.plan.id, found.step.id, found.started];
+  };
+  assert.deepEqual(back(exam, [paper, exam]), ["pp", "p2", true], "the paper due in 2 days leads the exam she last opened");
+  assert.deepEqual(back(exam, [exam, run]), ["ex", "e1", false], "nothing urgent: her last goal, never started");
+  assert.deepEqual(back(run, [run, exam]), ["rn", "r1", false]);
+  assert.equal(back(paper, [paper, exam], "pp"), null, "never the goal she just left: she picks another on the left");
+  assert.equal(back(null, []), null);
+  assert.deepEqual(back(null, [exam, paper]), ["pp", "p2", true], "no current goal: the urgent one");
+  assert.equal(back(null, [exam]), null, "no current goal and nothing urgent: pick on the left");
+}
 
 // The desk proposes the first open step, or the one she tapped; Another step goes round the open ones.
 const desk = goal(step("1", "done"), step("2", "todo"), step("3", "todo"), step("4", "skipped"), step("5", "todo"));

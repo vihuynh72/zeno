@@ -5,7 +5,7 @@ import type { CanvasAssignment, CanvasBrief, DayEmail, DayEvent, Deadline, DoneS
 import { localDate } from "@/lib/tz";
 import type { VaultFact } from "@/lib/vault";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
-import { barCaption, cardSize, clock, openSteps, type Fact, type PanelRow, type Screen } from "@/components/day-flow";
+import { barCaption, cardSize, clock, dueLine, openSteps, type Fact, type PanelRow, type Screen } from "@/components/day-flow";
 import AccountMenu from "@/components/account-menu";
 import GoalsPanel, { FrontDoor, Suggestions } from "@/components/goals-panel";
 import BookingChip, { type Booking } from "@/components/booking-chip";
@@ -50,7 +50,8 @@ export type DayViewProps = {
   suggestions?: PanelRow[]; // the panel's Suggestions: deadlines with no plan and email that asks something (on.choose)
   addWords?: string | null; // words whose plan couldn't be made, back in the add box
   planning?: { title: string; due: string | null; line: string } | null; // a desk whose plan is still being made
-  resume?: { goal: string; step: string; minutes: number | null } | null; // coming back: the goal she was last on
+  // Coming back: the goal she was last on (or one due within 2 days), its next step, and whether she started it.
+  resume?: { goal: string; step: string; minutes: number | null; started: boolean; due: string | null } | null;
   stuck?: boolean; // Stuck? is open in Focus: its four ways out, without Pop out and Music beside them
   proposed?: Step | null; // the step Zeno proposes on the desk
   materials?: Materials; // what lies on the desk beside the step
@@ -231,7 +232,8 @@ export default function DayView(props: DayViewProps) {
     // Nov 4: Keep going sat half under the dock on a phone).
     const again = setTimeout(clear, 450);
     return () => clearTimeout(again);
-  }, [answersKey]);
+    // Zeno's line too: a 2-3 line reply under a running step pushes Done down without changing the answers (round 4).
+  }, [answersKey, props.line]);
 
   // The person's words; the text box itself docks above the dock (Nov 4), never on the card.
   const youLine =
@@ -358,14 +360,17 @@ export default function DayView(props: DayViewProps) {
                 {props.resume && (
                   <>
                     <p>
-                      <span className="hand">Pick up where you left off:</span>
+                      <span className="hand">{props.resume.started ? "Pick up where you left off:" : "Start here:"}</span>
                     </p>
                     <p className="font-bold">
                       {props.resume.step}
                       {props.resume.minutes ? <span className="mins">{props.resume.minutes} min</span> : null}
                     </p>
                     <p>
-                      <span className="hand text-ink-2">{props.resume.goal}</span>
+                      <span className="hand text-ink-2">
+                        {props.resume.goal}
+                        {props.resume.due && today ? ` · ${dueLine(props.resume.due, today)}` : ""}
+                      </span>
                     </p>
                   </>
                 )}

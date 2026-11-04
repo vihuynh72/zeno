@@ -525,6 +525,21 @@ export function groupFacts(facts: Fact[]): { group: MemoryGroup; name: string; f
 export const panelGoals = (plans: Goal[]) =>
   [...plans].sort((a, b) => byDue(a.due ?? null, b.due ?? null) || a.title.localeCompare(b.title) || (a.id < b.id ? -1 : 1));
 
+// Coming back: the goal she was last on (`goal`, her own last pick) and its next step; one of her goals due within 2 days
+// (or overdue), and sooner, leads instead (round 4: a paper due Friday, its outline paused, sat behind an exam 8 days
+// out). Never the goal she just switched away from (`leftId`). `started`: it says "Pick up where you left off" only for
+// a goal with a finished or running step; a goal never started says "Start here" (round 4: the label was false).
+export function resumePlan(goal: Goal | null, plans: Goal[], today: string, leftId: string | null = null): { plan: Goal; step: Step; started: boolean } | null {
+  const open = plans.filter((plan) => plan.id !== leftId && openSteps(plan).length > 0);
+  const soon = (plan: Goal) => plan.due != null && today !== "" && daysFrom(today, plan.due) <= 2;
+  const urgent = open.filter(soon).sort((a, b) => byDue(a.due ?? null, b.due ?? null))[0];
+  const last = goal ? open.find((plan) => plan.id === goal.id) : undefined;
+  const plan = urgent && (!last || !last.due || byDue(urgent.due ?? null, last.due) < 0) ? urgent : last ?? urgent;
+  if (!plan) return null;
+  const step = openSteps(plan)[0];
+  return { plan, step, started: step.status === "doing" || plan.steps.some((one) => one.status === "done") };
+}
+
 // "Suggestions" under the goals: deadlines due within 7 days that no open plan covers, soonest first, then the newest
 // email that asks something and has no plan here yet (`handled`: email ids). 3 at most; the email keeps its slot.
 export function panelSuggestions(plans: Goal[], deadlines: Deadline[], emails: DayEmail[], today: string, handled: string[] = []): Choice[] {

@@ -202,7 +202,7 @@ const PLAN_RULES = [
   `Steps you save with set_goal, update_steps or add_step: ${SMALL_STEPS} ${SESSION_STEP} ${ONGOING} ${BACKWARD} ${RANGES}`,
   // Round 2: "Saved: 10 to 11 AM weekdays" nowhere to be seen, "lunch runs locked in", "Map both out now?" and "Yes, plan
   // it" with no tool that could, "Photos feel smaller now" beside the same 90-minute step, and "due Nov 18" for Nov 20.
-  "Say you saved, added, planned, changed or moved something only when a tool call this turn did it, and say where, like 'Added a step: Call the venue.' or 'In Memory: runs at lunch.' Never say how a change feels, like 'Feels smaller now'.",
+  "Say you saved, added, planned, changed or moved something only when a tool call this turn did it, and say where, like 'Added a step: Call the venue.' or 'In Memory: runs at lunch.' Never say how a change feels, like 'Feels smaller now'. Zeno keeps only goals, steps, due dates, Memory and the notes under each step: never say you track, count, log or keep anything else; what they tell you on a step stays in that step's notes.",
   "You can't spread a plan over the week or put every step on days: if they ask, say so plainly and name the next step (you can still offer one calendar block for a step when they ask for one). Tap options are things they'd say back that you can do now with a tool or an answer, never an offer no tool does, like 'Yes, plan it' or 'Map both out'.",
   "When you say a goal is due, use its due date as listed; a date they gave for something else, like a rehearsal, is never its due date.",
 ].join(" ");
@@ -568,7 +568,7 @@ const ADD_PROMPT = [
   "steps, when rhythm is empty: 4 to 12 steps in order that finish the whole job. The first takes at most 5 minutes and can start right now. The last one finishes it, like sending, submitting, paying, booking, ordering or handing it in.",
   ONGOING,
   BACKWARD,
-  "steps, when there is a rhythm: first one step of at most 5 minutes that gets them ready and can start right now, like picking the days; then the next 3 to 5 sessions in order, each one real session sized honestly for where they are now and building slowly.",
+  "steps, when there is a rhythm: first one step of at most 5 minutes that is a small real piece of the work and can start right now, like a 5-minute walk or one practice question, never picking days or times (nothing schedules them yet); then the next 3 to 5 sessions in order, each one real session sized honestly for where they are now and building slowly.",
   "Each step title starts with a verb, in plain words anyone knows, at most 60 characters; minutes is an honest whole number, the same as any time the title says.",
   SMALL_STEPS,
   SESSION_STEP,
@@ -1025,7 +1025,7 @@ export const TOOLS = [
             minItems: 1,
             maxItems: 12,
             description:
-              "One step for a quick thing, four to twelve for a bigger one, planned backward from the due date, most urgent first, the last one finishing the job. With a rhythm: a starter of about five minutes, like picking the days, then the next 3 to 5 whole sessions, each one real session (a run, a practice) sized honestly. The first step is tiny and concrete, about five minutes.",
+              "One step for a quick thing, four to twelve for a bigger one, planned backward from the due date, most urgent first, the last one finishing the job. With a rhythm: a starter of about five minutes that is a small real piece of the work, like a 5-minute walk, never picking days or times, then the next 3 to 5 whole sessions, each one real session (a run, a practice) sized honestly. The first step is tiny and concrete, about five minutes.",
             items: { type: "object", properties: stepFields, required: ["title", "minutes"] },
           },
         },
@@ -1492,7 +1492,7 @@ export const sameGoal = (a: string, b: string) => {
 // with nothing to show): that sentence goes. Only one that opens with the claim, says "locked in" or promises a save, so
 // advice like "Save the file first" stays.
 const CLAIM =
-  /^(?:(?:ok(?:ay)?|got it|great|sure|perfect|all set)\b[,.!]*\s*)?(?:i(?:'ve| have| just)?\s+)?(?:saved|added|planned|booked|scheduled|noted|updated|changed|moved|switched)(?=\s*(?:[:.!]|$)|\s+(?:it|that|this|them|both|all|everything|a|an|the|your|to|for|in|on)\b)|(?<!\b(?:you'?re|you are|stay|stays|get|gets)\s+)\blocked in\b|\bi'?ll (?:remember|save|add|plan|book|schedule)\b/i;
+  /^(?:(?:ok(?:ay)?|got it|great|sure|perfect|all set)\b[,.!]*\s*)?(?:i(?:'ve| have| just)?\s+)?(?:saved|added|planned|booked|scheduled|noted|updated|changed|moved|switched)(?=\s*(?:[:.!]|$)|\s+(?:it|that|this|them|both|all|everything|a|an|the|your|to|for|in|on)\b)|(?<!\b(?:you'?re|you are|stay|stays|get|gets)\s+)\blocked in\b|\bi'?ll (?:remember|save|add|plan|book|schedule|keep|track|log)\b|\b(?:tracked|tracking|logged)\b/i;
 export const unclaimed = (say: string) =>
   say
     .split(/(?<=[.!?]["”’']?)\s+/)
