@@ -18,7 +18,8 @@ const BRINGS: Record<App, string> = {
 };
 const ORDER: App[] = ["notion", "gdocs", "slack", "linear", "trello"];
 const LINEAR_KEYS = "https://linear.app/settings/account/security";
-// shortcut: Notion and Slack sign-in starts at /api/connect/<app>/start (the Notion/Slack track's route); change here if it moves.
+// Trello's authorize page hands back a read token (#token=…) at /connect/trello; Notion and Slack sign in through
+// /api/connect/<app>/start (the Notion/Slack track), which ends at /connect/<app> too.
 const startUrl = (app: App) =>
   app === "trello"
     ? `https://trello.com/1/authorize?${new URLSearchParams({

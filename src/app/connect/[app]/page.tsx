@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { auth } from "@/auth";
 import { APPS, APP_NAMES, type App } from "@/lib/connect";
@@ -22,6 +23,7 @@ export default function Connect({ params }: PageProps<"/connect/[app]">) {
 
 async function Finish({ params }: Pick<PageProps<"/connect/[app]">, "params">) {
   const { app } = await params;
+  await connection(); // the account is read at request time (auth() draws random values, which can't be prerendered)
   const known = (APPS as readonly string[]).includes(app) ? (app as App) : null;
   const email = known ? (await auth())?.user?.email : null;
   return (
