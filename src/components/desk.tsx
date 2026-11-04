@@ -4,7 +4,7 @@ import { type CSSProperties, type KeyboardEvent, type MouseEvent, useEffect, use
 import type { DayEmail, DayEvent, Deadline, DoneStep, Goal, MailResponse, Progress, SourceState } from "@/lib/day";
 import type { Today } from "@/components/day-view";
 import { browserZone, freeGaps, httpsOnly, markEvents, senderName, snippetLine, timeRange } from "@/components/desk-rows";
-import { deskPlans, doneCaption, dueShort, sameGoal } from "@/components/goal-rows";
+import { deskPlans, doneCaption, doneSteps, dueShort, mergeDone, sameGoal } from "@/components/goal-rows";
 import WeekGoals, { GoalLines } from "@/components/week-goals";
 import WeekGrid from "@/components/week-grid";
 import { formatTime, localDate } from "@/lib/tz";
@@ -33,7 +33,7 @@ const TABS: Record<DeskTab, string> = { today: "Today", week: "Week" };
 
 // tab is the view it opens on; the person switches between Today and Week inside. booked is what the card booked since
 // the day loaded, which Today shows. Nothing here writes to the calendar. today's doneThisWeek is the day's (GET /api/day)
-// steps finished this week, for the Week; without it the Week reads them off the open plans.
+// steps finished this week, for the Week; without it (a day saved before Nov 4) the Week reads them off the plans.
 type DeskProps = {
   open: boolean;
   tab?: DeskTab;
@@ -131,6 +131,9 @@ function DeskBody({ tab: opensOn = "today", today, goal, goals, progress, onSign
   const mailOn = Boolean(today && today.sources.email !== "no-access");
   const connect = today && [!calendarOn && "calendar", !mailOn && "mail"].filter(Boolean).join(" and ");
   const plans = deskPlans(goal, goals);
+  // The Week's finished steps: the day's, and the page's fresh plans' (the current one even once it is done), since the
+  // day is not read again after each Done.
+  const done = mergeDone(today?.doneThisWeek ?? [], doneSteps([...(goal ? [goal] : []), ...(goals ?? []).filter((plan) => plan.id !== goal?.id)]));
   const deadlines = today?.sources.calendar === "ok" ? (today.deadlines ?? []) : [];
   const date = now ? localDate(browserZone(), new Date(now)) : "";
   const grid = tab === "week" && view === "calendar" && calendarOn;
@@ -207,7 +210,8 @@ function DeskBody({ tab: opensOn = "today", today, goal, goals, progress, onSign
               now={now}
               goals={plans}
               deadlines={deadlines}
-              done={today?.doneThisWeek}
+              done={done}
+              calendar={calendarOn}
               progress={progress}
               onGoal={onGoal}
               onDeadline={onDeadline}

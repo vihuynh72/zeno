@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Deadline, DoneStep, Goal, Progress, WeekResponse } from "@/lib/day";
 import { addDays, browserZone, dateLabel, mondayOf, weekLabel } from "@/components/desk-rows";
-import { comingCaption, doneSteps, dueShort, duration, freeMinutes, leftCaption, segments, weekPlan, type Segment } from "@/components/goal-rows";
+import { comingCaption, dueShort, duration, freeMinutes, leftCaption, segments, weekPlan, type Segment } from "@/components/goal-rows";
 import { localDate } from "@/lib/tz";
 
 // Only finished steps fill the bar; the one up next is outlined (Nov 4: a red one read as progress at 0 done).
@@ -23,8 +23,8 @@ function Bar({ goal }: { goal: Goal }) {
 }
 
 // A goal's lines on a ruled card, inside its row button: the title (and what sits right of it), then its bar and caption,
-// or the caption alone. Where the two don't fit side by side, the caption drops under the bar. Numbers stay in the sans,
-// whose plain 0 never reads as "Ø" (Nov 4).
+// or the caption alone. Where the two don't fit side by side, the caption drops under the bar. Counts and dates are in
+// the sans, as the goal strip writes them (Nov 4).
 export function GoalLines({ title, aside, goal, caption, bold }: { title: string; aside?: string; goal?: Goal; caption: string; bold?: boolean }) {
   return (
     <>
@@ -54,8 +54,10 @@ type WeekGoalsProps = {
   now: number;
   goals: Goal[];
   deadlines: Deadline[];
-  // This week's finished steps, every plan's (finished plans too); missing from days saved before Nov 4.
-  done?: DoneStep[];
+  // Every finished step the page knows of (desk.tsx: the day's doneThisWeek and the plans' own steps).
+  done: DoneStep[];
+  // A calendar is connected, so the days can show their free time.
+  calendar: boolean;
   progress?: Progress;
   onGoal?(goalId: string): void;
   onDeadline?(deadline: Deadline): void;
@@ -64,7 +66,7 @@ type WeekGoalsProps = {
 // The Desk's Week (Vi, Nov 4): Monday to Sunday, each day with the steps finished on it, what is due and the free time
 // between 8 AM and 10 PM; then the plans due after the week and the ones that keep going, so it is never blank while she
 // has goals. The arrows step whole weeks. A tap opens the plan, or plans the deadline; the calendar grid is one tap away.
-export default function WeekGoals({ now, goals, deadlines, done, progress, onGoal, onDeadline }: WeekGoalsProps) {
+export default function WeekGoals({ now, goals, deadlines, done, calendar: connected, progress, onGoal, onDeadline }: WeekGoalsProps) {
   const zone = browserZone();
   const today = now ? localDate(zone, new Date(now)) : null;
   const [shift, setShift] = useState(0); // whole weeks from this one
@@ -74,18 +76,17 @@ export default function WeekGoals({ now, goals, deadlines, done, progress, onGoa
   // Only for each day's free time: until it answers, or when it can't, the days show without it. Kept per week, so a
   // slow answer for a week stepped past never lands on another.
   useEffect(() => {
-    if (!monday) return;
+    if (!monday || !connected) return;
     fetch(`/api/calendar/week?start=${monday}`)
       .then((response) => response.json() as Promise<WeekResponse>)
       .catch((): WeekResponse => ({ state: "error" }))
       .then((data) => setWeeks((all) => ({ ...all, [monday]: data })));
-  }, [monday]);
+  }, [monday, connected]);
 
   if (!today || !monday) return null;
   const answer = weeks[monday];
   const calendar = answer?.state === "ok" ? answer : null;
-  // This week's finished steps come from the day; other weeks have only the open plans' own (finished plans are gone).
-  const { days, comingUp, ongoing } = weekPlan(monday, today, goals, deadlines, (shift === 0 ? done : undefined) ?? doneSteps(goals), zone);
+  const { days, comingUp, ongoing } = weekPlan(monday, today, goals, deadlines, done, zone);
   return (
     // The home card's width, so a laptop's bars stay short enough to read.
     <div className="flex max-w-[760px] flex-col gap-4">
@@ -127,13 +128,26 @@ export default function WeekGoals({ now, goals, deadlines, done, progress, onGoa
                 </h3>
                 {finished.length + items.length > 0 && (
                   <ul>
+                    {/* Ticked in the margin as the goal's steps list ticks them, with the real minutes at the right end
+                        of the line, so a phone keeps most of them on one line and the minutes never break in two. */}
                     {finished.slice(0, DONE_SHOWN).map((step, j) => (
-                      <li key={`${j}:${step.doneAt}`} className="text-ink-2">
-                        Done: {step.title}
-                        {step.minutes ? ` · ${duration(step.minutes)}` : ""}
+                      <li key={`${j}:${step.doneAt}`} className="relative flex items-baseline gap-4 text-ink-2">
+                        <span aria-hidden="true" className="absolute -left-10 w-6 text-center">
+                          ✓
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="sr-only">Done: </span>
+                          {step.title}
+                        </span>
+                        {step.minutes ? (
+                          <span className="shrink-0 whitespace-nowrap">
+                            <span className="sr-only">, </span>
+                            {duration(step.minutes)}
+                          </span>
+                        ) : null}
                       </li>
                     ))}
-                    {finished.length > DONE_SHOWN && <li className="text-ink-2">and {finished.length - DONE_SHOWN} more</li>}
+                    {finished.length > DONE_SHOWN && <li className="text-ink-2">and {finished.length - DONE_SHOWN} more done</li>}
                     {items.map((item, j) => (
                       <li key={`${j}:${item.title}`}>
                         <button

@@ -8,7 +8,7 @@ registerHooks({
   resolve: (specifier, context, nextResolve) =>
     nextResolve(specifier.startsWith("@/") ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context),
 });
-const { comingCaption, deskPlans, doneCaption, doneSteps, dueShort, duration, freeMinutes, leftCaption, sameGoal, segments, weekPlan } =
+const { comingCaption, deskPlans, doneCaption, doneSteps, dueShort, duration, freeMinutes, leftCaption, mergeDone, sameGoal, segments, weekPlan } =
   await import("./goal-rows.ts");
 
 const step = (status: Step["status"], minutes: number | null = 10): Step => ({
@@ -55,6 +55,8 @@ assert.deepEqual(segments(goal("g", "G", null, [step("done"), step("done"), step
 assert.deepEqual(segments(goal("g", "G", null, [step("skipped"), step("done"), step("todo"), step("todo")])), ["todo", "done", "next", "todo"]);
 assert.deepEqual(segments(goal("g", "G", null, [step("done"), step("done")])), ["done", "done"]);
 assert.equal(doneCaption(goal("g", "G", null, [step("done"), step("done"), step("doing"), step("todo"), step("skipped")])), "2 of 5 done");
+// No lone 0: the fonts slash it, and "Ø of 3 done" was misread (Nov 4).
+assert.equal(doneCaption(goal("g", "G", null, [step("doing"), step("todo"), step("todo")])), "None of 3 done");
 
 // Due dates from Tuesday Nov 3: today, tomorrow, a weekday within a week, else the date; past ones say "was due".
 const due = (date: string) => dueShort(date, "2026-11-03");
@@ -129,6 +131,21 @@ assert.deepEqual(
     { title: "Pick a role", goal: "Find a job", doneAt: "2026-11-03T17:05:00Z", minutes: 5 },
   ],
 );
+
+// The day's list and the page's plans merge, each step once (the same instant written two ways is one step), the day's
+// entry and minutes kept; a step finished since the day loaded joins.
+const ran = { title: "Easy run", goal: "Run a 5K", doneAt: "2026-11-03T15:00:00.000Z", minutes: 24 };
+assert.deepEqual(
+  mergeDone(
+    [ran, { title: "Write the toast", goal: "Wedding toast", doneAt: "2026-11-02T18:00:00Z", minutes: 15 }],
+    [
+      { ...ran, doneAt: "2026-11-03T15:00:00Z", minutes: 23 },
+      { title: "Long run", goal: "Run a 5K", doneAt: "2026-11-03T16:00:00Z", minutes: null },
+    ],
+  ).map((step) => `${step.title} ${step.minutes}`),
+  ["Easy run 24", "Write the toast 15", "Long run null"],
+);
+assert.deepEqual(mergeDone([], []), []);
 
 // Coming up counts days from today.
 assert.equal(comingCaption(goal("g", "Thesis chapter 2", "2026-12-15", [step("done"), step("todo"), step("todo"), step("doing")]), "2026-11-03"), "42 days · 3 steps left");

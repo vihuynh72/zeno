@@ -31,7 +31,11 @@ export function segments(goal: Goal): Segment[] {
   return goal.steps.map((step) => (step.status === "done" ? "done" : step === next ? "next" : "todo"));
 }
 
-export const doneCaption = (goal: Goal) => `${goal.steps.filter((step) => step.status === "done").length} of ${goal.steps.length} done`;
+// "2 of 5 done"; none in words, since both Atkinson fonts slash their zero and a lone "Ø of 5" was misread (Nov 4).
+export function doneCaption(goal: Goal) {
+  const done = goal.steps.filter((step) => step.status === "done").length;
+  return `${done || "None"} of ${goal.steps.length} done`;
+}
 
 // "due today", "due tomorrow", "due Fri" within a week, else "due Nov 12"; "was due Mon" once it has passed.
 export function dueShort(due: string, today: string) {
@@ -75,9 +79,8 @@ export function freeMinutes(events: { start: string; end: string; allDay: boolea
   return Math.floor(free / 15) * 15;
 }
 
-// The finished steps of these plans, as the Week lists them: for a day without doneThisWeek (saved before Nov 4) and for
-// the weeks before this one, where only the open plans still carry their steps. Minutes are real ones, from Start to
-// Done, and only when believable (1 to 360, as paceOf trusts them).
+// The finished steps of these plans, as the Week lists them. Minutes are real ones, from Start to Done, and only when
+// believable (1 to 360, as paceOf trusts them).
 export function doneSteps(goals: Goal[]): DoneStep[] {
   return goals.flatMap((goal) =>
     goal.steps.flatMap((step) => {
@@ -86,6 +89,14 @@ export function doneSteps(goals: Goal[]): DoneStep[] {
       return [{ title: step.title, goal: goal.title, doneAt: step.doneAt, minutes: real >= 1 && real <= 360 ? real : null }];
     }),
   );
+}
+
+// The day's finished steps (doneThisWeek: this week's, finished plans' too) and the page's own plans' (fresh, so a step
+// finished since the day loaded shows, and the only record of earlier weeks), each step once, the day's entry kept.
+export function mergeDone(day: DoneStep[], plans: DoneStep[]): DoneStep[] {
+  const key = (step: DoneStep) => `${Date.parse(step.doneAt)}:${step.title}`;
+  const known = new Set(day.map(key));
+  return [...day, ...plans.filter((step) => !known.has(key(step)))];
 }
 
 // What a day of the Week shows as due: an open plan, a deadline, or both when the deadline's title matches the plan's.
