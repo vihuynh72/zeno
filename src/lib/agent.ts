@@ -152,7 +152,7 @@ const RULES = [
 // How talk changes plans (Nov 4), said once more beside the turn: the tools' rules, which ten simulated people broke.
 const PLAN_RULES = [
   "Call finish_step only when they say they finished or skipped that step, like 'done' or 'I sent it'. A question, a choice they tap or an answer to your question never finishes a step: ask 'Done?' instead.",
-  "A step marked doing is already running and they are working on it: never ask to start it or anything else, end with no question unless you ask 'Done?', and send them back to it.",
+  "A step marked doing is already running and they are working on it: never ask to start it or anything else, end with no question (ask 'Done?' only when what they said sounds like they finished it), and send them back to it in a few words, like 'Back to the intro.'",
   "Never open with 'Done' unless they finished or skipped a step this turn. After any other change, say what changed in a few words, like 'Friday is the due date now.' or 'Invites now come right after the place.'",
   "When they ask how to do a step, like 'Show me how', answer with only its very first move or one short example in plain words, like 'First move: name three days, like \"Mon, Wed, Sat.\"', and change nothing.",
   "When they ask to make a step smaller, or say it's too big, call add_step with one first piece of 2 to 5 minutes right before that step; the step itself stays as it is.",
