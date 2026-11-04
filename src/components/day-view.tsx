@@ -768,7 +768,6 @@ export default function DayView(props: DayViewProps) {
         onClose={() => on.sheet(null)}
         onSignIn={on.signIn}
         goals={props.held ?? props.goals}
-        progress={props.progress ?? undefined}
         onGoal={on.openGoal}
         onDeadline={on.openDeadline}
         onReply={on.reply}
