@@ -28,20 +28,21 @@ const b = running.steps[1];
 // Focus: the running step, with the page's own Done.
 assert.deepEqual(popCard("focus", running, FOCUS), { kind: "step", step: b, answer: 0 });
 assert.deepEqual(popCard("focus", running, [...FOCUS, "Draft it in Gmail"]), { kind: "step", step: b, answer: 0 });
-// Stuck?: Done stays first, beside Make it smaller and Switch goal.
-assert.deepEqual(popCard("focus", running, ["Done", "Make it smaller", "Switch goal"]), { kind: "step", step: b, answer: 0 });
+// Stuck?: Done stays first, beside Make it smaller, Show me how, Switch goal and Stop for now.
+assert.deepEqual(popCard("focus", running, ["Done", "Make it smaller", "Show me how", "Switch goal", "Stop for now"]), { kind: "step", step: b, answer: 0 });
 // The running step even when a to-do step comes before it in the plan, as the page's Focus card picks it.
 const outOfOrder = plan(step("c", "todo"), step("b", "doing"));
 assert.deepEqual(popCard("focus", outOfOrder, FOCUS), { kind: "step", step: outOfOrder.steps[1], answer: 0 });
-// Zeno asked something in Focus: its quick replies lead, so a reply that reads "Done" is never taken for the page's Done.
-assert.deepEqual(popCard("focus", running, ["Done", "One point", "Done", "Stop for now"]), { kind: "step", step: b, answer: 2 });
-assert.deepEqual(popCard("focus", running, ["One point", "Find an example", "Done", "Stop for now"]), { kind: "step", step: b, answer: 2 });
+// Zeno asked something in Focus: Done still leads (Nov 4), and its answers follow as links.
+assert.deepEqual(popCard("focus", running, ["Done", "One point", "Find an example", "Stuck?", "Stop for now"]), { kind: "step", step: b, answer: 0 });
 // A draft waits in Focus: the page offers Open in Gmail and Not now, so the window offers no Done either.
 assert.deepEqual(popCard("focus", running, ["Open in Gmail", "Not now"]), { kind: "step", step: b, answer: -1 });
 
 // After a Done with steps left: Zeno's line with Keep going, the page's first answer, which starts the next step.
 const after = plan(step("a", "done"), step("b", "done"), step("c", "todo"));
 assert.deepEqual(popCard("checkin", after, AFTER_DONE), { kind: "next", answer: 0 });
+// A goal that keeps going rests after a session: the window shows the line and closes, with no Keep going.
+assert.deepEqual(popCard("checkin", { ...after, rhythm: "3 runs a week" }, ["Back to my goals", "Keep going", "That's enough today"]), { kind: "last" });
 // After the plan's last step (a skipped one finishes it too): the line alone; Back to my goals stays on the page.
 assert.deepEqual(popCard("checkin", plan(step("a", "done"), step("b", "done")), ALL_DONE), { kind: "last" });
 assert.deepEqual(popCard("checkin", plan(step("a", "done"), step("b", "skipped")), ALL_DONE), { kind: "last" });

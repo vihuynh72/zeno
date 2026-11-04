@@ -201,10 +201,12 @@ export default function DayView(props: DayViewProps) {
     if (!pills) return;
     const { top, bottom } = pills.getBoundingClientRect();
     const dockTop = document.querySelector(".dock")?.getBoundingClientRect().top ?? innerHeight;
-    // On a goal's desk the scroll stops where the goal strip would leave the top, so a Done shows its bar fill (live,
-    // Nov 3: Done scrolled the bar off a 1440x900 laptop); the links may then sit in the dock's fade.
-    const strip = document.querySelector<HTMLElement>('main section[aria-label="Goal"]');
-    const room = strip ? Math.max(0, strip.getBoundingClientRect().top - 8) : Infinity;
+    // On a goal's desk the scroll stops before the step card slides under the sticky goal strip (Nov 4), so the step and
+    // a Done's bar fill stay in view (live, Nov 3: Done scrolled the bar off a 1440x900 laptop); the links may then sit
+    // in the dock's fade.
+    const strip = document.querySelector<HTMLElement>("[data-strip]");
+    const card = mainRef.current?.querySelector(".card");
+    const room = strip && card ? Math.max(0, card.getBoundingClientRect().top - strip.offsetHeight - 8) : Infinity;
     const need = Math.min(bottom - (dockTop - 16), room);
     if (top < innerHeight && need > 0) {
       window.scrollBy({ top: need, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
@@ -359,14 +361,23 @@ export default function DayView(props: DayViewProps) {
                 <button type="button" onClick={goHome} className="link -ml-1">
                   ← All goals
                 </button>
-                <GoalStrip
-                  title={planning?.title ?? goal?.title ?? ""}
-                  due={planning ? planning.due : goal?.due}
-                  steps={planning ? [] : steps}
-                  marked={marked}
-                  caption={barCaption(done, steps.length, screen === "checkin" && Boolean(props.celebrate))}
-                  today={today}
-                />
+              </div>
+            )}
+            {desk && (
+              // Sticky across the desk column (Nov 4): the goal and its bar stay in view in Focus and after a Done, and
+              // the page scrolls under them into a short fade, as it does into the dock's.
+              <div data-strip className="sticky top-0 z-20 -mx-4 w-[calc(100%+2rem)] bg-desk px-4 pt-2 pb-1 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-linear-to-b after:from-desk">
+                <div className="mx-auto max-w-[760px]">
+                  <GoalStrip
+                    title={planning?.title ?? goal?.title ?? ""}
+                    due={planning ? planning.due : goal?.due}
+                    rhythm={planning ? null : goal?.rhythm}
+                    steps={planning ? [] : steps}
+                    marked={marked}
+                    caption={barCaption(done, steps.length, screen === "checkin" && Boolean(props.celebrate))}
+                    today={today}
+                  />
+                </div>
               </div>
             )}
 
@@ -443,20 +454,19 @@ export default function DayView(props: DayViewProps) {
                     <i key={i} />
                   ))}
                   <b aria-hidden="true">DONE</b>
-                  <p className="absolute top-[96px] w-full text-center text-ink-2">
-                    <span className="font-mono">{doneCount}</span> done
-                  </p>
+                  <p className="absolute top-[96px] w-full text-center text-ink-2">{doneCount} done</p>
                 </div>
               )}
             </div>
 
             {props.celebrate && progress && progress.week.length > 0 && screen === "checkin" && <StreakRow progress={progress} />}
 
-            {/* Under a step card, Zeno's quiet Focus line and the person's words. */}
+            {/* Under a step card, Zeno's line (in Focus, or about the step it proposes: never only spoken, Nov 4) and the
+                person's words. */}
             {!lineOnCard && (
               <div className="caption mt-2 w-full max-w-[640px] text-center text-[20px] leading-8 empty:hidden">
-                {top && props.line && (
-                  <p className={props.quiet ? "text-ink-2" : undefined}>
+                {props.line && (
+                  <p className={top && props.quiet ? "text-ink-2" : undefined}>
                     <Said key={props.line} text={props.line} fade={props.line !== firstLine} />
                   </p>
                 )}
@@ -533,11 +543,12 @@ export default function DayView(props: DayViewProps) {
           )}
         </div>
 
-        {/* The steps and the materials stay below the step, in Focus too. */}
+        {/* The steps and the materials stay below the step, in Focus too, and a quiet word on who made the steps. */}
         {desk && !planning && goal && (
           <>
-            <StepsList steps={steps} marked={marked} onPropose={screen === "ready" ? on.propose : undefined} />
+            <StepsList key={goal.id} steps={steps} marked={marked} onPropose={screen === "ready" ? on.propose : undefined} />
             <DeskMaterials key={sourceStep?.id ?? "none"} materials={props.materials} step={sourceStep} brief={props.brief} />
+            <p className="mt-10 w-full max-w-[760px] text-[16px] text-ink-2">Steps by Muse, Meta&apos;s AI</p>
           </>
         )}
 

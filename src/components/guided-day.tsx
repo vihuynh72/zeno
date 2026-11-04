@@ -17,6 +17,7 @@ import type {
   ImportResponse,
   Memory,
   MemoryResponse,
+  NextStepsRequest,
   OpeningResponse,
   PlanRequest,
   PrivateFact,
@@ -45,6 +46,7 @@ import {
   choiceCard,
   dayPart,
   doneLine,
+  extraReplies,
   FOCUS,
   foundLine,
   greeting,
@@ -52,9 +54,11 @@ import {
   isEmailStep,
   isNotes,
   isTomorrow,
+  keepClock,
   laterBlock,
   laterMinutes,
   mailPlan,
+  nextFewLine,
   nextProposal,
   nextScreen,
   openingReusable,
@@ -122,7 +126,10 @@ const toKeep = (day: Day): Day => ({ ...day, emails: [], mailUrl: undefined });
 const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 // The plans with `goal` as it is now: in its place, or first when it is new.
 const upsert = (goals: Goal[], goal: Goal) => (goals.some((one) => one.id === goal.id) ? goals.map((one) => (one.id === goal.id ? goal : one)) : [goal, ...goals]);
-const smallerText = (step: Step) => `Make "${step.title}" smaller: a first piece of 2 to 5 minutes.`;
+// Stuck?'s taps say exactly what they want (Nov 4: the piece goes before the step, which stays, and nothing else moves).
+const smallerText = (step: Step) =>
+  `Make "${step.title}" smaller: add a first piece of 2 to 5 minutes right before it, keep "${step.title}" after it, and change no other step.`;
+const showText = (step: Step) => `Show me how to do "${step.title}": the very first move, or one short example. Don't change my steps.`;
 
 function readSaved(): Saved | null {
   try {
@@ -317,7 +324,8 @@ export default function GuidedDay() {
   const [quietLine, setQuietLine] = useState<string>(FOCUS.calm); // the Focus line Zeno set quietly, muted while it shows
   const [proposedId, setProposedId] = useState<string | null>(null); // the step she tapped on the desk ("Another step")
   const [planning, setPlanning] = useState<Planning | null>(null);
-  const [stuck, setStuck] = useState(false); // Stuck? in Focus: a smaller step or another goal, no question
+  const [stuck, setStuck] = useState(false); // Stuck? in Focus: a smaller step, the first move or another goal, no question
+  const [rollingId, setRollingId] = useState<string | null>(null); // a goal that keeps going whose next few are being planned
   const [mailGoals, setMailGoals] = useState<Record<string, string>>({});
   const today = useToday();
   const choices = homeChoices(goal, goals, base?.deadlines ?? [], day?.emails ?? [], today, Object.values(mailGoals));
@@ -327,7 +335,10 @@ export default function GuidedDay() {
   const onDesk = screen === "focus" || screen === "checkin" || (view === "desk" && (planning !== null || proposed !== null));
   const history = useRef<Turn[]>([]);
   const cache = useRef<Saved | null>(null);
-  const tapped = useRef(false); // the turn in flight came from a chip, not the type box
+  const tapped = useRef<string | null>(null); // the turn in flight came from a chip, not the type box: the words it shows
+  // Make it smaller in Focus: the running step and its clock's start, which the smaller piece carries on (Nov 4).
+  const carry = useRef<{ id: string; at: string } | null>(null);
+  const rolling = useRef(false); // a goal's next few are being planned, so a second tap waits for them
   const moved = useRef(false); // the person has taken a turn (or opened a desk) since the opening was shown
   const spoke = useRef(false); // the opening has been said (or offered with Hear Zeno)
   const talking = useRef(false); // hands-free: the person tapped Talk, so Zeno listens after each question it says
@@ -347,9 +358,9 @@ export default function GuidedDay() {
   }, [screen, pasting, view, stuck]);
   // The voice hook calls onUserTurn later, so it reads the screen, goal and phase from here, not a stale render.
   const shown: View = onDesk ? "desk" : "home";
-  const latest = useRef({ screen, view: shown, goal, goals, line, progress, choices });
+  const latest = useRef({ screen, view: shown, goal, goals, line, progress, choices, chosen: proposedId });
   useEffect(() => {
-    latest.current = { screen, view: shown, goal, goals, line, progress, choices };
+    latest.current = { screen, view: shown, goal, goals, line, progress, choices, chosen: proposedId };
   });
 
   // Auth.js sends failed sign-ins back to "/?error=...".
@@ -411,8 +422,10 @@ export default function GuidedDay() {
   }
 
   // Every change to the plan or the streak goes to the saved day too, so a reload paints what is true now. The plan
-  // also takes its place among the open plans, so the home and the Desk show it as it is now.
-  function changeGoal(next: Goal | null) {
+  // also takes its place among the open plans, so the home and the Desk show it as it is now. A running step keeps its
+  // clock (keepClock).
+  function changeGoal(plan: Goal | null) {
+    const next = keepClock(latest.current.goal, plan);
     setGoal(next);
     latest.current.goal = next;
     const list = next ? upsert(latest.current.goals, next) : latest.current.goals;
@@ -512,16 +525,18 @@ export default function GuidedDay() {
     // Another account's saved day is dropped here: overwritten, its opening and setup state not carried over.
     const prior = saved?.day.account === data.account ? saved : null;
     const kept = prior && prior.part === booted?.part ? prior.opening : null;
-    cache.current = { v: 4, part: booted?.part ?? "", day: toKeep(data), opening: kept, setupDone: prior?.setupDone ?? false };
+    // A running step's clock carried on here before a reload (Make it smaller) keeps its start (keepClock).
+    const plan = keepClock(prior?.day.goal ?? null, data.goal);
+    cache.current = { v: 4, part: booted?.part ?? "", day: toKeep({ ...data, goal: plan }), opening: kept, setupDone: prior?.setupDone ?? false };
     writeSaved(cache.current);
     setDay(data);
     setCanvasOn(Boolean(readCanvas(data.account)));
     setMailGoals(readMailGoals(data.account));
     if (moved.current) return false;
-    setGoal(data.goal);
+    setGoal(plan);
     setGoals(null);
     // An opening that already arrived is checked against this day, not the saved one, before the next render.
-    latest.current.goal = data.goal;
+    latest.current.goal = plan;
     latest.current.goals = data.goals ?? [];
     if (data.isNew === true && !prior?.setupDone) {
       setView("home");
@@ -529,11 +544,13 @@ export default function GuidedDay() {
       startScan(data.account);
       return false;
     }
-    // A step still running goes straight to Focus on its desk; otherwise the home.
-    if (runningStep(data.goal, now)) {
+    // A step still running goes straight to Focus on its desk, with only Focus's own answers (live, Nov 3: the saved
+    // home's "Add a goal" became its big button); otherwise the home.
+    if (runningStep(plan, now)) {
       setView("desk");
       setScreen("focus");
       latest.current.screen = "focus";
+      setOptions([]);
       quiet(FOCUS.calm);
     } else {
       setView("home");
@@ -669,8 +686,11 @@ export default function GuidedDay() {
   }
 
   async function onUserTurn(text: string): Promise<string | null> {
-    const fromChip = tapped.current;
-    tapped.current = false;
+    const fromChip = tapped.current !== null;
+    const theirs = tapped.current ?? text;
+    tapped.current = null;
+    const from = carry.current;
+    carry.current = null;
     const before = latest.current;
     // The card's opening is what the person is answering.
     if ((before.screen === "ready" || before.screen === "wrap") && before.line && history.current.at(-1)?.content !== before.line) {
@@ -678,8 +698,9 @@ export default function GuidedDay() {
     }
     moved.current = true;
     expireOpening();
-    // Answering the opening is picking one thing, so the card moves on at once.
-    if (before.screen === "ready" || before.screen === "wrap") setScreen("talk");
+    // Answering the opening is picking one thing, so the card moves on at once; a goal's desk keeps its step card, and
+    // Zeno's answer comes under it (Nov 4).
+    if ((before.screen === "ready" && before.view !== "desk") || before.screen === "wrap") setScreen("talk");
     if (fromChip) setTyping(false);
     setHear(false);
     setNote(null);
@@ -688,7 +709,7 @@ export default function GuidedDay() {
     setOfferKeys([]);
     setDraft(null);
     setCelebrate(false);
-    setHeard(text);
+    setHeard(theirs);
     const mine = account();
     const res = await post<TalkResponse>("/api/talk", {
       message: text,
@@ -705,6 +726,9 @@ export default function GuidedDay() {
     }
     if (res.state !== "ok" || typeof res.reply !== "string") {
       setLine(THINK_FAIL);
+      // Make it smaller got no answer: the step runs on, on its own clock.
+      const plan = latest.current.goal;
+      if (from && plan) void carryOn(plan, from.id, from.at, THINK_FAIL);
       return THINK_FAIL;
     }
     remember([
@@ -721,7 +745,8 @@ export default function GuidedDay() {
     setOfferKeys(proposal.map(blockKey));
     if (res.progress) changeProgress(res.progress);
     const now = latest.current;
-    const next = nextScreen(now.screen ?? "ready", res.actions ?? [], res.goal);
+    const changed = (res.actions ?? []).some((one) => one.type === "goal-set" || one.type === "roadmap-changed");
+    const next = nextScreen(now.screen ?? "ready", res.actions ?? [], res.goal, now.screen === "ready" && now.view === "desk");
     const done = now.screen === "focus" && next === "checkin" ? openSteps(now.goal)[0] : undefined;
     // A skip said in Focus leaves it this way too, so only a step really marked done gets the stamp, the sound and "Nice".
     const status = done ? res.goal?.steps.find((one) => one.id === done.id)?.status : undefined;
@@ -731,14 +756,20 @@ export default function GuidedDay() {
     if (next === "checkin") setCelebrate(Boolean(res.progress));
     // A step's timer ends with its focus.
     if (next !== "focus" || openSteps(res.goal)[0]?.id !== openSteps(now.goal)[0]?.id) setTimer(null);
-    // A plan made or changed here opens its desk, proposing its first new step ("Something smaller"'s first piece); a
-    // step started here runs on it.
+    // A plan made or changed here opens its desk; a step started here runs on it. Next is then the first step the change
+    // added or reworded when she had picked a step (or a smaller piece goes on the clock), else the first open step, as
+    // the goals list and a reload name it too (Nov 4: one Next everywhere).
     if (next === "ready" || next === "focus") setView("desk");
-    if (next === "ready") {
+    const added = changed ? addedStep(now.goal, res.goal) : null;
+    if (next === "ready" && changed) {
       setStuck(false);
-      setProposedId(addedStep(now.goal, res.goal));
+      setProposedId(from || now.chosen !== null ? added : null);
     }
-    if (done) {
+    // Make it smaller in Focus: the piece Zeno added runs on the step's clock, else the step itself.
+    const onward = from && next !== "checkin" ? (added ?? openSteps(res.goal).find((one) => one.id === from.id)?.id) : undefined;
+    if (from && onward && res.goal) {
+      void carryOn(res.goal, onward, from.at, said);
+    } else if (done) {
       // Said "done" out loud: same stamp and sound as the Done button, so the card and its answers wait for it too.
       if (status === "done") {
         setStamping(true);
@@ -751,6 +782,7 @@ export default function GuidedDay() {
         setProposedId(null);
         setStuck(false);
         fileAway(status === "done" ? done : null, said);
+        void rollOn(res.goal);
       }, 400);
     } else {
       changeGoal(res.goal);
@@ -759,8 +791,8 @@ export default function GuidedDay() {
     }
     const drafted = gmailDraft(res.draft);
     setDraft(drafted);
-    // A draft, the card and the screen after Done have their own answers.
-    replied.current = !drafted && (next === "talk" || next === "focus") ? quickReplies(res.options, proposal.length > 0) : [];
+    // A draft and the screen after Done have their own answers; everywhere else a question's answers show (Nov 4).
+    replied.current = !drafted && next !== "checkin" ? quickReplies(res.options, proposal.length > 0) : [];
     setOptions(replied.current);
     // The hook says it; hands-free listens again after a question.
     return spoken(said);
@@ -836,6 +868,40 @@ export default function GuidedDay() {
     const said = afterDone(res.goal);
     fileAway(step, said);
     speakLine(spoken(said));
+    void rollOn(res.goal);
+  }
+
+  // A goal that keeps going (rhythm) plans its next few once its last open step is done (Nov 4, POST /api/goal/next);
+  // the screen after the Done says what they are, or that it couldn't, with Plan my next few to try again.
+  async function rollOn(plan: Goal | null) {
+    if (!plan?.rhythm || openSteps(plan).length > 0 || rolling.current) return;
+    rolling.current = true;
+    setRollingId(plan.id);
+    const res = await post<GoalResponse>("/api/goal/next", { id: plan.id } satisfies NextStepsRequest);
+    rolling.current = false;
+    setRollingId(null);
+    if (res.state === "signed-out") return showSignedOut();
+    const here = latest.current.screen === "checkin" && latest.current.goal?.id === plan.id;
+    if (res.state !== "ok") {
+      if (here) setLine("Nice. I couldn't plan your next few just now.");
+      return;
+    }
+    takeGoal(res.goal);
+    if (here) setLine(nextFewLine(plan, res.goal));
+  }
+
+  // Make it smaller in Focus: the step to run next (the first piece Zeno added, else the step itself) carries on the
+  // clock that was running, with Zeno's line under it (Nov 4: nothing resets the timer).
+  async function carryOn(plan: Goal, stepId: string, at: string, said: string) {
+    changeGoal(withStatus(plan, stepId, "doing", new Date(at)));
+    setView("desk");
+    setScreen("focus");
+    latest.current.screen = "focus";
+    setLine(said);
+    answered.current = said;
+    const res = await patchStep(stepId, "doing");
+    if (res.state === "ok") takeGoal(res.goal);
+    else failStart(res, plan, "ready");
   }
 
   async function startStep(step: Step) {
@@ -850,9 +916,9 @@ export default function GuidedDay() {
     else failStart(res, before, back);
   }
 
-  // Words a chip says for the person; onUserTurn sees the flag.
-  function tap(text: string) {
-    tapped.current = true;
+  // Words a chip says for the person; onUserTurn shows `label` as theirs.
+  function tap(text: string, label = text) {
+    tapped.current = label;
     void voice.submit(text);
   }
 
@@ -934,6 +1000,8 @@ export default function GuidedDay() {
     setCelebrate(false);
     setHear(false);
     setProposedId(null);
+    // The home's line never sits under a desk's step card.
+    setLine("");
     setView("desk");
     setScreen("ready");
     latest.current.view = "desk";
@@ -1043,17 +1111,25 @@ export default function GuidedDay() {
     setNote(res.state === "unreadable" ? PHOTO_UNREADABLE : res.state === "bad-request" ? SNAP_FAIL : OPEN_FAIL);
   }
 
-  // Stuck? in Focus, "Make it smaller": the step goes back to todo (a plan change only rewrites todo steps), then Talk
-  // asks for its first small piece, as Something smaller does on the desk.
+  // Stuck? in Focus, "Make it smaller" (Nov 4): Zeno adds a 2-5 minute first piece before the step, and the piece runs on
+  // the step's clock (onUserTurn, carryOn). A plan change rewrites todo steps only, so the step goes back in line on the
+  // server first; on screen it keeps running meanwhile.
   async function smallerNow(step: Step) {
     setStuck(false);
-    const going = letGo();
-    setScreen("ready");
-    latest.current.screen = "ready";
-    const res = await going;
-    if (res?.state === "signed-out") return;
+    const at = step.status === "doing" ? step.startedAt : null;
+    setBusy(true);
+    const res = at ? await patchStep(step.id, "todo") : null;
+    setBusy(false);
+    if (res?.state === "signed-out") return showSignedOut();
     if (res && res.state !== "ok") return setNote(SAVE_FAIL);
-    tap(smallerText(step));
+    carry.current = at ? { id: step.id, at } : null;
+    tap(smallerText(step), "Make it smaller");
+  }
+
+  // Stuck? in Focus, "Show me how": Zeno's first move or an example shows under the card, and the clock runs on.
+  function showMe(step: Step) {
+    setStuck(false);
+    tap(showText(step), "Show me how");
   }
 
   function talk() {
@@ -1386,12 +1462,15 @@ export default function GuidedDay() {
       return [say("Start my day", finishSetup), say("Paste notes", () => setPasting(true)), say("See what I learned", () => openSheet("memory"))];
     }
     if (draft) {
-      // A draft written in Focus leaves her in Focus: she sends it from Gmail, then taps Done.
+      // A draft written in Focus leaves her in Focus: she sends it from Gmail, then taps Done. One written on a goal's
+      // desk leaves her on it, with the line under its step.
       const back = (said: string) => {
-        if (latest.current.screen !== "focus") return goHome(said);
+        const { screen: on, view } = latest.current;
+        if (on !== "focus" && !(on === "ready" && view === "desk")) return goHome(said);
         setDraft(null);
         setOptions([]);
-        quiet(said);
+        if (on === "focus") quiet(said);
+        else setLine(said);
       };
       return [
         say("Open in Gmail", () => {
@@ -1401,14 +1480,18 @@ export default function GuidedDay() {
         say("Not now", () => back("Okay, not now.")),
       ];
     }
+    // Zeno's answers to what it just said, on a step's screen only when they add something (Nov 4: never a second Start,
+    // Done or Stop for now).
+    const asked = extraReplies(options).map((option) => say(option, () => tap(option)));
     if (screen === "ready" && onDesk) {
       // Saved answers wait for /api/day; a plan being made has no Start yet.
       if (!fresh || planning || !proposed) return [];
       const start = proposed;
       return [
         say(start.minutes ? `Start · ${start.minutes} min` : "Start", () => void startStep(start)),
-        say("Something smaller", () => tap(smallerText(start))),
-        ...(openSteps(goal).length > 1 ? [say("Another step", () => setProposedId(nextProposal(goal, start.id)))] : []),
+        ...asked,
+        say("Something smaller", () => tap(smallerText(start), "Something smaller")),
+        ...(asked.length === 0 && openSteps(goal).length > 1 ? [say("Another step", () => setProposedId(nextProposal(goal, start.id)))] : []),
       ];
     }
     if (screen === "ready") {
@@ -1427,18 +1510,25 @@ export default function GuidedDay() {
     }
     if (screen === "focus" && step) {
       if (!fresh) return [];
+      // The big button is always Done (Nov 4); Zeno's answers, when they add something, lead the links under it.
       const done = say("Done", () => void finishStep(step));
       const stop = say("Stop for now", stopForNow);
-      // A question Zeno asked during focus leads with its answers; Done stays one tap away.
-      if (options.length) return [...replies, done, stop];
-      // Stuck? asks nothing (Vi, Nov 3): a smaller piece of this step, or another goal.
-      if (stuck) return [done, say("Make it smaller", () => void smallerNow(step)), say("Switch goal", leaveForHome)];
-      const extra = isEmailStep(step.title) ? [say("Draft it in Gmail", () => tap(`Draft the email for: ${step.title}`))] : [];
-      return [done, say("Stuck?", () => setStuck(true)), stop, ...extra];
+      // Stuck? asks nothing (Vi, Nov 3): a smaller first piece on the same clock, the first move, or another goal.
+      if (stuck) return [done, say("Make it smaller", () => void smallerNow(step)), say("Show me how", () => showMe(step)), say("Switch goal", leaveForHome), stop];
+      const extra = isEmailStep(step.title) ? [say("Draft it in Gmail", () => tap(`Draft the email for: ${step.title}`, "Draft it in Gmail"))] : [];
+      return [done, ...asked, say("Stuck?", () => setStuck(true)), stop, ...extra];
     }
     if (screen === "checkin") {
-      if (step) return [say("Keep going", () => void startStep(step)), say("Switch goal", () => goHome()), say("That's enough today", stopForNow)];
-      return [say("Back to my goals", () => goHome()), say("That's enough today", stopForNow)];
+      const home = say("Back to my goals", () => goHome());
+      const enough = say("That's enough today", stopForNow);
+      // A goal that keeps going rests after a session: the next is for another day (live, Nov 3: Sam was pushed into a
+      // second run). With its steps all done, its next few are being planned, or Plan my next few tries again.
+      if (goal?.rhythm) {
+        if (step) return [home, say("Keep going", () => void startStep(step)), enough];
+        return rollingId === goal.id ? [home, enough] : [say("Plan my next few", () => void rollOn(goal)), home, enough];
+      }
+      if (step) return [say("Keep going", () => void startStep(step)), say("Switch goal", () => goHome()), enough];
+      return [home, enough];
     }
     if (screen === "wrap") {
       // While free time is asked for, nothing shows, so no button changes under a tap.

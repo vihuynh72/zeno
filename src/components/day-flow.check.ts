@@ -13,6 +13,7 @@ const { isEmailStep, isNotes, laterBlock, laterMinutes, nextScreen, openingReusa
 const { replanOnCanvas, slotLabel, soonEvent, streakLine, withStatus } = flow;
 const { addedStep, barCaption, choiceCard, duration, homeChoices, mailPlan, nextProposal, openPlans, proposedStep, realMinutes, runningStep } = flow;
 const { sameTitle, spoken, stoppedLine, todayLine, untilNext } = flow;
+const { extraReplies, goalLine, isResearchStep, keepClock, nextFewLine, splitLater } = flow;
 
 const step = (id: string, status: Step["status"], extra: Partial<Step> = {}): Step => ({
   id,
@@ -54,6 +55,18 @@ assert.equal(nextScreen("checkin", [], fresh), "talk", "talking after Done leave
 assert.equal(nextScreen("focus", acts("remembered"), fresh), "focus");
 assert.equal(nextScreen("talk", acts("goal-set"), goal(step("1", "done"))), "talk");
 assert.equal(nextScreen("focus", acts("forgot"), goal(step("1", "done"))), "talk");
+// A change to the steps after a running one keeps Focus and its clock (live, Nov 3: the timer stopped); a running step
+// that went back in line for the change (Make it smaller) leaves Focus for the card.
+const runningPlan = goal(step("1", "doing", { startedAt: "2026-11-03T17:00:00Z" }), step("2", "todo"));
+assert.equal(nextScreen("focus", acts("roadmap-changed"), runningPlan), "focus");
+assert.equal(nextScreen("focus", acts("step-finished"), goal(step("1", "done"), step("2", "doing"))), "checkin");
+assert.equal(nextScreen("ready", acts("roadmap-changed"), runningPlan), "ready", "only Focus holds on");
+// On a goal's desk a plain reply keeps the step card, with Zeno's line under it (Nov 4); with nothing open, talk.
+assert.equal(nextScreen("ready", [], fresh, true), "ready");
+assert.equal(nextScreen("ready", acts("remembered"), fresh, true), "ready");
+assert.equal(nextScreen("ready", [], goal(step("1", "done")), true), "talk");
+assert.equal(nextScreen("ready", [], fresh), "talk", "the home's card still turns into talk");
+assert.equal(nextScreen("focus", [], fresh, true), "focus");
 // After Done: the next step and its minutes, or the end of the plan.
 assert.equal(doneLine(goal(step("1", "done"), step("2", "todo", { minutes: 15 }))), "Nice. Next: Step 2, 15 min.");
 assert.equal(doneLine(goal(step("1", "done"), step("2", "todo", { minutes: null }))), "Nice. Next: Step 2.");
@@ -63,6 +76,18 @@ assert.equal(doneLine({ ...goal(step("1", "done")), title: "Lab report!" }), "Th
 // A skip is never praised as a Done.
 assert.equal(doneLine(goal(step("1", "skipped"), step("2", "todo", { minutes: 15 })), true), "Skipped. Next: Step 2, 15 min.");
 assert.equal(doneLine(goal(step("1", "skipped")), true), "Skipped. That's all of Essay.");
+// A goal that keeps going is never "all of" it: its next few are being planned.
+const runs = { ...goal(step("1", "done"), step("2", "done")), title: "Run a 5K", rhythm: "3 runs a week" };
+assert.equal(doneLine(runs), "Nice. Planning your next few…");
+assert.equal(doneLine(runs, true), "Skipped. Planning your next few…");
+assert.equal(doneLine({ ...runs, rhythm: null }), "That's all of Run a 5K.");
+assert.equal(doneLine({ ...runs, steps: [...runs.steps, step("3", "todo", { title: "Run 20 min easy", minutes: 20 })] }), "Nice. Next: Run 20 min easy, 20 min.");
+// Its next few: the next one named, the rest counted.
+const more = (...titles: string[]) => ({ ...runs, steps: [...runs.steps, ...titles.map((title, i) => step(`n${i}`, "todo", { title }))] });
+assert.equal(nextFewLine(runs, more("Run 20 min easy.")), "Planned your next few: Run 20 min easy.");
+assert.equal(nextFewLine(runs, more("Run 1 min, walk 1 min, 6 rounds", "Rest day stretch")), "Planned your next few: Run 1 min, walk 1 min, 6 rounds, then 1 more.");
+assert.equal(nextFewLine(runs, more("A", "B", "C")), "Planned your next few: A, then 2 more.");
+assert.equal(nextFewLine(runs, runs), "Planned your next few.");
 // Said aloud, the minutes and hours are words.
 assert.equal(spoken("Nice. Next: Step 2, 15 min."), "Nice. Next: Step 2, 15 minutes.");
 assert.equal(spoken("Next: Step 2, 1 min. You have 1 h 25 min until BIO 101."), "Next: Step 2, 1 minute. You have 1 hour 25 minutes until BIO 101.");
@@ -79,6 +104,13 @@ for (const title of [
   assert.equal(isEmailStep(title), true, title);
 }
 for (const title of ["Read the email from Dana", "Emailing list cleanup", "Draft the methods section", "Messages"]) assert.equal(isEmailStep(title), false, title);
+// Helpful links are laid out for a step that reads or looks things up, never for a run or a reply.
+for (const title of ["Find two course readings with page numbers", "Look up Etsy fees", "Research venues near home", "Read chapter 3", "Find examples of toasts", "Compare 3 album sizes"]) {
+  assert.equal(isResearchStep(title), true, title);
+}
+for (const title of ["Put shoes out", "Reply to landlord", "Pick 20 favorite phone photos", "Jot 3 quick brother memories", "Spread the figures out"]) {
+  assert.equal(isResearchStep(title), false, title);
+}
 
 // A saved line is reused within the same date and part of the day, never across them.
 assert.equal(dayPart(new Date(2026, 9, 31, 9)), dayPart(new Date(2026, 9, 31, 11, 59)));
@@ -102,6 +134,14 @@ assert.deepEqual(quickReplies(["Book 9 AM instead", "Book a later time"], true),
 assert.deepEqual(quickReplies(["Earlier", "Later tonight", "Not now"], true), ["Earlier", "Later tonight"]);
 assert.deepEqual(quickReplies(["Book 9:30", "9 works", "Yes"], true), ["Book 9:30", "9 works"], "a time in digits is more than yes");
 assert.deepEqual(quickReplies(["Yes, book it", "Not now"]), ["Yes, book it", "Not now"], "no offer: a yes is the answer");
+// On a step's screen Zeno's answers never repeat its own Start, Done, Stop for now or Stuck?, or only put it off
+// (live, Nov 3: "Start now" reset a timer, "Done sorting" was a second Done).
+assert.deepEqual(
+  extraReplies(["Start now", "Not now", "Done", "Done sorting", "Stop for now", "Yes, let's go!", "I'm stuck", "Need help", "Maybe later", "Finished it"]),
+  [],
+);
+assert.deepEqual(extraReplies(["Found one", "TikTok", "Yes", "Help me pick one", "Later tonight", "Skip it"]), ["Found one", "TikTok", "Yes", "Help me pick one", "Later tonight", "Skip it"]);
+assert.deepEqual(extraReplies(["Start with the intro", "OK, start", "Okay"]), ["Start with the intro", "Okay"], "a choice that begins with start stays");
 
 // Hands-free listens only after a question.
 assert.equal(asks("Want to start the outline?"), true);
@@ -387,9 +427,9 @@ assert.deepEqual(choiceCard({ kind: "plan", goal: current }, "p1", hToday), {
   meta: "1 of 2 done · due Fri",
   last: "Picks up where you stopped.",
 });
-assert.deepEqual(choiceCard({ kind: "plan", goal: other }, "p1", hToday), { title: "Essay 2", minutes: 5, meta: "0 of 1 done · due Wed", last: "Next: Read the prompt" });
+assert.deepEqual(choiceCard({ kind: "plan", goal: other }, "p1", hToday), { title: "Essay 2", minutes: 5, meta: "not started · due Wed", last: "Next: Read the prompt" });
 assert.equal(choiceCard({ kind: "plan", goal: other }, "p2", hToday).last, "Next: Read the prompt", "nothing to pick up yet");
-assert.equal(choiceCard({ kind: "plan", goal: undated }, null, hToday).meta, "0 of 1 done");
+assert.equal(choiceCard({ kind: "plan", goal: undated }, null, hToday).meta, "not started", "no slashed zero");
 assert.deepEqual(choiceCard({ kind: "deadline", deadline: dl("BIO 101 quiz", "2026-11-03") }, null, hToday), {
   title: "BIO 101 quiz",
   minutes: null,
@@ -432,6 +472,34 @@ const smaller = { ...desk, steps: [desk.steps[0], step("n1", "todo"), step("n2",
 assert.equal(addedStep(desk, smaller), "n1");
 assert.equal(addedStep(desk, desk), null);
 assert.equal(addedStep(null, desk), "2", "a new plan: its first step");
+// The step renamed into the small piece is proposed, never the bigger rest added after it (live, Nov 3: Dana).
+const renamed = { ...desk, steps: [desk.steps[0], step("2", "todo", { title: "Pick one story angle", minutes: 3 }), step("n9", "todo"), ...desk.steps.slice(2)] };
+assert.equal(addedStep(desk, renamed), "2");
+// A step that was running and went back in line for the change is not new: the piece Zeno added before it is.
+const running = goal(step("1", "done"), step("2", "doing", { startedAt: "2026-11-03T17:00:00Z" }), step("3", "todo"));
+assert.equal(addedStep(running, goal(step("1", "done"), step("p", "todo", { minutes: 3 }), step("2", "todo"), step("3", "todo"))), "p");
+
+// The steps list: done ones and the next 5 open ones; the rest under Later (N), unless the marked one is further on.
+const tall = goal(step("d", "done"), ...["a", "b", "c", "e", "f", "g", "h"].map((id) => step(id, "todo")));
+assert.deepEqual(splitLater(tall.steps).shown.map((s) => s.id), ["d", "a", "b", "c", "e", "f"]);
+assert.equal(splitLater(tall.steps).later, 2);
+assert.deepEqual(splitLater(tall.steps, "g").shown.map((s) => s.id), ["d", "a", "b", "c", "e", "f", "g"], "the marked step stays in view");
+assert.equal(splitLater(tall.steps, "g").later, 1);
+assert.equal(splitLater(desk.steps).later, 0);
+assert.deepEqual(splitLater(desk.steps).shown, desk.steps);
+
+// Nothing resets a running clock: the same running step keeps its earlier start, whatever a save answers.
+const t9 = "2026-11-03T17:00:00.000Z";
+const later = "2026-11-03T17:04:12.000Z";
+const kept = keepClock(goal(step("1", "doing", { startedAt: t9 })), goal(step("1", "doing", { startedAt: later }), step("2", "todo")));
+assert.equal(kept?.steps[0].startedAt, t9);
+assert.equal(kept?.steps[1].status, "todo");
+const moved = goal(step("2", "doing", { startedAt: later }));
+assert.equal(keepClock(goal(step("1", "doing", { startedAt: t9 })), moved), moved, "another step starts its own clock");
+assert.equal(keepClock(goal(step("1", "todo")), moved), moved, "a step started fresh");
+const sooner = goal(step("2", "doing", { startedAt: t9 }));
+assert.equal(keepClock(goal(step("2", "doing", { startedAt: later })), sooner), sooner, "an earlier start wins either way");
+assert.equal(keepClock(goal(step("2", "doing", { startedAt: t9 })), null), null);
 
 // A step still running when the page opens goes to Focus, unless it was left 3 hours ago or more.
 const t0 = Date.parse("2026-11-03T17:00:00Z");
@@ -460,6 +528,27 @@ assert.equal(barCaption(4, 7), "4 of 7 done");
 assert.equal(barCaption(3, 7, true), "3 of 7 done", "not over half yet");
 assert.equal(barCaption(2, 4, true), "2 of 4 done", "half is not over half");
 assert.equal(barCaption(7, 7, true), "7 of 7 done");
+// None done is said in words (the font's slashed zero read as "Ø of 5 done").
+assert.equal(barCaption(0, 5), "None of 5 done yet");
+assert.equal(barCaption(0, 1), "Not done yet");
+for (const total of [1, 5, 10]) assert.equal(/\b0\b/.test(barCaption(0, total, true)), false, String(total));
+
+// The goal strip's line: the due date with the days left, or a goal's rhythm and week (Tuesday, Nov 3).
+const g0 = (extra: Partial<Goal>): Goal => ({ ...goal(step("1", "todo")), ...extra });
+assert.equal(goalLine(g0({ due: "2026-11-12" }), "2026-11-03", LA), "due Thu Nov 12 · 9 days left");
+assert.equal(goalLine(g0({ due: "2026-11-05" }), "2026-11-03", LA), "due Thu Nov 5 · 2 days left");
+assert.equal(goalLine(g0({ due: "2026-11-04" }), "2026-11-03", LA), "due tomorrow");
+assert.equal(goalLine(g0({ due: "2026-11-03" }), "2026-11-03", LA), "due today");
+assert.equal(goalLine(g0({ due: "2026-10-30" }), "2026-11-03", LA), "was due Fri Oct 30");
+assert.equal(goalLine(g0({}), "2026-11-03", LA), "");
+assert.equal(goalLine(g0({ due: "2026-11-12" }), "", LA), "", "not before the browser's clock");
+assert.equal(goalLine(g0({ rhythm: "3 runs a week" }), "2026-11-03", LA), "3 runs a week · week 1", "nothing finished yet");
+// Week 2: the first run was last week (Thursday, Oct 29, in Los Angeles), so Monday Nov 2 starts week 2.
+const ran = (iso: string) => step("r", "done", { doneAt: iso, startedAt: iso });
+assert.equal(goalLine(g0({ rhythm: "3 runs a week", steps: [ran("2026-10-30T02:00:00Z"), step("2", "todo")] }), "2026-11-03", LA), "3 runs a week · week 2");
+assert.equal(goalLine(g0({ rhythm: "3 runs a week", steps: [ran("2026-11-02T18:00:00Z")] }), "2026-11-03", LA), "3 runs a week · week 1", "first run this Monday");
+assert.equal(goalLine(g0({ rhythm: " 3 runs a week ", due: "2027-01-10", steps: [ran("2026-10-30T02:00:00Z")] }), "2026-11-03", LA), "3 runs a week · week 2 · 68 days left");
+assert.equal(goalLine(g0({ rhythm: "", due: "2026-11-04" }), "2026-11-03", LA), "due tomorrow", "a blank rhythm is none");
 
 // Where you stopped: the newest done step, by the person's day (Tuesday, Nov 3, in Los Angeles).
 const t1 = new Date("2026-11-03T18:00:00Z"); // 10 AM in Los Angeles

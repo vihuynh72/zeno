@@ -10,8 +10,9 @@ export type PopCard = { kind: "step"; step: Step; answer: number } | { kind: "ne
 
 export function popCard(screen: Screen | null, goal: Goal | null, chips: string[]): PopCard {
   const step = openSteps(goal)[0];
-  // The page's Done comes after the quick replies to a question Zeno asked, so the last "Done" is the page's own.
-  if (screen === "focus" && step) return { kind: "step", step, answer: chips.lastIndexOf("Done") };
+  // The page's Done always leads in Focus (Nov 4), and Zeno's answers never repeat it (extraReplies).
+  if (screen === "focus" && step) return { kind: "step", step, answer: chips.indexOf("Done") };
   if (screen !== "checkin") return null;
-  return step ? { kind: "next", answer: chips.indexOf("Keep going") } : { kind: "last" };
+  // A goal that keeps going rests after a session (its next is for another day), so the window says so and closes.
+  return step && !goal?.rhythm ? { kind: "next", answer: chips.indexOf("Keep going") } : { kind: "last" };
 }
