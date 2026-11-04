@@ -522,9 +522,15 @@ export default function DayView(props: DayViewProps) {
         )}
 
         {screen === "signed-out" && (
-          <p className="mt-6 max-w-[560px] text-center text-ink-2">
-            Zeno reads today&apos;s calendar and recent email to help. It never sends or changes anything without asking.
-          </p>
+          <>
+            {/* Google's unverified-app screen comes next (the app is published, not verified), so say the way through. */}
+            <p className="mt-3 max-w-[560px] text-center text-ink-2">
+              Zeno is a new hackathon app, so Google says it isn&apos;t verified yet. Choose Advanced, then Go to Zeno.
+            </p>
+            <p className="mt-6 max-w-[560px] text-center text-ink-2">
+              Zeno reads today&apos;s calendar and recent email to help. It never sends or changes anything without asking.
+            </p>
+          </>
         )}
       </main>
 
