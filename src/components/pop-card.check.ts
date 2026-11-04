@@ -1,5 +1,6 @@
 // Self-check for pop-card.ts: node src/components/pop-card.check.ts (made-up steps, any server zone)
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import type { Goal, Step } from "@/lib/day";
 
@@ -12,6 +13,10 @@ const { popCard } = await import("./pop-card.ts");
 
 const step = (id: string, status: Step["status"]): Step => ({ id, title: `Step ${id}`, minutes: 10, status, startedAt: null, doneAt: null });
 const plan = (...steps: Step[]): Goal => ({ id: "g", title: "PHIL 134 response", steps });
+// The window finds the page's Done and Keep going by label, so guided-day.tsx's screenAnswers must still name them so.
+const page = readFileSync(new URL("./guided-day.tsx", import.meta.url), "utf8");
+for (const label of ["Done", "Keep going"]) assert.ok(page.includes(`say("${label}", `), `guided-day.tsx no longer offers "${label}"; update pop-card.ts`);
+
 // The page's answers on each screen, as guided-day.tsx's screenAnswers gives them.
 const FOCUS = ["Done", "Stuck?", "Stop for now"];
 const AFTER_DONE = ["Keep going", "Switch goal", "That's enough today"];
