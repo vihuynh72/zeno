@@ -159,7 +159,7 @@ const showText = (step: Step) => `Show me how to do "${step.title}": the very fi
 // confirms it before anything is saved. The tool is named so the yes saves it (live, Nov 4: a bare "save it?" got
 // "I'll break those steps up" and no change).
 const ADJUST_ASK = "What should change?";
-const confirm = (tool: string) => `Say the change in a few words and ask me before you save it; when I say yes, save it with ${tool}.`;
+const askFirst = (tool: string) => `Say the change in a few words and ask me before you save it; when I say yes, save it with ${tool}.`;
 
 function readSaved(): Saved | null {
   try {
@@ -1840,8 +1840,8 @@ export default function GuidedDay() {
         const ask = (label: string, text: string) => say(label, () => tap(text, label));
         return [
           begin,
-          ask("Smaller steps", `Make my steps smaller: split the longer ones into shorter parts. ${confirm("update_steps")}`),
-          ...(goal?.rhythm ? [ask("Fewer days a week", `Fewer days a week for this goal. ${confirm("edit_goal")}`)] : []),
+          ask("Smaller steps", `Make my steps smaller: split the longer ones into shorter parts. ${askFirst("update_steps")}`),
+          ...(goal?.rhythm ? [ask("Fewer days a week", `Fewer days a week for this goal. ${askFirst("edit_goal")}`)] : []),
           ask("New due date", "I need a new due date for this goal. Ask me which date, with a few dates to tap, and save the one I pick with set_due."),
           other,
         ];
