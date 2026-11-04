@@ -36,7 +36,7 @@ const mcp = createMcpHandler(
   {
     serverInfo: { name: "zeno", version: "1.0.0" },
     instructions:
-      "Zeno gets a student started on their work: each goal is a few small steps, one at a time. next_step says what to do now; start_step and finish_step keep Zeno in step as they work; plan_goal turns new work into steps.",
+      "Zeno helps a student start their work: each goal is a few small steps, done one at a time. next_step says what to do now, start_step and finish_step track a step while they work on it, and plan_goal turns new work into steps.",
   },
 );
 
