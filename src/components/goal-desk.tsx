@@ -152,12 +152,13 @@ type AsideProps = {
   brief?: CanvasBrief;
   today: Today | null;
   offer?: Booking; // the next free time that fits the step, booked with one tap
-  apps?: AppItem[]; // what the person's connected apps have waiting (the connectors round fills it)
+  apps?: AppItem[]; // the goal's own app item and docs, then what connected apps have that matches it (the page picks)
+  onAddDoc?(url: string): Promise<string>; // "Add a doc": "" once it shows, else the line saying why not
   onBook(): void;
   onUndo(): void;
   onReply(email: DayEmail): void;
 };
-export function GoalAside({ goal, step, materials, brief, today, offer, apps = [], onBook, onUndo, onReply }: AsideProps) {
+export function GoalAside({ goal, step, materials, brief, today, offer, apps = [], onAddDoc, onBook, onUndo, onReply }: AsideProps) {
   const now = useSyncExternalStore(everyMinute, () => Math.floor(Date.now() / 60_000) * 60_000, () => 0);
   const [links, setLinks] = useState(materials?.sourcesOpen ?? Boolean(step?.prep?.length));
   const { prompt, mail } = materials ?? {};
@@ -178,10 +179,12 @@ export function GoalAside({ goal, step, materials, brief, today, offer, apps = [
   const slot = calendar && block?.start && block.end ? { start: block.start, end: block.end } : null;
   const related =
     today?.sources.email === "ok" ? forGoal(goal, today.emails.filter((one) => !mail || one.id !== mail.id), (one) => `${one.from} ${one.subject} ${one.snippet}`) : [];
-  const items = forGoal(goal, apps, (item) => `${item.title} ${item.detail ?? ""}`);
+  const items = apps;
   const linkable = step !== null && !isEmailStep(step.title);
   const when = (start: string, end: string) => <span className="font-mono">{slotLabel(start, end, zone(), new Date(now))}</span>;
-  const empty = !next && !slot && !mail && related.length === 0 && !linkable && !prompt && items.length === 0 && notes.length === 0;
+  // From your apps shows even with nothing in it, for Add a doc.
+  const fromApps = Boolean(prompt || items.length > 0 || onAddDoc);
+  const empty = !next && !slot && !mail && related.length === 0 && !linkable && !fromApps && notes.length === 0;
   return (
     <aside aria-labelledby="goal-aside" className="aside">
       <h2 id="goal-aside" className="text-[20px] leading-8 font-bold">
@@ -225,7 +228,7 @@ export function GoalAside({ goal, step, materials, brief, today, offer, apps = [
               )}
             </section>
           )}
-          {(prompt || items.length > 0) && (
+          {fromApps && (
             <section className="mini">
               <h3 className={HEAD}>From your apps</h3>
               {prompt && (
@@ -251,12 +254,57 @@ export function GoalAside({ goal, step, materials, brief, today, offer, apps = [
                   </span>
                 </p>
               ))}
+              {onAddDoc && <AddDoc key={goal.id} onAdd={onAddDoc} />}
             </section>
           )}
           {notes.length > 0 && <NotesCard notes={notes} from={before?.title} />}
         </div>
       )}
     </aside>
+  );
+}
+
+// "Add a doc" (Nov 4): a Google Doc's link, shared "Anyone with the link", shows under From your apps for this goal.
+function AddDoc({ onAdd }: { onAdd(url: string): Promise<string> }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [why, setWhy] = useState("");
+  if (!open)
+    return (
+      <button type="button" className="link -ml-1 mt-1" onClick={() => setOpen(true)}>
+        Add a doc
+      </button>
+    );
+  return (
+    <form
+      className="mt-2 flex flex-col gap-2"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        const url = String(new FormData(event.currentTarget).get("doc") ?? "").trim();
+        if (busy || !url) return;
+        setBusy(true);
+        const said = await onAdd(url);
+        setBusy(false);
+        setWhy(said);
+        if (!said) setOpen(false);
+      }}
+    >
+      <label className="flex flex-col">
+        <span className="font-bold">A Google Doc&apos;s link</span>
+        <input name="doc" required autoFocus inputMode="url" autoComplete="off" spellCheck={false} className="add" placeholder="docs.google.com/document/d/…" />
+      </label>
+      <div className="flex flex-wrap items-center gap-x-4">
+        <button type="submit" aria-disabled={busy} className="pill pill-small pill-ink">
+          {busy ? "Opening…" : "Add"}
+        </button>
+        <button type="button" className="link" onClick={() => setOpen(false)}>
+          Cancel
+        </button>
+      </div>
+      <p role="status" className="empty:hidden">
+        {why}
+      </p>
+    </form>
   );
 }
 

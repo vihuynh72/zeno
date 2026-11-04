@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { Goal, Step } from "@/lib/day";
 import { goalRow, panelGoals, type PanelRow } from "@/components/day-flow";
 
@@ -45,9 +45,20 @@ type PanelProps = {
   onOpen(goalId: string): void;
   onSuggest(index: number): void;
   onPhoto(): void;
+  apps?: PanelRow[]; // From your apps, shown while the box is open (Nov 4)
+  onApp?(index: number): void; // one of them becomes a goal
+  onApps?(): void; // "Connect your apps": the Your apps sheet
 };
 
-export default function GoalsPanel({ goals, suggestions, openId, proposed, today, words, onAdd, onCancel, onOpen, onSuggest, onPhoto }: PanelProps) {
+export default function GoalsPanel(props: PanelProps) {
+  const { goals, suggestions, openId, proposed, today, words, onAdd, onCancel, onOpen, onSuggest, onPhoto, apps = [], onApp, onApps } = props;
+  const [adding, setAdding] = useState(false);
+  const [round, setRound] = useState(0); // a new box (closed) once an app's item became the goal
+  const pickApp = (i: number) => {
+    setRound((n) => n + 1);
+    setAdding(false);
+    onApp?.(i);
+  };
   return (
     <aside aria-label="Goals" className="panel">
       <h2 className="text-[20px] leading-8 font-bold">Goals</h2>
@@ -86,8 +97,14 @@ export default function GoalsPanel({ goals, suggestions, openId, proposed, today
       {/* Under the last goal, and on a laptop held at the column's foot while the goals scroll (Vi, Nov 4: "Is there a way
           to add a goal?"). Keyed by the words, so failed ones open the box again with them in it. */}
       <div className="add">
-        <AddBox key={words ?? ""} words={words} onAdd={onAdd} onCancel={onCancel} onPhoto={onPhoto} />
+        <AddBox key={`${round}:${words ?? ""}`} words={words} onAdd={onAdd} onCancel={onCancel} onPhoto={onPhoto} onToggle={setAdding} />
+        {onApps && (
+          <button type="button" data-answer onClick={onApps} className="link mt-1 text-ink-2">
+            Connect your apps
+          </button>
+        )}
       </div>
+      {(adding || words !== null) && onApp && <Suggestions title="From your apps" rows={apps} onPick={pickApp} limit={5} />}
       <Suggestions rows={suggestions} onPick={onSuggest} />
     </aside>
   );
@@ -95,8 +112,13 @@ export default function GoalsPanel({ goals, suggestions, openId, proposed, today
 
 // "+ Add goal": a tap opens the box in place at once, with no AI turn; Make a plan sends the words.
 // Its buttons are answers (data-answer): a tap while Talk listens never sends the half-heard words.
-function AddBox({ words, onAdd, onCancel, onPhoto }: { words: string | null; onAdd(text: string): void; onCancel(): void; onPhoto(): void }) {
-  const [open, setOpen] = useState(words !== null);
+type AddBoxProps = { words: string | null; onAdd(text: string): void; onCancel(): void; onPhoto(): void; onToggle(open: boolean): void };
+function AddBox({ words, onAdd, onCancel, onPhoto, onToggle }: AddBoxProps) {
+  const [open, setOpenHere] = useState(words !== null);
+  const setOpen = (on: boolean) => {
+    setOpenHere(on);
+    onToggle(on);
+  };
   const box = useRef<HTMLTextAreaElement>(null);
   const close = () => {
     setOpen(false);
@@ -215,16 +237,19 @@ export function FrontDoor({ hello, line, words, note, onAdd, onPhoto, children }
   );
 }
 
-// Deadlines with no plan yet ("Plan it") and email that asks something ("Answer Prof. Patel"), each one tap.
-export function Suggestions({ rows, onPick }: { rows: PanelRow[]; onPick(index: number): void }) {
+// Deadlines with no plan yet ("Plan it") and email that asks something ("Answer Prof. Patel"), each one tap. Also "From
+// your apps" (Nov 4): what connected apps have waiting, `limit` shown until Show all.
+export function Suggestions({ rows, onPick, title = "Suggestions", limit = Infinity }: { rows: PanelRow[]; onPick(index: number): void; title?: string; limit?: number }) {
+  const id = useId();
+  const [all, setAll] = useState(false);
   if (rows.length === 0) return null;
   return (
-    <section aria-labelledby="suggestions" className="mt-6 w-full">
-      <h2 id="suggestions" className="text-[20px] leading-8 font-bold">
-        Suggestions
+    <section aria-labelledby={id} className="mt-6 w-full">
+      <h2 id={id} className="text-[20px] leading-8 font-bold">
+        {title}
       </h2>
       <ul className="mt-2 flex flex-col gap-2">
-        {rows.map((row, i) => (
+        {rows.slice(0, all ? undefined : limit).map((row, i) => (
           <li key={`${i}:${row.title}`}>
             <button type="button" data-answer onClick={() => onPick(i)} className="choice">
               <span className="lines block">
@@ -239,6 +264,11 @@ export function Suggestions({ rows, onPick }: { rows: PanelRow[]; onPick(index: 
           </li>
         ))}
       </ul>
+      {!all && rows.length > limit && (
+        <button type="button" onClick={() => setAll(true)} className="link mt-1">
+          Show all {rows.length}
+        </button>
+      )}
     </section>
   );
 }

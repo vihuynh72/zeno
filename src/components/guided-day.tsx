@@ -5,6 +5,7 @@ import { signIn, signOut } from "next-auth/react";
 import type {
   ActivateRequest,
   AddGoalRequest,
+  GoalSource,
   AddGoalResponse,
   BookResponse,
   CalendarBlock,
@@ -39,6 +40,8 @@ import type {
   Turn,
 } from "@/lib/day";
 import { canvasBriefs, canvasList, readCanvas, syncCanvas } from "@/lib/canvas-store";
+import { APPS, type App, type AppItem } from "@/lib/connect";
+import { addGoalDoc, DOC_PRIVATE, goalDocs, loadItems, readDocLink } from "@/lib/connect-store";
 import { listenAuto, type ListenHandlers } from "@/lib/listen";
 import { audioContext, playDone, wakeAudio } from "@/lib/speak";
 import { formatTime, localDate } from "@/lib/tz";
@@ -94,6 +97,7 @@ import type { Note } from "@/components/goal-desk";
 import DayView, { useToday, type Sheet, type View } from "@/components/day-view";
 import { httpsOnly } from "@/components/desk-rows";
 import { nextBlock } from "@/components/goal-match";
+import { appRow, canvasItems, goalItems, goalText, sourceOf, waiting } from "@/components/app-rows";
 import { PlanAsk, PlanThinking, revealMs } from "@/components/plan-thinking";
 
 const SIGNED_OUT_LINE = "Zeno helps you start the thing you keep putting off.";
@@ -378,6 +382,12 @@ export default function GuidedDay() {
   const [confirm, setConfirm] = useState<(GoalConfirm & { line: string }) | null>(null);
   const [toast, setToast] = useState<{ text: string; undo?: { id: string; current: boolean } } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Connected apps (Nov 4): what they have waiting, read again after Your apps keeps or drops a token (appsRound); a doc
+  // added under For this goal (docsRound); and the app just connected (/?connected=<app>), which opens Your apps.
+  const [appItems, setAppItems] = useState<AppItem[]>([]);
+  const [appsRound, setAppsRound] = useState(0);
+  const [docsRound, setDocsRound] = useState(0);
+  const [connected, setConnected] = useState<App | null>(null);
   const today = useToday();
   // The goals panel (Nov 4): every open plan, and as Suggestions the deadlines and asking email with no plan yet.
   const plans = openPlans(goal, goals);
@@ -421,6 +431,18 @@ export default function GuidedDay() {
   useEffect(() => {
     latest.current = { screen, view: shown, goal, goals, line, progress, choices, chosen: proposedId };
   });
+
+  // Back from an app's sign-in (/connect/<app> sends "/?connected=<app>"): Your apps opens and says so, once.
+  useEffect(() => {
+    const app = new URLSearchParams(window.location.search).get("connected");
+    if (!app || !(APPS as readonly string[]).includes(app)) return;
+    window.history.replaceState(null, "", "/");
+    // Once the first render is done, so it still matches the server's (no sheet).
+    queueMicrotask(() => {
+      setConnected(app as App);
+      setSheet("apps");
+    });
+  }, []);
 
   // Auth.js sends failed sign-ins back to "/?error=...".
   const signInFailed = useSyncExternalStore(noStore, () => new URLSearchParams(window.location.search).has("error"), () => false);
@@ -1304,7 +1326,8 @@ export default function GuidedDay() {
   // answers (that call never asks). Once the plan is back, Muse's lines show one by one before it opens (Vi, Nov 4). More
   // goals from the same words join the panel. A plan that couldn't be made sends her home with her words back in the box.
   // `was`: the step running when she first asked, carried across Zeno's questions (the desk has left Focus by then).
-  async function addGoal(text: string, answers?: PlanAnswer[], was = runningNow()) {
+  // `source`: the app item the words come from (From your apps), kept on the goal.
+  async function addGoal(text: string, answers?: PlanAnswer[], was = runningNow(), source?: GoalSource) {
     const words = text.trim();
     const key = `add:${words.toLowerCase()}`;
     if (!words || making.current.has(key)) return;
@@ -1315,13 +1338,13 @@ export default function GuidedDay() {
     // Only what is true while it waits: the server reads this week's free time only when a calendar is connected.
     const calendar = day?.sources.calendar === "ok" ? ["Checking your calendar"] : [];
     planningWith(<PlanThinking live={[answers ? "Reading your answers" : "Reading your goal", ...calendar]} />);
-    const res = await post<AddGoalResponse>("/api/goal/add", { text: words, ...(answers && { answers }) } satisfies AddGoalRequest);
+    const res = await post<AddGoalResponse>("/api/goal/add", { text: words, ...(answers && { answers }), ...(source && { source }) } satisfies AddGoalRequest);
     making.current.delete(key);
     if (res.state === "signed-out") return showSignedOut();
     if (res.state === "ask" && Array.isArray(res.questions)) {
       // She left the desk while Muse read it: her words wait in the box.
       if (ticket !== opened.current) return setAddWords(words);
-      return askNext(words, res.questions, [], was);
+      return askNext(words, res.questions, [], was, source);
     }
     // Only whole plans join the panel: a bad entry must never take the page down.
     const others = res.state === "ok" && Array.isArray(res.others) ? res.others.filter((one) => typeof one?.id === "string" && Array.isArray(one.steps)) : [];
@@ -1352,16 +1375,17 @@ export default function GuidedDay() {
     }
     setPlanning(null);
     setAddWords(words);
-    if (was) return backToFocus(res.state === "bad-request" ? NO_GOAL : ADD_FAIL);
+    const why = res.state === "bad-request" ? NO_GOAL : res.state === "doc-private" ? DOC_PRIVATE : ADD_FAIL;
+    if (was) return backToFocus(why);
     goHome();
     keepCurrent();
-    setNote(res.state === "bad-request" ? NO_GOAL : ADD_FAIL);
+    setNote(why);
   }
   // Zeno's questions, one at a time: the card says it, her answers are chips under it, and after the last the plan is made.
-  function askNext(words: string, questions: PlanQuestion[], answers: PlanAnswer[], was: ReturnType<typeof runningNow>) {
+  function askNext(words: string, questions: PlanQuestion[], answers: PlanAnswer[], was: ReturnType<typeof runningNow>, source?: GoalSource) {
     const question = questions[answers.length];
-    if (!question || typeof question.question !== "string" || !Array.isArray(question.options)) return void addGoal(words, answers, was);
-    const answer = (said: string) => askNext(words, questions, [...answers, { question: question.question, answer: said }], was);
+    if (!question || typeof question.question !== "string" || !Array.isArray(question.options)) return void addGoal(words, answers, was, source);
+    const answer = (said: string) => askNext(words, questions, [...answers, { question: question.question, answer: said }], was, source);
     setPlanning({ title: "New goal", due: null, line: question.question, view: <PlanAsk key={answers.length} question={question} onAnswer={answer} /> });
   }
 
@@ -1763,6 +1787,27 @@ export default function GuidedDay() {
   const mailId = goal ? mailGoals[goal.id] : undefined;
   const gmail = httpsOnly(day?.mailUrl);
 
+  // Connected apps (Nov 4): read once /api/day said whose device this is, and again after Your apps changed a token.
+  useEffect(() => {
+    if (!mine) return;
+    let live = true;
+    void loadItems(mine).then((items) => live && setAppItems(items));
+    return () => {
+      live = false;
+    };
+  }, [mine, appsRound]);
+  // From your apps: every app's items and Canvas's assignments that aren't goals yet, soonest due first.
+  const fromApps = useMemo(
+    () => (mine ? waiting([...appItems, ...canvasItems(canvasList(mine), zone())], [...(goal ? [goal] : []), ...goals]) : []),
+    // canvasOn: a Canvas sync or disconnect changed its list.
+    [mine, appItems, goal, goals, canvasOn], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  // For this goal: the item it came from, its docs and the items that match it.
+  const goalApps = useMemo(
+    () => (onDesk && goal && mine ? goalItems(goal, appItems, goalDocs(mine, goal.id)) : []),
+    [onDesk, goal, mine, appItems, docsRound], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
   // "For this goal" (Vi, Nov 4): the next free time that fits the desk's step, asked once per step and offered as one tap
   // (Book it); nothing is written before that tap. Only with a calendar Zeno may write to, for a step not booked yet.
   const slotStep =
@@ -1972,6 +2017,9 @@ export default function GuidedDay() {
       bookings={bookings}
       offers={offers}
       deskOffer={screen === "ready" && proposed ? bookings[`aside:${proposed.id}`] : undefined}
+      appItems={goalApps}
+      appRows={fromApps.map((item) => appRow(item, today))}
+      connected={connected}
       timer={timer}
       quiet={line === quietLine}
       brief={brief}
@@ -2021,9 +2069,10 @@ export default function GuidedDay() {
         },
         signOut() {
           // The next person at a shared computer must not read anyone's private facts or Canvas link, even before
-          // /api/day said whose browser this is (keys as in src/lib/vault.ts and src/lib/canvas-store.ts).
+          // /api/day said whose browser this is (keys as in src/lib/vault.ts, src/lib/canvas-store.ts and connectKey in
+          // src/lib/connect.ts: every app's token and the docs added to goals).
           try {
-            for (const key of Object.keys(localStorage)) if (/^zeno\.(vault|canvas)\.|^zeno:notes:/.test(key)) localStorage.removeItem(key);
+            for (const key of Object.keys(localStorage)) if (/^zeno\.(vault|canvas|connect)\.|^zeno:notes:/.test(key)) localStorage.removeItem(key);
           } catch {
             // Unreadable storage holds nothing to clear.
           }
@@ -2051,6 +2100,23 @@ export default function GuidedDay() {
           if (goal && fresh && !busy) void endGoal(goal.id, goal.title, how);
         },
         undo: () => void undoRemove(),
+        // Make it a goal: its title, due date and detail as her words, the item kept on the goal.
+        fromApp(index) {
+          const item = fromApps[index];
+          if (!item) return;
+          if (fresh) void addGoal(goalText(item), undefined, runningNow(), sourceOf(item));
+          else setAddWords(goalText(item));
+        },
+        appsChanged: () => setAppsRound((n) => n + 1),
+        async addDoc(url) {
+          const plan = latest.current.goal;
+          if (!mine || !plan) return "Couldn't add it. Try again.";
+          const doc = await readDocLink(url);
+          if (typeof doc === "string") return doc;
+          addGoalDoc(mine, plan.id, doc);
+          setDocsRound((n) => n + 1);
+          return "";
+        },
       }}
     />
   );

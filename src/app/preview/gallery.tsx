@@ -266,9 +266,10 @@ const STATES: Record<string, Fixture> = {
     proposed: ESSAY.steps[2],
     chips: DESK_CHIPS(15),
     deskOffer: { ...offer("aside:s3", block("s3", "Draft the opening paragraph", 60, 15)), label: "Book it" },
+    // The page passes only the goal's own items and those that match it (src/components/app-rows.ts goalItems).
     appItems: [
       { app: "notion", id: "n1", title: "History essay outline", url: "https://www.notion.so/sample", kind: "page", due: null, detail: "Three points, each with a source." },
-      { app: "trello", id: "t1", title: "Buy printer ink", url: "https://trello.com/c/sample", kind: "task", due: null, detail: null },
+      { app: "gdocs", id: "d1", title: "Essay notes", url: "https://docs.google.com/document/d/sample/edit", kind: "doc", due: null, detail: null },
     ],
     materials: {
       prompt: { course: "HIST 17A", text: "Argue whether Reconstruction succeeded, using two primary sources.", url: "https://sample.instructure.com/courses/1/assignments/2" },

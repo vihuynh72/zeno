@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import type { CanvasAssignment, CanvasBrief, DayEmail, DayEvent, Deadline, DoneStep, FreeSlot, Goal, Memory, Progress, SourceState, Step } from "@/lib/day";
 import { localDate } from "@/lib/tz";
-import type { AppItem } from "@/lib/connect";
+import type { App, AppItem } from "@/lib/connect";
 import type { VaultFact } from "@/lib/vault";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
 import { barCaption, cardSize, clock, dueLine, openSteps, type Fact, type PanelRow, type Screen } from "@/components/day-flow";
@@ -19,9 +19,10 @@ import { GoalAside, GoalStrip, StepsList, type Materials } from "@/components/go
 import MemorySheet from "@/components/memory-sheet";
 import StreakRow from "@/components/streak-row";
 import VoiceRing from "@/components/voice-ring";
+import YourApps from "@/components/your-apps";
 
 // "week" opens the desk on its Week view.
-export type Sheet = "today" | "week" | "memory" | "canvas" | null;
+export type Sheet = "today" | "week" | "memory" | "canvas" | "apps" | null;
 
 // home: the hello and the goal options; desk: the current plan's desk, the workstation around its step (Vi, Nov 3).
 export type View = "home" | "desk";
@@ -78,7 +79,9 @@ export type DayViewProps = {
   bookings?: Record<string, Booking>; // booking chips by key
   offers?: Booking[]; // booking chips that answer Zeno's line
   deskOffer?: Booking; // "For this goal": the next free time that fits the desk's step
-  appItems?: AppItem[]; // what connected apps have waiting, matched to the open goal in "For this goal"
+  appItems?: AppItem[]; // "For this goal": the goal's own app item and docs, then what connected apps have that matches it
+  appRows?: PanelRow[]; // From your apps (Nov 4): connected apps' items that aren't goals yet, soonest due first (on.fromApp)
+  connected?: App | null; // back from an app's sign-in (/?connected=<app>): Your apps opens and says so
   timer?: number | null; // Focus's planned minutes when the tap said so ("Start · 5 min"), shown beside the stopwatch
   quiet?: boolean; // the line under the Focus card is one of Zeno's quiet ones (calm, check-in, welcome back): muted
   brief?: CanvasBrief; // the Canvas assignment the plan is for, so the sources search uses its instructions
@@ -119,6 +122,11 @@ export type DayViewProps = {
     // The links by a desk's goal title (Nov 4): remove the goal or mark it done, and the toast's Undo for a removal.
     closeGoal?(how: "remove" | "finish"): void;
     undo?(): void;
+    // Connected apps (Nov 4): an item of From your apps becomes a goal; a token kept or dropped in Your apps; a doc's
+    // link added under For this goal (resolves with a line saying why not, or "" once it shows).
+    fromApp?(index: number): void;
+    appsChanged?(): void;
+    addDoc?(url: string): Promise<string>;
   };
 };
 
@@ -297,6 +305,11 @@ export default function DayView(props: DayViewProps) {
     pressed.current = true;
     on.addGoal?.(text);
   };
+  const fromApp = (i: number) => {
+    if (props.busy) return;
+    pressed.current = true;
+    on.fromApp?.(i);
+  };
   const pickPhoto = () => photoRef.current?.click();
   // Focus goes back to the keyboard button without scrolling: the dock sits inside html's scroll padding.
   const closeBox = () => {
@@ -340,6 +353,11 @@ export default function DayView(props: DayViewProps) {
               Today
             </button>
           )}
+          {signedIn && (
+            <button type="button" onClick={() => on.sheet("apps")} className="link">
+              Apps
+            </button>
+          )}
         </div>
         <div className="flex min-h-14 items-center gap-2 sm:gap-4">
           {screen && screen !== "signed-out" && streak > 0 && (
@@ -378,6 +396,7 @@ export default function DayView(props: DayViewProps) {
               {youLine}
             </FrontDoor>
             <div className="w-full max-w-[760px]">
+              <Suggestions title="From your apps" rows={props.appRows ?? []} onPick={fromApp} limit={5} />
               <Suggestions rows={props.suggestions ?? []} onPick={choose} />
             </div>
           </>
@@ -666,6 +685,7 @@ export default function DayView(props: DayViewProps) {
           today={props.today}
           offer={props.deskOffer}
           apps={props.appItems}
+          onAddDoc={on.addDoc}
           onBook={() => props.deskOffer && on.book(props.deskOffer.key)}
           onUndo={() => props.deskOffer && on.unbook(props.deskOffer.key)}
           onReply={on.reply}
@@ -685,6 +705,9 @@ export default function DayView(props: DayViewProps) {
           onOpen={openGoal}
           onSuggest={choose}
           onPhoto={pickPhoto}
+          apps={props.appRows}
+          onApp={fromApp}
+          onApps={() => on.sheet("apps")}
         />
       )}
 
@@ -761,6 +784,20 @@ export default function DayView(props: DayViewProps) {
       </SheetPanel>
       <SheetPanel open={props.sheet === "canvas"} title="Canvas" onClose={() => on.sheet(null)}>
         {props.sheet === "canvas" && props.canvas && <CanvasSheet account={props.canvas.account} onSynced={on.canvasSynced} />}
+      </SheetPanel>
+      <SheetPanel open={props.sheet === "apps"} title="Your apps" onClose={() => on.sheet(null)}>
+        {props.sheet === "apps" && (
+          <YourApps
+            key={props.canvas?.account ?? ""}
+            account={props.canvas?.account ?? null}
+            google={{ mail: props.today?.sources.email === "ok", calendar: props.today?.sources.calendar === "ok" }}
+            canvas={Boolean(props.canvas?.linked)}
+            connected={props.connected}
+            onGoogle={on.signIn}
+            onCanvas={() => on.sheet("canvas")}
+            onChange={() => on.appsChanged?.()}
+          />
+        )}
       </SheetPanel>
     </div>
   );

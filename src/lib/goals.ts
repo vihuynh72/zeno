@@ -1,4 +1,4 @@
-import { MEMORY_GROUPS, type DoneStep, type Goal, type Memory, type MemoryGroup, type MemorySource, type PrepSource, type StepStatus } from "@/lib/day";
+import { MEMORY_GROUPS, type DoneStep, type Goal, type GoalSource, type Memory, type MemoryGroup, type MemorySource, type PrepSource, type StepStatus } from "@/lib/day";
 import { ensureSchema, getSql } from "@/lib/db";
 // profile.ts imports this file too; neither uses the other until a call, so the cycle is safe.
 import { factVerdict } from "@/lib/profile";
@@ -25,6 +25,8 @@ function goalFrom(rows: Record<string, unknown>[]): Goal | null {
     title: String(rows[0].goal_title),
     due: rows[0].goal_due ? String(rows[0].goal_due) : null,
     rhythm: rows[0].goal_rhythm ? String(rows[0].goal_rhythm) : null,
+    // Checked by the add route before it was stored.
+    source: (rows[0].goal_source as GoalSource | null) ?? null,
     steps: rows
       .filter((row) => row.id !== null)
       .map((row) => ({
@@ -44,7 +46,7 @@ function goalFrom(rows: Record<string, unknown>[]): Goal | null {
 
 function goalQuery(email: string, goalId: string) {
   return getSql()`
-    SELECT g.id AS goal_id, g.title AS goal_title, to_char(g.due, 'YYYY-MM-DD') AS goal_due, g.rhythm AS goal_rhythm,
+    SELECT g.id AS goal_id, g.title AS goal_title, to_char(g.due, 'YYYY-MM-DD') AS goal_due, g.rhythm AS goal_rhythm, g.source AS goal_source,
       s.id, s.title, s.minutes, s.status, s.started_at, s.done_at, s.prep, s.event_id, s.scheduled_at
     FROM goals g LEFT JOIN steps s ON s.goal_id = g.id AND s.user_email = ${email}
     WHERE g.id = ${goalId} AND g.user_email = ${email}
@@ -95,7 +97,7 @@ export async function doneTitles(email: string, today: string): Promise<string[]
 export async function openGoals(email: string): Promise<Goal[]> {
   await ensureSchema();
   const rows = await getSql()`
-    SELECT g.id AS goal_id, g.title AS goal_title, to_char(g.due, 'YYYY-MM-DD') AS goal_due, g.rhythm AS goal_rhythm, g.updated_at AS goal_updated,
+    SELECT g.id AS goal_id, g.title AS goal_title, to_char(g.due, 'YYYY-MM-DD') AS goal_due, g.rhythm AS goal_rhythm, g.source AS goal_source, g.updated_at AS goal_updated,
       g.id = (SELECT id FROM goals WHERE user_email = ${email} AND status = 'active' ORDER BY created_at DESC LIMIT 1) AS goal_current,
       s.id, s.title, s.minutes, s.status, s.started_at, s.done_at, s.prep, s.event_id, s.scheduled_at
     FROM goals g JOIN steps s ON s.goal_id = g.id AND s.user_email = ${email}
@@ -196,7 +198,7 @@ export async function setGoal(
   title: string,
   steps: NewStep[],
   due: string | null = null,
-  { rhythm = null, paused = false }: { rhythm?: string | null; paused?: boolean } = {},
+  { rhythm = null, paused = false, source = null }: { rhythm?: string | null; paused?: boolean; source?: GoalSource | null } = {},
 ): Promise<Goal> {
   await ensureSchema();
   const sql = getSql();
@@ -211,8 +213,8 @@ export async function setGoal(
           sql`UPDATE goals SET status = 'paused', updated_at = now() WHERE user_email = ${email} AND status = 'active'`,
         ]),
     sql`
-      INSERT INTO goals (id, user_email, title, due, rhythm, status)
-      VALUES (${goalId}, ${email}, ${title}, ${due}, ${rhythm}, ${paused ? "paused" : "active"})
+      INSERT INTO goals (id, user_email, title, due, rhythm, status, source)
+      VALUES (${goalId}, ${email}, ${title}, ${due}, ${rhythm}, ${paused ? "paused" : "active"}, ${source ? JSON.stringify(source) : null}::jsonb)
     `,
     ...steps.map(
       (step, index) => sql`
