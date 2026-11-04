@@ -189,7 +189,7 @@ export const APP_TOOLS: {
   {
     name: "plan_goal",
     description:
-      "Make a new goal: Zeno breaks it into 3 to 7 small steps (the first about 5 minutes) and makes it the current goal. An open goal with the same title opens instead of a copy. At most 20 new plans a day.",
+      "Make a new goal: Zeno breaks it into 3 to 12 small steps of at most 25 minutes (the first about 5 minutes) and makes it the current goal. An open goal with the same title opens instead of a copy. At most 20 new plans a day.",
     input: {
       type: "object",
       properties: {
