@@ -1,7 +1,8 @@
 // Self-check for day-flow.ts, run like Vercel does, in UTC: TZ=UTC node src/components/day-flow.check.ts
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
-import type { DayEmail, Goal, MemoryGroup, Progress, Step, TalkAction } from "@/lib/day";
+import type { DayEmail, Goal, Memory, MemoryGroup, Progress, Step, TalkAction } from "@/lib/day";
+import type { AppItem } from "@/lib/connect";
 
 registerHooks({
   resolve: (specifier, context, nextResolve) =>
@@ -605,5 +606,103 @@ assert.equal(untilNext([ev("BIO 101", 200, 260)], freeNow, t2), null, "the slot 
 assert.equal(untilNext([ev("Birthday", 85, 160, { allDay: true })], freeNow, t2), null);
 assert.equal(untilNext([ev("BIO 101", 85, 160)], [], t2), null);
 assert.equal(untilNext([ev("CS 146", 85.5, 160)], freeNow, t2 + 84 * 60_000), "You have 1 min until CS 146.");
+
+// The Suggestions stack (Vi, Nov 4): one ranked list from goals, mail, apps, Canvas, deadlines and what Zeno noticed. Her
+// zone is passed in, so the order is the same on a server in UTC, LA or Tokyo.
+{
+  const { feedStack, hiddenOn, suggestionRow } = flow;
+  const today = "2026-11-04"; // a Wednesday
+  const now = new Date("2026-11-04T18:00:00Z"); // 10 AM in LA
+  const timeZone = "America/Los_Angeles";
+  const plan = (id: string, title: string, due: string | null, steps: Step[], extra: Partial<Goal> = {}): Goal => ({ id, title, due, steps, ...extra });
+  const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000).toISOString();
+  const plans = [
+    plan("A", "PHIL paper", today, [step("a1", "done"), step("a2", "todo")]),
+    plan("B", "Lab report", "2026-11-05", [step("b1", "todo")]),
+    plan("C", "Run a 5K", null, [step("c1", "done", { doneAt: hoursAgo(30) }), step("c2", "todo")], { rhythm: "3 runs a week" }),
+    plan("C2", "Piano", null, [step("p1", "done", { doneAt: hoursAgo(1) }), step("p2", "todo")], { rhythm: "Daily" }), // done today
+    plan("D", "Taxes", "2026-11-07", [step("d1", "todo")]),
+    plan("E", "Album", null, [step("e1", "doing", { startedAt: hoursAgo(0.5) })]),
+    plan("F", "Far goal", "2026-11-20", [step("f1", "todo")]), // nothing to do about it today
+  ];
+  const mail = (id: string, at: string | undefined, asks = true): DayEmail => ({ from: "Prof. Patel <p@school.example>", subject: `Q ${id}?`, snippet: "", unread: true, id, asks, at });
+  const emails = [mail("m1", hoursAgo(24)), mail("m2", hoursAgo(72)), mail("m3", hoursAgo(1), false), mail("m4", hoursAgo(2)), mail("m5", undefined)];
+  const memory = (id: string, h: number, extra: Partial<Memory> = {}): Memory => ({ id, text: `Fact ${id}`, createdAt: hoursAgo(h), group: "patterns", source: "pattern", ...extra });
+  const input = {
+    plans,
+    deadlines: [
+      { title: "MATH set", date: "2026-11-05", daysLeft: 1 },
+      { title: "BIO quiz", date: "2026-11-10", daysLeft: 6 },
+      { title: "PHIL paper", date: "2026-11-04", daysLeft: 0 }, // the plan covers it
+      { title: "CHEM 1A: Lab 6", date: "2026-11-04", daysLeft: 0 }, // Canvas shows it
+    ],
+    emails,
+    handled: ["m4"],
+    apps: [
+      { app: "notion", id: "n1", title: "Club budget", url: "https://notion.so/x", kind: "page", due: "2026-11-09", detail: null },
+      { app: "linear", id: "l1", title: "Fix the form", url: "https://linear.app/x", kind: "task", due: null, detail: null },
+    ] satisfies AppItem[],
+    // 22:59 on Nov 4 in LA (already Nov 5 in UTC): due today for her.
+    canvas: [{ id: "k1", course: "CHEM 1A", title: "Lab 6", due: "2026-11-05T06:59:00Z", kind: "assignment" as const, url: "https://x.instructure.com/1" }],
+    memories: [
+      memory("y1", 1, { source: "you" }),
+      memory("dl", 1, { group: "projects", source: "email", text: "BIO quiz due Nov 10" }),
+      memory("old", 24 * 8),
+      memory("pat", 48),
+      memory("mail", 20, { group: "people", source: "email" }),
+    ],
+    kept: [],
+    today,
+    timeZone,
+    now,
+  };
+  const ids = (cards: ReturnType<typeof feedStack>) => cards.map((card) => card.id);
+  const order = [
+    "step:a2", // due today
+    "canvas:k1", // due today, later in the list
+    "step:b1", // due tomorrow
+    "deadline:2026-11-05:MATH set",
+    "mail:m1", // asks, a day old
+    "mail:m5", // asks, kept from before mail had a time
+    "step:c2", // today's run, none done yet
+    "step:d1", // due in 3 days
+    "app:notion:n1", // due in 5 days
+    "deadline:2026-11-10:BIO quiz",
+    "noticed:mail", // the newest thing Zeno learned this week, and only one
+    "step:e1", // the rest: a step running
+    "mail:m2", // 3 days old
+    "app:linear:l1", // no due date
+  ];
+  assert.deepEqual(ids(feedStack(input)), order);
+  // The same ids, in the same order, whatever order the data came in: hidden ids keep matching after a reload.
+  const shuffled = { ...input, plans: [...plans].reverse(), apps: [...input.apps].reverse(), memories: [...input.memories].reverse() };
+  assert.deepEqual(ids(feedStack(shuffled)).filter((id) => !id.startsWith("mail:")), order.filter((id) => !id.startsWith("mail:")));
+  assert.deepEqual(ids(feedStack({ ...input, timeZone: "Asia/Tokyo", today: "2026-11-05", now: new Date("2026-11-04T18:00:00Z") })).includes("canvas:k1"), true);
+  // A step done today ends today's session; a kept noticed card leaves for good and the next one shows; nothing before
+  // the browser's clock.
+  const ranDay = feedStack({ ...input, plans: [plan("C", "Run a 5K", null, [step("c1", "done", { doneAt: hoursAgo(2) }), step("c2", "todo")], { rhythm: "3 runs" })] });
+  assert.equal(ids(ranDay).some((id) => id.startsWith("step:")), false);
+  assert.deepEqual(ids(feedStack({ ...input, kept: ["noticed:mail"] })).filter((id) => id.startsWith("noticed:")), ["noticed:pat"]);
+  assert.deepEqual(feedStack({ ...input, today: "" }), []);
+  // Hiding a card brings the next one up: the page shows the first 3 it hasn't hidden.
+  const shown = (hidden: string[]) => ids(feedStack(input).filter((card) => !hidden.includes(card.id))).slice(0, 3);
+  assert.deepEqual(shown([]), ["step:a2", "canvas:k1", "step:b1"]);
+  assert.deepEqual(shown(["canvas:k1"]), ["step:a2", "step:b1", "deadline:2026-11-05:MATH set"]);
+
+  // Hidden for today: a new day clears it, what she kept stays, anything else stored is ignored.
+  const stored = { day: today, ids: ["mail:m1", 4], kept: ["noticed:pat"] };
+  assert.deepEqual(hiddenOn(stored, today), { day: today, ids: ["mail:m1"], kept: ["noticed:pat"] });
+  assert.deepEqual(hiddenOn(stored, "2026-11-05"), { day: "2026-11-05", ids: [], kept: ["noticed:pat"] });
+  assert.deepEqual(hiddenOn(null, today), { day: today, ids: [], kept: [] });
+  assert.deepEqual(hiddenOn("junk", today), { day: today, ids: [], kept: [] });
+  assert.equal(hiddenOn({ kept: Array.from({ length: 60 }, (_, i) => `noticed:${i}`) }, today).kept.length, 50);
+
+  // Each card's words.
+  const [stepCard, canvasCard] = feedStack(input);
+  assert.deepEqual(suggestionRow(stepCard, today), { id: "step:a2", noticed: false, title: "Step a2", aside: "10 min", line: "PHIL paper", when: "due today" });
+  assert.deepEqual(suggestionRow(canvasCard, today), { id: "canvas:k1", noticed: false, title: "Lab 6", aside: "Plan it", line: "Canvas · CHEM 1A", when: "due today" });
+  const noticedCard = feedStack(input).find((card) => card.kind === "noticed")!;
+  assert.deepEqual(suggestionRow(noticedCard, today), { id: "noticed:mail", noticed: true, title: "Zeno noticed: Fact mail", aside: "", line: "", when: "" });
+}
 
 console.log("day-flow self-check passed");

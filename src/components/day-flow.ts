@@ -3,18 +3,20 @@ import {
   MEMORY_GROUPS,
   type CalendarBlock,
   type CanvasAssignment,
-  type Choice,
   type DayEmail,
   type DayEvent,
   type Deadline,
   type FreeSlot,
   type Goal,
+  type Memory,
   type MemoryGroup,
   type Progress,
   type Step,
   type StepStatus,
   type TalkAction,
 } from "@/lib/day";
+import type { CanvasItem } from "@/lib/canvas-store";
+import { APP_NAMES, type AppItem } from "@/lib/connect";
 import { senderName } from "@/components/desk-rows";
 import { dayBounds, formatTime, localDate } from "@/lib/tz";
 
@@ -561,19 +563,111 @@ export function resumePlan(goal: Goal | null, plans: Goal[], today: string, left
   return { plan, step, started: step.status === "doing" || plan.steps.some((one) => one.status === "done") };
 }
 
-// "Suggestions" under the goals: deadlines due within 7 days that no open plan covers, soonest first, then the newest
-// email that asks something and has no plan here yet (`handled`: email ids). 3 at most; the email keeps its slot.
-export function panelSuggestions(plans: Goal[], deadlines: Deadline[], emails: DayEmail[], today: string, handled: string[] = []): Choice[] {
-  const soon = deadlines
-    .filter((deadline, i) => {
-      const days = daysFrom(today, deadline.date);
-      const titles = [...plans.map((plan) => plan.title), ...deadlines.slice(0, i).map((one) => one.title)];
-      return days >= 0 && days <= 7 && !titles.some((title) => sameTitle(title, deadline.title));
+// ---------- Suggestions: a stack, most important on top (Vi, Nov 4: "kinda like a instagram feed") ----------
+
+// One card. Its id stays the same across reloads and re-ranks, so a card hidden today stays hidden (hiddenOn). An app
+// card is an item from a connected app or a Canvas assignment: picking it makes it a goal (POST /api/goal/add).
+export type AppCard = { app: string; title: string; detail: string; due: string | null };
+export type Card = { id: string } & (
+  | { kind: "step"; goal: Goal; step: Step }
+  | { kind: "mail"; email: DayEmail }
+  | { kind: "deadline"; deadline: Deadline }
+  | { kind: "app"; item: AppCard }
+  | { kind: "noticed"; memory: Memory }
+);
+
+export type StackInput = {
+  plans: Goal[]; // the open plans
+  deadlines: Deadline[];
+  emails: DayEmail[];
+  handled: string[]; // ids of email that already has a plan here
+  apps: AppItem[];
+  canvas: CanvasItem[];
+  memories: Memory[];
+  kept: string[]; // noticed cards she kept: they leave the stack for good
+  today: string; // YYYY-MM-DD in her zone; "" before the browser's clock
+  timeZone: string;
+  now: Date;
+};
+
+// Every card, in the order to show them: due today or overdue, due tomorrow, mail that asks (2 days old or less), today's
+// session of a goal that keeps going, due in 2-3 days, app items due within 7 days, deadlines within 7 days, one thing
+// Zeno noticed, then the rest. Ties: the soonest due, then the newest. A goal's card is its next step, only when it
+// matters now: due within 3 days, today's session not done yet, or a step running.
+export function feedStack(input: StackInput): Card[] {
+  const { plans, today, timeZone, now } = input;
+  if (!today) return [];
+  const ranked: { card: Card; tier: number; due: string | null; at: number }[] = [];
+  const add = (card: Card, tier: number, due: string | null = null, at = 0) => ranked.push({ card, tier, due, at });
+  const days = (date: string | null | undefined) => (date ? daysFrom(today, date) : NaN);
+  // Due today or before, tomorrow, in 2-3 days, then `later` up to 7 days; after that, the rest.
+  const byDays = (n: number, later: number) => (n <= 0 ? 0 : n === 1 ? 1 : n <= 3 ? 4 : n <= 7 ? later : 8);
+  const covered = (title: string) => plans.some((plan) => sameTitle(plan.title, title));
+
+  for (const plan of plans) {
+    const step = openSteps(plan)[0];
+    if (!step) continue;
+    const soon = days(plan.due) <= 3;
+    const doneToday = plan.steps.some((one) => one.status === "done" && one.doneAt && localDate(timeZone, new Date(one.doneAt)) === today);
+    const session = Boolean(plan.rhythm) && !doneToday;
+    if (!soon && !session && step.status !== "doing") continue;
+    const tier = Math.min(soon ? byDays(days(plan.due), 8) : 8, session ? 3 : 8);
+    add({ id: `step:${step.id}`, kind: "step", goal: plan, step }, tier, plan.due ?? null, Date.parse(step.startedAt ?? "") || 0);
+  }
+
+  for (const email of input.emails) {
+    if (email.asks !== true || !email.id || input.handled.includes(email.id)) continue;
+    const at = Date.parse(email.at ?? "");
+    // Mail kept from before it had a time is the newest 15 anyway.
+    add({ id: `mail:${email.id}`, kind: "mail", email }, !at || now.getTime() - at <= 2 * DAY_MS ? 2 : 8, null, at || 0);
+  }
+
+  const apps: { id: string; item: AppCard }[] = [
+    ...input.apps.map((item) => ({ id: `app:${item.app}:${item.id}`, item: { app: APP_NAMES[item.app] ?? item.app, title: item.title, detail: "", due: item.due } })),
+    ...input.canvas.map((item) => ({
+      id: `canvas:${item.id}`,
+      item: { app: "Canvas", title: item.title, detail: item.course, due: item.due ? localDate(timeZone, new Date(item.due)) : null },
+    })),
+  ];
+  for (const { id, item } of apps) {
+    if (covered(item.title)) continue;
+    const n = days(item.due);
+    // Work overdue by more than a week waits at the end (an old optional discussion is not today's problem).
+    add({ id, kind: "app", item }, Number.isNaN(n) || n < -7 ? 8 : byDays(n, 5), item.due);
+  }
+
+  // Deadlines with no plan, as before: due within 7 days, one name once, none that an app card already shows.
+  input.deadlines.forEach((deadline, i) => {
+    const n = days(deadline.date);
+    const named = [...input.deadlines.slice(0, i).map((one) => one.title), ...apps.map((one) => one.item.title)];
+    if (n >= 0 && n <= 7 && !covered(deadline.title) && !named.some((title) => sameTitle(title, deadline.title))) {
+      add({ id: `deadline:${deadline.date}:${deadline.title}`, kind: "deadline", deadline }, byDays(n, 6), deadline.date);
+    }
+  });
+
+  // What Zeno learned in the last 7 days (not her own words, and not a deadline, which has its own card): the newest one.
+  const noticed = input.memories
+    .filter((memory) => {
+      const learned = memory.source !== "you" && memory.source !== "canvas" && !(memory.group === "projects" && DATED.test(memory.text));
+      return learned && now.getTime() - Date.parse(memory.createdAt) <= 7 * DAY_MS && !input.kept.includes(`noticed:${memory.id}`);
     })
-    .sort((a, b) => byDue(a.date, b.date));
-  const list: Choice[] = soon.map((deadline) => ({ kind: "deadline", deadline }));
-  const mail = emails.find((email) => email.asks === true && email.id && !handled.includes(email.id));
-  return mail ? [...list.slice(0, 2), { kind: "mail", email: mail }] : list.slice(0, 3);
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
+  if (noticed) add({ id: `noticed:${noticed.id}`, kind: "noticed", memory: noticed }, 7, null, Date.parse(noticed.createdAt));
+
+  return ranked
+    .map((entry, i) => ({ ...entry, i }))
+    .sort((a, b) => a.tier - b.tier || byDue(a.due, b.due) || b.at - a.at || a.i - b.i)
+    .map((entry) => entry.card)
+    .filter((card, i, all) => all.findIndex((one) => one.id === card.id) === i);
+}
+
+// The cards hidden today on this device, per account (zeno.hidden.<account>), and the noticed ones she kept. A new day
+// clears what was hidden, so a card comes back tomorrow if it still matters; what she kept stays kept (the newest 50).
+export type Hidden = { day: string; ids: string[]; kept: string[] };
+export function hiddenOn(raw: unknown, today: string): Hidden {
+  const value = (raw && typeof raw === "object" ? raw : {}) as Partial<Record<keyof Hidden, unknown>>;
+  const strings = (list: unknown) => (Array.isArray(list) ? list.filter((one): one is string => typeof one === "string") : []);
+  return { day: today, ids: value.day === today ? strings(value.ids) : [], kept: strings(value.kept).slice(-50) };
 }
 
 // "due Thu Nov 12 · 9 days left", "due today", "due tomorrow", or "was due Mon Nov 2" once it has passed, from
@@ -607,9 +701,14 @@ export function goalRow(goal: Goal, today: string, proposed?: Step | null): Pane
   };
 }
 
-// A suggestion row's words: a deadline to plan, or an email to answer in 2 minutes.
-export function suggestionRow(choice: Choice, today: string): PanelRow {
-  if (choice.kind === "mail") return { title: `Answer ${sender(choice.email.from)}`, aside: "2 min", line: choice.email.subject.trim(), when: "" };
-  if (choice.kind === "deadline") return { title: choice.deadline.title, aside: "Plan it", line: "", when: dueLine(choice.deadline.date, today) };
-  return goalRow(choice.goal, today);
+// A card's words: a goal's next step, an email to answer in 2 minutes, a deadline or an app's item to plan, or what Zeno
+// noticed (that row has Keep and Forget, and no tap).
+export type CardRow = PanelRow & { id: string; noticed: boolean };
+export function suggestionRow(card: Card, today: string): CardRow {
+  const row = (title: string, aside: string, line: string, when: string) => ({ id: card.id, noticed: card.kind === "noticed", title, aside, line, when });
+  if (card.kind === "mail") return row(`Answer ${sender(card.email.from)}`, "2 min", card.email.subject.trim(), "");
+  if (card.kind === "deadline") return row(card.deadline.title, "Plan it", "", dueLine(card.deadline.date, today));
+  if (card.kind === "app") return row(card.item.title, "Plan it", [card.item.app, card.item.detail].filter(Boolean).join(" · "), card.item.due ? dueLine(card.item.due, today) : "");
+  if (card.kind === "noticed") return row(`Zeno noticed: ${card.memory.text.trim()}`, "", "", "");
+  return row(card.step.title.replace(/\.+$/, ""), card.step.minutes ? `${card.step.minutes} min` : "", card.goal.title, goalRow(card.goal, today).when);
 }

@@ -6,7 +6,7 @@ import { localDate } from "@/lib/tz";
 import type { App, AppItem } from "@/lib/connect";
 import type { VaultFact } from "@/lib/vault";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
-import { barCaption, cardSize, clock, dueLine, openSteps, type Fact, type PanelRow, type Screen } from "@/components/day-flow";
+import { barCaption, cardSize, clock, dueLine, openSteps, type CardRow, type Fact, type PanelRow, type Screen } from "@/components/day-flow";
 import AccountMenu from "@/components/account-menu";
 import GoalsPanel, { FrontDoor, Suggestions } from "@/components/goals-panel";
 import BookingChip, { type Booking } from "@/components/booking-chip";
@@ -49,7 +49,8 @@ export type DayViewProps = {
   goal: Goal | null;
   goals?: Goal[]; // every open plan, for the goals panel and the Desk (Vi, Nov 3)
   held?: Goal[]; // every plan the page holds, finished ones too, so the Week lists steps finished since the day loaded
-  suggestions?: PanelRow[]; // the panel's Suggestions: deadlines with no plan and email that asks something (on.choose)
+  // The Suggestions stack's top 3 (on.choose, on.hide, on.keep); null until the day is read.
+  suggestions?: CardRow[] | null;
   addWords?: string | null; // words whose plan couldn't be made, back in the add box
   // a desk whose plan is still being made; view: Zeno's questions or Muse's thinking (plan-thinking.tsx) under its card
   planning?: { title: string; due: string | null; line: string; view?: ReactNode } | null;
@@ -93,7 +94,9 @@ export type DayViewProps = {
   voice: { phase: VoicePhase; levelRef: { current: number }; muted: boolean; supported: boolean; error: VoiceError };
   on: {
     chip(index: number): void;
-    choose(index: number): void; // a suggestion: a deadline's new plan or an email's reply
+    choose(index: number): void; // a suggestion: a goal's step, a deadline's or an app item's new plan, or an email's reply
+    hide?(id: string): void; // a suggestion's ✕: hidden for today, or what Zeno noticed forgotten
+    keep?(id: string): void; // Keep on what Zeno noticed
     addGoal?(text: string): void; // the add box's words become a plan (POST /api/goal/add)
     closeAdd?(): void; // the add box's Cancel: failed words never come back in it
     snap(photo: File): void; // "Add from a photo": Muse Spark reads an assignment's photo, and its plan's desk opens
@@ -296,6 +299,8 @@ export default function DayView(props: DayViewProps) {
     pressed.current = true;
     on.choose(i);
   };
+  const hide = (id: string) => on.hide?.(id);
+  const keep = (id: string) => on.keep?.(id);
   const goHome = () => {
     pressed.current = true;
     on.home();
@@ -399,8 +404,7 @@ export default function DayView(props: DayViewProps) {
               {youLine}
             </FrontDoor>
             <div className="w-full max-w-[760px]">
-              <Suggestions title="From your apps" rows={props.appRows ?? []} onPick={fromApp} limit={5} />
-              <Suggestions rows={props.suggestions ?? []} onPick={choose} />
+              <Suggestions rows={props.suggestions ?? null} onPick={choose} onHide={hide} onKeep={keep} onMemory={() => on.sheet("memory")} />
             </div>
           </>
         ) : home ? (
@@ -697,7 +701,7 @@ export default function DayView(props: DayViewProps) {
       {panelOn && (
         <GoalsPanel
           goals={planGoals}
-          suggestions={props.suggestions ?? []}
+          suggestions={props.suggestions ?? null}
           openId={desk && !planning ? goal?.id ?? null : null}
           proposed={props.proposed}
           today={today}
@@ -706,6 +710,9 @@ export default function DayView(props: DayViewProps) {
           onCancel={() => on.closeAdd?.()}
           onOpen={openGoal}
           onSuggest={choose}
+          onHide={hide}
+          onKeep={keep}
+          onMemory={() => on.sheet("memory")}
           onPhoto={pickPhoto}
           apps={props.appRows}
           onApp={fromApp}

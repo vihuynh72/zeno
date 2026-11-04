@@ -32,7 +32,8 @@ const mail = [
   message("m3b", "Bank <do_not_reply@bank.example>"),
   message("m4", "Shop <deals@shop.example>", ["INBOX", "CATEGORY_UPDATES"]),
   message("m5", null),
-  ...["m6", "m7", "m8", "m9", "m10", "m11"].map((id) => message(id, `Ana <${id}@sjsu.edu>`)),
+  { ...message("m6", "Ana <m6@sjsu.edu>"), internalDate: String(Date.parse("2026-11-03T16:00:00Z")) },
+  ...["m7", "m8", "m9", "m10", "m11"].map((id) => message(id, `Ana <${id}@sjsu.edu>`)),
 ];
 const urls: string[] = [];
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -58,6 +59,7 @@ assert.deepEqual(
 );
 assert.deepEqual(emails[0], { id: "m1", from: "Prof Kim <kim@sjsu.edu>", subject: "Subject m1", snippet: "About m1", unread: true });
 assert.equal(emails[1].unread, false);
+assert.equal(emails[1].at, "2026-11-03T16:00:00.000Z", "when it came, from Gmail's internalDate");
 
 // "Show all mail" (Nov 4): the newest 20 in the inbox from every tab, no-reply and bulk senders too; senderless mail still out.
 urls.length = 0;

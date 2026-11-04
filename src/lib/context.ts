@@ -170,11 +170,11 @@ const data = (text: string) => `<<<${text.replace(/[<>]{3,}/g, "")}>>>`;
 // and bank mail shows that it came, not what it says, and never asks; its row opens it in Gmail, never in Zeno (Nov 4: it
 // couldn't be clicked). Mail the person sent never asks either.
 export const dayEmails = (emails: EmailSummary[], self: string): DayEmail[] =>
-  emails.map(({ id, from, subject, snippet, unread }) => {
+  emails.map(({ id, from, subject, snippet, unread, at }) => {
     const address = addressOf(from);
     return sensitiveEmail({ from, subject, snippet })
-      ? { id, from, address, subject: scrub(subject), snippet: "", unread, asks: false, sensitive: true }
-      : { id, from, address, subject, snippet, unread, asks: asks(subject, snippet, address === self.toLowerCase()) };
+      ? { id, from, address, subject: scrub(subject), snippet: "", unread, asks: false, sensitive: true, at }
+      : { id, from, address, subject, snippet, unread, asks: asks(subject, snippet, address === self.toLowerCase()), at };
   });
 
 export const scrub = (text: string) =>

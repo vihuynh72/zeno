@@ -650,11 +650,15 @@ button:active .tap {
   display: grid;
   flex-shrink: 0;
   place-items: center;
-  width: 44px;
+  min-width: 44px;
   height: 44px;
-  margin: -6px -12px -6px 0;
+  margin: -8px -8px -8px 0;
+  padding: 0 8px;
   border-radius: 999px;
   color: var(--ink-2);
+  font-size: 18px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 @media (hover: hover) {
   .forget:hover {
@@ -942,6 +946,63 @@ button:active .tap {
 }
 .choice[aria-disabled="true"] {
   cursor: default;
+}
+
+/* Suggestions (Vi, Nov 4): a card's ✕ sits over its top right corner, 44px, beside its first line; a hidden card fades
+   out while the cards under it move up. */
+.hide {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  color: var(--ink-2);
+}
+@media (hover: hover) {
+  .hide:hover {
+    background: var(--desk);
+    color: var(--ink);
+  }
+}
+/* Keep on a noticed card: a word on the ruled line, its target grown to 44px around it. */
+.keep {
+  position: relative;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.keep::after {
+  content: "";
+  position: absolute;
+  inset: -8px -12px;
+}
+.feed > li {
+  display: grid;
+  /* minmax: a long truncated line never widens the card past its column. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.15s ease-out;
+}
+.feed > li > div {
+  min-height: 0;
+}
+.feed > li[data-gone] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+.feed > li[data-gone] > div {
+  overflow: hidden;
+}
+@media (prefers-reduced-motion: reduce) {
+  .feed > li {
+    transition: none;
+  }
 }
 
 /* The goal strip's bar: a segment per step, done in ink, the proposed or running one in margin red, the rest track. */

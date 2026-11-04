@@ -4,6 +4,7 @@ export type EmailSummary = {
   subject: string;
   snippet: string;
   unread: boolean;
+  at?: string; // when it came, ISO
 };
 
 type GmailListResponse = {
@@ -104,6 +105,7 @@ export async function getRecentEmail(accessToken: string, all = false): Promise<
           subject: header(message, "Subject") || "(no subject)",
           snippet: (message.snippet ?? "").slice(0, 160),
           unread: labels.includes("UNREAD"),
+          ...(message.internalDate && { at: new Date(Number(message.internalDate)).toISOString() }),
         },
       ];
     })

@@ -8,7 +8,8 @@ import { groupFacts, type Fact } from "@/components/day-flow";
 // A stand-in fact, so Projects & deadlines shows even when Canvas deadlines are all it holds.
 const CANVAS = "canvas";
 
-// What Zeno remembers, grouped, with this device's private facts in their groups. Forget is a quiet × per row.
+// What Zeno remembers, grouped, with this device's private facts in their groups. Forget is a word on each row (Vi, Nov
+// 4: easy to find and delete).
 // Canvas deadlines fold into one line at the end of Projects & deadlines, which opens them there, one line each.
 export default function MemorySheet({
   memories,
@@ -41,9 +42,7 @@ export default function MemorySheet({
         {fact.device && <span className="block text-[18px] text-ink-2">Only on this device</span>}
       </p>
       <button type="button" onClick={() => onForget(fact)} className="forget" aria-label={`Forget: ${fact.text}`}>
-        <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <path d="M6 6l12 12M18 6L6 18" />
-        </svg>
+        Forget
       </button>
     </li>
   );

@@ -57,7 +57,8 @@ export type DayEvent = { title: string; start: string; end: string; allDay: bool
 // id opens the email in full (GET /api/mail/[id]), address is the sender's, for a reply draft's To, and asks marks mail
 // that asks the person something (a question or a request, by rule). All three are missing from days saved before Nov 3.
 // sensitive marks code or bank mail: its row opens it in Gmail, never in Zeno (Nov 4: those rows couldn't be clicked).
-export type DayEmail = { from: string; subject: string; snippet: string; unread: boolean; id?: string; address?: string; asks?: boolean; sensitive?: boolean };
+// at: when it came (ISO), missing from days saved before Nov 4.
+export type DayEmail = { from: string; subject: string; snippet: string; unread: boolean; id?: string; address?: string; asks?: boolean; sensitive?: boolean; at?: string };
 
 // A free gap in the person's calendars, ISO start and end.
 export type FreeSlot = { start: string; end: string };

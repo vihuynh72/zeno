@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { Goal, Step } from "@/lib/day";
-import { goalRow, panelGoals, type PanelRow } from "@/components/day-flow";
+import { goalRow, panelGoals, type CardRow, type PanelRow } from "@/components/day-flow";
 
 // The goals panel (Nov 4, docs/PLAN-NOV4-GOALS.md): every open goal by due date, "+ Add goal" under them, then
 // Suggestions. A laptop's left column beside the open goal's desk; a phone's home under the hello. Nothing here talks
@@ -35,7 +35,7 @@ function take(box: HTMLTextAreaElement | null, onAdd: (text: string) => void) {
 
 type PanelProps = {
   goals: Goal[]; // the open plans, in any order
-  suggestions: PanelRow[];
+  suggestions: CardRow[] | null;
   openId: string | null; // the goal whose desk is open, highlighted
   proposed?: Step | null; // the open goal's step on its desk, so its row names the same Next
   today: string;
@@ -44,6 +44,9 @@ type PanelProps = {
   onCancel(): void;
   onOpen(goalId: string): void;
   onSuggest(index: number): void;
+  onHide(id: string): void;
+  onKeep(id: string): void;
+  onMemory(): void;
   onPhoto(): void;
   apps?: PanelRow[]; // From your apps, shown while the box is open (Nov 4)
   onApp?(index: number): void; // one of them becomes a goal
@@ -104,8 +107,8 @@ export default function GoalsPanel(props: PanelProps) {
           </button>
         )}
       </div>
-      {(adding || words !== null) && onApp && <Suggestions title="From your apps" rows={apps} onPick={pickApp} limit={5} />}
-      <Suggestions rows={suggestions} onPick={onSuggest} />
+      {(adding || words !== null) && onApp && <FromYourApps rows={apps} onPick={pickApp} limit={5} />}
+      <Suggestions rows={suggestions} onPick={onSuggest} onHide={props.onHide} onKeep={props.onKeep} onMemory={props.onMemory} />
     </aside>
   );
 }
@@ -237,9 +240,86 @@ export function FrontDoor({ hello, line, words, note, onAdd, onPhoto, children }
   );
 }
 
-// Deadlines with no plan yet ("Plan it") and email that asks something ("Answer Prof. Patel"), each one tap. Also "From
-// your apps" (Nov 4): what connected apps have waiting, `limit` shown until Show all.
-export function Suggestions({ rows, onPick, title = "Suggestions", limit = Infinity }: { rows: PanelRow[]; onPick(index: number): void; title?: string; limit?: number }) {
+// The Suggestions stack (Vi, Nov 4): the page passes the top 3 she hasn't hidden today. A row is one tap (a goal's next
+// step, mail to answer, a deadline or an app's item to plan) with ✕ to hide it for today; what Zeno noticed has Keep and
+// ✕ (Forget) instead. A row fades out, the rows under it move up, and focus goes to the row that took its place.
+// rows null: the day isn't read yet, so nothing claims she is caught up.
+type StackProps = { rows: CardRow[] | null; onPick(index: number): void; onHide(id: string): void; onKeep(id: string): void; onMemory(): void };
+export function Suggestions({ rows, onPick, onHide, onKeep, onMemory }: StackProps) {
+  const [gone, setGone] = useState<string[]>([]);
+  const list = useRef<HTMLUListElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  if (rows === null) return null;
+  const leave = (id: string, i: number, then: (id: string) => void) => {
+    const done = () => {
+      then(id);
+      setGone((ids) => ids.filter((one) => one !== id));
+      requestAnimationFrame(() => (list.current?.querySelectorAll<HTMLElement>("[data-hide]")[i] ?? heading.current)?.focus());
+    };
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return done();
+    setGone((ids) => [...ids, id]);
+    setTimeout(done, 200);
+  };
+  return (
+    <section aria-labelledby="suggestions" className="mt-6 w-full">
+      <h2 ref={heading} id="suggestions" tabIndex={-1} className="text-[20px] leading-8 font-bold outline-none">
+        Suggestions
+      </h2>
+      {rows.length === 0 && <p className="mt-2 text-ink-2">You&apos;re all caught up.</p>}
+      <ul ref={list} className="feed mt-2">
+        {rows.map((row, i) => (
+          <li key={row.id} className="fade" data-gone={gone.includes(row.id) || undefined}>
+            <div>
+              <div className="relative pb-2">
+                {row.noticed ? (
+                  <div className="choice">
+                    <span className="lines block">
+                      <span className="block pr-8 wrap-break-word">{row.title}</span>
+                      <span className="block">
+                        <button type="button" data-answer onClick={() => leave(row.id, i, onKeep)} className="keep">
+                          Keep
+                        </button>
+                      </span>
+                    </span>
+                  </div>
+                ) : (
+                  <button type="button" data-answer onClick={() => onPick(i)} className="choice">
+                    <span className="lines block">
+                      <span className="flex items-baseline justify-between gap-4 pr-8">
+                        <span className="line-clamp-2 min-w-0 font-bold">{row.title}</span>
+                        <span className="shrink-0 text-ink-2">{row.aside}</span>
+                      </span>
+                      {row.line && <span className="block truncate text-[18px]">{row.line}</span>}
+                      {row.when && <span className="block truncate text-[18px] text-ink-2">{row.when}</span>}
+                    </span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  data-answer
+                  data-hide
+                  onClick={() => leave(row.id, i, onHide)}
+                  className="hide"
+                  aria-label={row.noticed ? "Forget this" : `Hide ${row.title} for today`}
+                >
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <button type="button" data-answer onClick={onMemory} className="link -ml-1">
+        What Zeno remembers
+      </button>
+    </section>
+  );
+}
+
+// "From your apps" (Nov 4) under the open add box: what connected apps have waiting, `limit` shown until Show all.
+export function FromYourApps({ rows, onPick, title = "From your apps", limit = Infinity }: { rows: PanelRow[]; onPick(index: number): void; title?: string; limit?: number }) {
   const id = useId();
   const [all, setAll] = useState(false);
   if (rows.length === 0) return null;
