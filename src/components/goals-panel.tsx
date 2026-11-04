@@ -12,12 +12,14 @@ import { goalRow, panelGoals, type PanelRow } from "@/components/day-flow";
 // starts each, so one that still wraps reads as one.
 const EXAMPLES = "– Run a 5K by January\n– Finish my site by Friday\n– Study for Thursday's exam";
 
-// Enter makes the plan, Shift+Enter starts a new line, Escape closes the box (the panel's only).
-function onKeys(event: KeyboardEvent<HTMLTextAreaElement>, submit: () => void, close?: () => void) {
+// Enter makes the plan, Shift+Enter starts a new line, Escape closes the box (the panel's only). In a box for a list
+// (`lines`, the front door: its examples are one goal a line), Enter starts a new line and Cmd or Ctrl+Enter makes the
+// plan (round 2, Nov 4: Enter sent a nurse's first line, and her second goal was never made).
+function onKeys(event: KeyboardEvent<HTMLTextAreaElement>, submit: () => void, close?: () => void, lines = false) {
   if (event.key === "Escape" && close) {
     event.preventDefault();
     close();
-  } else if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+  } else if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && (!lines || event.metaKey || event.ctrlKey)) {
     event.preventDefault();
     submit();
   }
@@ -147,7 +149,12 @@ function AddBox({ words, onAdd, onCancel, onPhoto }: { words: string | null; onA
 type DoorProps = { hello?: string; line: string; words: string | null; note: string | null; onAdd(text: string): void; onPhoto(): void; children?: ReactNode };
 export function FrontDoor({ hello, line, words, note, onAdd, onPhoto, children }: DoorProps) {
   const box = useRef<HTMLTextAreaElement>(null);
-  const submit = () => take(box.current, onAdd);
+  const make = useRef<HTMLButtonElement>(null);
+  const [empty, setEmpty] = useState(false);
+  const submit = () => {
+    setEmpty(!box.current?.value.trim());
+    take(box.current, onAdd);
+  };
   return (
     <>
       <article className="card hello door rise z-10 mt-6 w-full max-w-[760px] short:mt-4">
@@ -165,21 +172,27 @@ export function FrontDoor({ hello, line, words, note, onAdd, onPhoto, children }
             key={words ?? ""}
             ref={box}
             id="goal-words"
-            enterKeyHint="go"
+            enterKeyHint="enter"
             defaultValue={words ?? ""}
             data-retry={words !== null || undefined}
             className="write"
             placeholder={EXAMPLES}
-            onKeyDown={(event) => onKeys(event, submit)}
+            onKeyDown={(event) => onKeys(event, submit, undefined, true)}
+            // The box grows as she writes: Make a plan stays clear of the dock (round 2, Nov 4: it slid half under it on a
+            // phone). html's scroll padding is the dock, so "nearest" scrolls only when it is covered.
+            onInput={() => {
+              setEmpty(false);
+              requestAnimationFrame(() => make.current?.scrollIntoView({ block: "nearest" }));
+            }}
           />
           <p role="status" className="text-ink-2 empty:hidden">
-            {note}
+            {note ?? (empty ? "Type a goal first, like the examples." : null)}
           </p>
           {children}
         </div>
       </article>
       <div className="mt-4 flex w-full max-w-[760px] flex-col items-center gap-2 sm:mt-6 short:mt-4">
-        <button type="button" data-answer onClick={submit} className="pill pill-ink pill-big">
+        <button ref={make} type="button" data-answer onClick={submit} className="pill pill-ink pill-big">
           Make a plan
         </button>
         <div className="links">

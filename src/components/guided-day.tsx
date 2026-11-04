@@ -339,6 +339,8 @@ export default function GuidedDay() {
   const [rollingId, setRollingId] = useState<string | null>(null); // a goal that keeps going whose next few are being planned
   const [mailGoals, setMailGoals] = useState<Record<string, string>>({});
   const [addWords, setAddWords] = useState<string | null>(null); // words whose plan couldn't be made, back in the box
+  // Until she goes anywhere, the home offers the goal she was last on: its next step and Start (coming back, Nov 4).
+  const [welcome, setWelcome] = useState(true);
   const today = useToday();
   // The goals panel (Nov 4): every open plan, and as Suggestions the deadlines and asking email with no plan yet.
   const plans = openPlans(goal, goals);
@@ -349,6 +351,8 @@ export default function GuidedDay() {
   const onDesk = screen === "focus" || screen === "checkin" || (view === "desk" && (planning !== null || proposed !== null));
   // No open plan: the home is the front door, whose line says what Zeno does (Nov 4: never "your goals are below").
   const frontDoor = screen === "ready" && !onDesk && plans.length === 0;
+  // Coming back: the goal she was last on (the server's current one, her own last pick) and its next step, never a new pick.
+  const resume = welcome && fresh && screen === "ready" && !onDesk && goal ? openSteps(goal)[0] ?? null : null;
   const history = useRef<Turn[]>([]);
   const cache = useRef<Saved | null>(null);
   const tapped = useRef<string | null>(null); // the turn in flight came from a chip, not the type box: the words it shows
@@ -368,6 +372,9 @@ export default function GuidedDay() {
   const warned = useRef(new Set<string>()); // events already given a heads-up
   const answered = useRef(""); // Zeno's answer to something said in Focus, which no quiet line covers
   const cardAt = useRef(0); // when the card last changed, so the second tap of a double tap can't answer the next one
+  // finishSetup, for the first scan's answer (declared further down): a first run that found nothing to read goes
+  // straight to the front door (round 2, Nov 4: "Nothing to read yet" and an extra Start confused all ten testers).
+  const skipSetup = useRef(() => {});
   useEffect(() => {
     cardAt.current = performance.now();
   }, [screen, pasting, view, stuck]);
@@ -537,7 +544,9 @@ export default function GuidedDay() {
       if (res.state === "signed-out") return showSignedOut();
       // Like the daily scan: a failed one is tried again on the next open today.
       if (res.state === "ok" || res.state === "no-access") writeLocal(scannedKey(mine), localDate(zone()));
-      if (res.state === "ok") setLearned([...(res.learned ?? []), ...keep(res.private)]);
+      const found = res.state === "ok" ? [...(res.learned ?? []), ...keep(res.private)] : [];
+      setLearned(found);
+      if (found.length === 0) skipSetup.current();
     });
     saves.current.push(scan);
     // Asked for once the scan settles, so the home's opening is written with what it learned.
@@ -721,7 +730,10 @@ export default function GuidedDay() {
     return until ? `${doneLine(next, skipped)} ${until}` : doneLine(next, skipped);
   }
 
-  async function onUserTurn(text: string): Promise<string | null> {
+  // A spoken turn (or any turn while hands-free) is answered aloud; typed and tapped ones on screen only, so typing in a
+  // library stays quiet (Nov 4: seven of ten testers heard Zeno talk back to their typing).
+  async function onUserTurn(text: string, how: "voice" | "typed" = "voice"): Promise<string | null> {
+    const aloud = (line: string) => (how === "voice" || talking.current ? line : null);
     const fromChip = tapped.current !== null;
     const theirs = tapped.current ?? text;
     tapped.current = null;
@@ -760,7 +772,7 @@ export default function GuidedDay() {
     }
     if (res.state !== "ok" || typeof res.reply !== "string") {
       setLine(THINK_FAIL);
-      return THINK_FAIL;
+      return aloud(THINK_FAIL);
     }
     remember([
       { role: "user", content: text },
@@ -830,7 +842,7 @@ export default function GuidedDay() {
     replied.current = !drafted && next !== "checkin" ? quickReplies(res.options, proposal.length > 0) : [];
     setOptions(replied.current);
     // The hook says it; hands-free listens again after a question.
-    return spoken(said);
+    return aloud(spoken(said));
   }
 
   // The finished card slides onto the pile while the next card rises with Zeno's line; a skipped one (null) never does.
@@ -997,6 +1009,7 @@ export default function GuidedDay() {
   // moment ("Your draft is open in Gmail."); otherwise the day's opening is back.
   function goHome(said?: string) {
     opened.current += 1;
+    setWelcome(false);
     setOfferKeys([]);
     setDraft(null);
     setTyping(false);
@@ -1018,6 +1031,14 @@ export default function GuidedDay() {
     goHome();
   }
 
+  // Switch goal: with one other goal it opens at once; with more, the goals to pick from (round 2, Nov 4).
+  function switchGoal() {
+    const current = latest.current.goal;
+    const others = openPlans(current, latest.current.goals).filter((one) => one.id !== current?.id);
+    if (others.length === 1) return void openPlan(others[0]);
+    leaveForHome();
+  }
+
   // ---------- A goal's desk (Vi, Nov 3: she picks the goal, Zeno picks the step) ----------
   // Opening a desk is choosing, so a late opening line never moves the screen, and Zeno stops talking.
   function openDesk(): number {
@@ -1035,6 +1056,7 @@ export default function GuidedDay() {
     setHear(false);
     setProposedId(null);
     setAddWords(null);
+    setWelcome(false);
     // The home's line never sits under a desk's step card.
     setLine("");
     setView("desk");
@@ -1417,6 +1439,10 @@ export default function GuidedDay() {
       .then((again) => takeDay(again));
   }
 
+  useEffect(() => {
+    skipSetup.current = finishSetup;
+  });
+
   // ---------- Memory ----------
   function openSheet(next: Sheet) {
     setSheet(next);
@@ -1569,8 +1595,9 @@ export default function GuidedDay() {
         ...(asked.length === 0 && openSteps(goal).length > 1 ? [say("Another step", () => setProposedId(nextProposal(goal, start.id)))] : []),
       ];
     }
-    // The home's actions are the goals panel and the front door (Nov 4), never a model option such as "Plan tomorrow".
-    if (screen === "ready") return [];
+    // The home's actions are the goals panel and the front door (Nov 4), never a model option such as "Plan tomorrow";
+    // coming back, the goal she was last on starts with one tap.
+    if (screen === "ready") return resume && fresh ? [say(resume.minutes ? `Start · ${resume.minutes} min` : "Start", () => void startStep(resume))] : [];
     if (screen === "talk") {
       // An offer with no replies left beside it (they went with a booking that was then undone) still has a way home.
       if (options.length) return [...replies, other];
@@ -1585,7 +1612,7 @@ export default function GuidedDay() {
       const done = say("Done", () => void finishStep(step));
       const stop = say("Stop for now", stopForNow);
       // Stuck? asks nothing (Vi, Nov 3): a smaller first piece on the same clock, the first move, or another goal.
-      if (stuck) return [done, say("Make it smaller", () => smallerNow(step)), say("Show me how", () => showMe(step)), say("Switch goal", leaveForHome), stop];
+      if (stuck) return [done, say("Make it smaller", () => smallerNow(step)), say("Show me how", () => showMe(step)), say("Switch goal", switchGoal), stop];
       const extra = isEmailStep(step.title) ? [say("Draft it in Gmail", () => tap(`Draft the email for: ${step.title}`, "Draft it in Gmail"))] : [];
       return [done, ...asked, say("Stuck?", () => setStuck(true)), stop, ...extra];
     }
@@ -1595,10 +1622,13 @@ export default function GuidedDay() {
       // A goal that keeps going rests after a session: the next is for another day (live, Nov 3: Sam was pushed into a
       // second run). With its steps all done, its next few are being planned, or Plan my next few tries again.
       if (goal?.rhythm) {
+        // Rest after a real session (15 min or more); a 5-minute setup step goes straight on (round 2, Nov 4).
+        const last = goal.steps.filter((one) => one.status === "done" && one.doneAt).sort((a, b) => (a.doneAt! < b.doneAt! ? -1 : 1)).at(-1);
+        if (step && (last?.minutes ?? 0) < 15) return [say("Keep going", () => void startStep(step)), home, enough];
         if (step) return [home, say("Keep going", () => void startStep(step)), enough];
         return rollingId === goal.id ? [home, enough] : [say("Plan my next few", () => void rollOn(goal)), home, enough];
       }
-      if (step) return [say("Keep going", () => void startStep(step)), say("Switch goal", () => goHome()), enough];
+      if (step) return [say("Keep going", () => void startStep(step)), say("Switch goal", switchGoal), enough];
       return [home, enough];
     }
     if (screen === "wrap") {
@@ -1639,6 +1669,8 @@ export default function GuidedDay() {
       suggestions={choices.map((choice) => suggestionRow(choice, today))}
       addWords={addWords}
       planning={onDesk ? planning : null}
+      resume={resume && goal ? { goal: goal.title, step: resume.title, minutes: resume.minutes ?? null } : null}
+      stuck={screen === "focus" && stuck}
       proposed={proposed}
       materials={
         onDesk && goal && !planning

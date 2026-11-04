@@ -55,7 +55,7 @@ export function GoalStrip(props: { title: string; due?: string | null; rhythm?: 
 const SAID: Record<Step["status"], string> = { done: "Done", doing: "Now", todo: "To do", skipped: "Skipped" };
 
 // One line per step, ticked in the margin when done (with the minutes it really took); the proposed or running one
-// marked. The next 5 open steps show and the rest wait under "Later (N)" (Nov 4: not overwhelming). With onPropose, a
+// marked. The next 5 open steps show and the rest wait under "N more steps" (Nov 4: not overwhelming). With onPropose, a
 // tap on a todo step proposes it.
 export function StepsList({ steps, marked, onPropose }: { steps: Step[]; marked?: string; onPropose?(id: string): void }) {
   const [all, setAll] = useState(false);
@@ -99,7 +99,7 @@ export function StepsList({ steps, marked, onPropose }: { steps: Step[]; marked?
           {!all && later > 0 && (
             <li>
               <button type="button" className="steps-row text-ink-2" aria-expanded={false} onClick={() => setAll(true)}>
-                Later ({later})
+                {later} more {later === 1 ? "step" : "steps"}
               </button>
             </li>
           )}
@@ -112,7 +112,7 @@ export function StepsList({ steps, marked, onPropose }: { steps: Step[]; marked?
 const cut = (text: string, max: number) => (text.length > max ? `${text.slice(0, max).trimEnd()}…` : text);
 
 // "For this step" (Nov 4): each material a small card. Helpful links are laid out only for a step that reads or looks
-// things up; any other step offers them with a small "Find links". They are searched only on a tap (each search is
+// things up; any other step offers them with a small "Find help online". They are searched only on a tap (each search is
 // billed), unless found before (key this by the step, so a new step starts with its button again). A reply is hers to
 // write: no links for an email step.
 export function DeskMaterials({ materials, step, brief }: { materials?: Materials; step: Step | null; brief?: CanvasBrief }) {
@@ -122,7 +122,7 @@ export function DeskMaterials({ materials, step, brief }: { materials?: Material
   const card = linkable && (links || isResearchStep(step.title));
   const find = linkable && !card && (
     <button type="button" className="link -ml-1" onClick={() => setLinks(true)}>
-      Find links
+      Find help online
     </button>
   );
   if (!mail && !prompt && !stopped && !card) return find ? <div className="mt-6 w-full max-w-[760px]">{find}</div> : null;

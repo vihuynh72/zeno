@@ -50,6 +50,8 @@ export type DayViewProps = {
   suggestions?: PanelRow[]; // the panel's Suggestions: deadlines with no plan and email that asks something (on.choose)
   addWords?: string | null; // words whose plan couldn't be made, back in the add box
   planning?: { title: string; due: string | null; line: string } | null; // a desk whose plan is still being made
+  resume?: { goal: string; step: string; minutes: number | null } | null; // coming back: the goal she was last on
+  stuck?: boolean; // Stuck? is open in Focus: its four ways out, without Pop out and Music beside them
   proposed?: Step | null; // the step Zeno proposes on the desk
   materials?: Materials; // what lies on the desk beside the step
   today: Today | null; // null when the day couldn't load
@@ -204,22 +206,29 @@ export default function DayView(props: DayViewProps) {
   useEffect(() => {
     // A tall card or line can leave the answers under the sticky dock or its fade; bring them clear of it (html's
     // scroll-padding-bottom is the dock). Answers far below, under an open desk, stay put.
-    const pills = pillsRef.current;
-    // No answers (the home, the front door): nothing to bring clear, so the view stays at its top.
-    if (!pills?.childElementCount) return;
-    const { top, bottom } = pills.getBoundingClientRect();
-    const dockTop = document.querySelector(".dock")?.getBoundingClientRect().top ?? innerHeight;
-    // On a goal's desk the scroll stops before the step card slides under the sticky goal strip (Nov 4), so the step and
-    // a Done's bar fill stay in view (live, Nov 3: Done scrolled the bar off a 1440x900 laptop); the links may then sit
-    // in the dock's fade. On a phone the answers win: no button or chip stays under the dock (Nov 4: Keep going sat
-    // under it).
-    const strip = document.querySelector<HTMLElement>("[data-strip]");
-    const card = mainRef.current?.querySelector(".card");
-    const room = strip && card && innerWidth >= 640 ? Math.max(0, card.getBoundingClientRect().top - strip.offsetHeight - 8) : Infinity;
-    const need = Math.min(bottom - (dockTop - 16), room);
-    if (top < innerHeight && need > 0) {
-      window.scrollBy({ top: need, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-    }
+    const clear = () => {
+      const pills = pillsRef.current;
+      // No answers (the home, the front door): nothing to bring clear, so the view stays at its top.
+      if (!pills?.childElementCount) return;
+      const { top, bottom } = pills.getBoundingClientRect();
+      const dockTop = document.querySelector(".dock")?.getBoundingClientRect().top ?? innerHeight;
+      // On a goal's desk the scroll stops before the step card slides under the sticky goal strip (Nov 4), so the step
+      // and a Done's bar fill stay in view (live, Nov 3: Done scrolled the bar off a 1440x900 laptop); the links may
+      // then sit in the dock's fade. On a phone the answers win: no button or chip stays under the dock (Nov 4: Keep
+      // going sat under it).
+      const strip = document.querySelector<HTMLElement>("[data-strip]");
+      const card = mainRef.current?.querySelector(".card");
+      const room = strip && card && innerWidth >= 640 ? Math.max(0, card.getBoundingClientRect().top - strip.offsetHeight - 8) : Infinity;
+      const need = Math.min(bottom - (dockTop - 16), room);
+      if (top < innerHeight && need > 0) {
+        window.scrollBy({ top: need, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+      }
+    };
+    clear();
+    // Once more after the card's rise and a Done's slide settle (300 ms), which can still push the answers down (round 2,
+    // Nov 4: Keep going sat half under the dock on a phone).
+    const again = setTimeout(clear, 450);
+    return () => clearTimeout(again);
   }, [answersKey]);
 
   // The person's words; the text box itself docks above the dock (Nov 4), never on the card.
@@ -343,10 +352,25 @@ export default function DayView(props: DayViewProps) {
                     </span>
                   </p>
                 )}
+                {/* Coming back (Nov 4): where she left off, with Start under the card. */}
+                {props.resume && (
+                  <>
+                    <p>
+                      <span className="hand">Pick up where you left off:</span>
+                    </p>
+                    <p className="font-bold">
+                      {props.resume.step}
+                      {props.resume.minutes ? <span className="mins">{props.resume.minutes} min</span> : null}
+                    </p>
+                    <p className="text-ink-2">{props.resume.goal}</p>
+                  </>
+                )}
                 {screen !== null && youLine}
               </div>
             </article>
-            {panelOn && <p className="mt-6 text-center text-ink-2 max-lg:hidden">Pick a goal on the left, or add one.</p>}
+            {panelOn && (
+              <p className="mt-6 text-center text-ink-2 max-lg:hidden">{props.resume ? "Or pick another goal on the left." : "Pick a goal on the left, or add one."}</p>
+            )}
           </>
         ) : (
           <>
@@ -455,6 +479,7 @@ export default function DayView(props: DayViewProps) {
             </div>
 
             {props.celebrate && progress && progress.week.length > 0 && screen === "checkin" && <StreakRow progress={progress} />}
+            {planning && screen === "ready" && <p className="mt-2 text-center text-ink-2">Muse, Meta&apos;s AI, is making the steps.</p>}
 
             {/* Under a step card, Zeno's line (in Focus, or about the step it proposes: never only spoken, Nov 4) and the
                 person's words. */}
@@ -521,8 +546,10 @@ export default function DayView(props: DayViewProps) {
               )}
               {/* Before Music, whose stations open on their own row after it. Mounted after a Done too, so its window can
                   show what is next. */}
-              <FocusPop {...props} />
-              <FocusMusic active={screen === "focus"} />
+              <span className={props.stuck ? "hidden" : "contents"}>
+                <FocusPop {...props} />
+                <FocusMusic active={screen === "focus"} />
+              </span>
             </div>
           )}
         </div>
@@ -593,6 +620,7 @@ export default function DayView(props: DayViewProps) {
               onSend={(text) => {
                 on.send(text);
                 closeBox();
+                window.scrollTo({ top: 0 });
               }}
               onClose={closeBox}
             />

@@ -261,10 +261,11 @@ body {
   color: var(--ink-2);
   opacity: 1;
 }
-/* Focus shows as the line being written on turning red, not a box around it. */
+/* Focus shows as the lines being written on turning pencil grey, not a box around it (Nov 4: red lines under typed
+   words read as mistakes to the ten testers). */
 .write:focus-visible {
   outline: none;
-  background: linear-gradient(var(--red) 2px, transparent 2px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100%
+  background: linear-gradient(var(--ink-2) 1px, transparent 1px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100%
     var(--lh);
 }
 
@@ -612,7 +613,7 @@ button:active .tap {
   mask-image: linear-gradient(transparent, #000 var(--lh));
 }
 .paste:focus-visible {
-  background: var(--card) linear-gradient(var(--red) 2px, transparent 2px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100%
+  background: var(--card) linear-gradient(var(--ink-2) 1px, transparent 1px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100%
     var(--lh) local;
 }
 
@@ -1663,7 +1664,7 @@ button:active .tap {
   background: linear-gradient(var(--rule) 1px, transparent 1px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100% var(--lh) local;
 }
 .slip .write:focus-visible {
-  background: linear-gradient(var(--red) 2px, transparent 2px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100% var(--lh) local;
+  background: linear-gradient(var(--ink-2) 1px, transparent 1px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100% var(--lh) local;
 }
 /* The box sits inside html's scroll padding, so the caret could never come "clear" of the dock: without this, every
    keystroke scrolled the page to its end. */
