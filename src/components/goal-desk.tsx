@@ -10,11 +10,15 @@ import PrepPack from "@/components/prep-pack";
 // strip and the steps; nothing here writes anything.
 
 // What lies on the desk beside the step: the Canvas prompt, where she stopped, and the email a reply plan answers.
+// What she said about a step and Zeno's answer, kept on her device (round 3, Nov 4).
+export type Note = { you: string; zeno: string };
+
 export type Materials = {
   prompt?: { course: string; text: string; url?: string };
   stopped?: string | null;
   mail?: { id: string; gmail?: string };
   sourcesOpen?: boolean; // the /preview gallery shows the links already found
+  notes?: Record<string, Note[]>; // by step id
 };
 
 const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -118,6 +122,7 @@ const cut = (text: string, max: number) => (text.length > max ? `${text.slice(0,
 export function DeskMaterials({ materials, step, brief }: { materials?: Materials; step: Step | null; brief?: CanvasBrief }) {
   const [links, setLinks] = useState(materials?.sourcesOpen ?? Boolean(step?.prep?.length));
   const { prompt, stopped, mail } = materials ?? {};
+  const notes = step ? (materials?.notes?.[step.id] ?? []) : [];
   const linkable = step !== null && !isEmailStep(step.title);
   const card = linkable && (links || isResearchStep(step.title));
   const find = linkable && !card && (
@@ -125,7 +130,7 @@ export function DeskMaterials({ materials, step, brief }: { materials?: Material
       Find help online
     </button>
   );
-  if (!mail && !prompt && !stopped && !card) return find ? <div className="mt-6 w-full max-w-[760px]">{find}</div> : null;
+  if (!mail && !prompt && !stopped && !card && notes.length === 0) return find ? <div className="mt-6 w-full max-w-[760px]">{find}</div> : null;
   return (
     <section aria-labelledby="desk-materials" className="mt-10 w-full max-w-[760px]">
       <h2 id="desk-materials" className="text-[20px] leading-8 font-bold">
@@ -151,6 +156,7 @@ export function DeskMaterials({ materials, step, brief }: { materials?: Material
             <p className="mt-1">{stopped}</p>
           </article>
         )}
+        {notes.length > 0 && <NotesCard notes={notes} />}
         {card &&
           (links ? (
             <article className="mini">
@@ -166,6 +172,35 @@ export function DeskMaterials({ materials, step, brief }: { materials?: Material
       </div>
       {find && <div className="mt-2">{find}</div>}
     </section>
+  );
+}
+
+// What she said on this step and Zeno's answers, newest last, with Copy: Lucia's questions, Ruth's taps and Maya's
+// outline stay after the next reply and a reload (round 3, Nov 4). Kept on this device only.
+function NotesCard({ notes }: { notes: Note[] }) {
+  const [copied, setCopied] = useState(false);
+  const text = notes.map((note) => `You: ${note.you}\nZeno: ${note.zeno}`).join("\n\n");
+  return (
+    <article className="mini sm:col-span-2">
+      <h3 className="font-bold text-ink-2">Your notes</h3>
+      <ul className="mt-1 flex flex-col gap-3">
+        {notes.map((note, i) => (
+          <li key={i}>
+            <p className="text-ink-2">You: {note.you}</p>
+            <p className="whitespace-pre-line">{note.zeno}</p>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        className="link -ml-1 mt-2"
+        onClick={() => {
+          void navigator.clipboard?.writeText(text).then(() => setCopied(true), () => setCopied(false));
+        }}
+      >
+        {copied ? "Copied" : "Copy notes"}
+      </button>
+    </article>
   );
 }
 

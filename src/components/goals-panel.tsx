@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { Goal, Step } from "@/lib/day";
 import { goalRow, panelGoals, type PanelRow } from "@/components/day-flow";
 
@@ -8,9 +8,10 @@ import { goalRow, panelGoals, type PanelRow } from "@/components/day-flow";
 // Suggestions. A laptop's left column beside the open goal's desk; a phone's home under the hello. Nothing here talks
 // to the server: the page's handlers do.
 
-// School and life, each on one line of a 360px phone (the plan's longer ones wrapped and read as five examples); a dash
-// starts each, so one that still wraps reads as one.
-const EXAMPLES = "– Run a 5K by January\n– Finish my site by Friday\n– Study for Thursday's exam";
+// Errands, health and school, each on one line of a 360px phone (the plan's longer ones wrapped and read as five
+// examples); a dash starts each, so one that still wraps reads as one. Round 3: the older and the non-student testers
+// read the first set as "for young people".
+const EXAMPLES = "– Call the bank this week\n– Run a 5K by January\n– Study for Thursday's exam";
 
 // Enter makes the plan, Shift+Enter starts a new line, Escape closes the box (the panel's only). In a box for a list
 // (`lines`, the front door: its examples are one goal a line), Enter starts a new line and Cmd or Ctrl+Enter makes the
@@ -151,6 +152,11 @@ export function FrontDoor({ hello, line, words, note, onAdd, onPhoto, children }
   const box = useRef<HTMLTextAreaElement>(null);
   const make = useRef<HTMLButtonElement>(null);
   const [empty, setEmpty] = useState(false);
+  // With a mouse, the caret waits in the box, so it reads as a box to type in (round 3: "it looks like printed paper");
+  // a phone's keyboard opens only on a tap.
+  useEffect(() => {
+    if (matchMedia("(hover: hover) and (pointer: fine)").matches) box.current?.focus({ preventScroll: true });
+  }, []);
   const submit = () => {
     setEmpty(!box.current?.value.trim());
     take(box.current, onAdd);

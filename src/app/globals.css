@@ -261,12 +261,10 @@ body {
   color: var(--ink-2);
   opacity: 1;
 }
-/* Focus shows as the lines being written on turning pencil grey, not a box around it (Nov 4: red lines under typed
-   words read as mistakes to the ten testers). */
+/* Typed words sit on the card's own rules; the red caret shows where she writes, with no second line under the words
+   (round 3, Nov 4: lines drawn on focus sat beside the card's and read as mistakes). */
 .write:focus-visible {
   outline: none;
-  background: linear-gradient(var(--ink-2) 1px, transparent 1px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100%
-    var(--lh);
 }
 
 /* Under a step card, Zeno's line and the person's words are a single caption line. */
@@ -611,10 +609,6 @@ button:active .tap {
 }
 .paste[data-scrolled] {
   mask-image: linear-gradient(transparent, #000 var(--lh));
-}
-.paste:focus-visible {
-  background: var(--card) linear-gradient(var(--ink-2) 1px, transparent 1px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100%
-    var(--lh) local;
 }
 
 /* Booked · Undo: the offer's chip shape, held still (one family with "Book …?"). */
@@ -1662,9 +1656,6 @@ button:active .tap {
   max-height: calc(var(--lh) * 4);
   overflow-y: auto;
   background: linear-gradient(var(--rule) 1px, transparent 1px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100% var(--lh) local;
-}
-.slip .write:focus-visible {
-  background: linear-gradient(var(--ink-2) 1px, transparent 1px) 0 calc(var(--lh) / 2 + var(--fs) * var(--k)) / 100% var(--lh) local;
 }
 /* The box sits inside html's scroll padding, so the caret could never come "clear" of the dock: without this, every
    keystroke scrolled the page to its end. */

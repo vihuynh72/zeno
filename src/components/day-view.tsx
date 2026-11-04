@@ -210,7 +210,7 @@ export default function DayView(props: DayViewProps) {
       const pills = pillsRef.current;
       // No answers (the home, the front door): nothing to bring clear, so the view stays at its top.
       if (!pills?.childElementCount) return;
-      const { top, bottom } = pills.getBoundingClientRect();
+      const { bottom } = pills.getBoundingClientRect();
       const dockTop = document.querySelector(".dock")?.getBoundingClientRect().top ?? innerHeight;
       // On a goal's desk the scroll stops before the step card slides under the sticky goal strip (Nov 4), so the step
       // and a Done's bar fill stay in view (live, Nov 3: Done scrolled the bar off a 1440x900 laptop); the links may
@@ -220,7 +220,8 @@ export default function DayView(props: DayViewProps) {
       const card = mainRef.current?.querySelector(".card");
       const room = strip && card && innerWidth >= 640 ? Math.max(0, card.getBoundingClientRect().top - strip.offsetHeight - 8) : Infinity;
       const need = Math.min(bottom - (dockTop - 16), room);
-      if (top < innerHeight && need > 0) {
+      // Even when a long reply pushed them below the fold (round 3: Done and Stuck? sat under Talk on a phone).
+      if (need > 0) {
         window.scrollBy({ top: need, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
       }
     };

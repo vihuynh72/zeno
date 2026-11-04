@@ -83,6 +83,7 @@ import {
   type Screen,
 } from "@/components/day-flow";
 import type { Booking } from "@/components/booking-chip";
+import type { Note } from "@/components/goal-desk";
 import DayView, { useToday, type Sheet, type View } from "@/components/day-view";
 import { httpsOnly } from "@/components/desk-rows";
 
@@ -129,6 +130,11 @@ const scannedKey = (account: string) => `zeno:scanned:${account}`;
 const heardKey = (account: string) => `zeno:heard:${account}`;
 // Which plan answers which email, { [goalId]: emailId }: ids only, never the email's words (Vi, Nov 3).
 const mailKey = (account: string) => `zeno:mailgoal:${account}`;
+// What she said on a step and Zeno's answer, { [stepId]: Note[] }, on this device only, so nothing she told Zeno about
+// a step is gone after the next reply or a reload (round 3, Nov 4). Cleared at sign-out with the vault.
+const notesKey = (account: string) => `zeno:notes:${account}`;
+const NOTE_STEPS = 40;
+const NOTES_A_STEP = 12;
 // The day as this browser keeps it: no email snippets, and no Gmail link, which holds the address that the opaque account
 // key keeps out of storage. Both come back with each /api/day.
 const toKeep = (day: Day): Day => ({ ...day, emails: [], mailUrl: undefined });
@@ -181,6 +187,15 @@ function readHeard(account: string): string[] {
     return addHeard([], JSON.parse(readLocal(heardKey(account)) ?? "[]"));
   } catch {
     return [];
+  }
+}
+
+function readNotes(account: string): Record<string, Note[]> {
+  try {
+    const data = JSON.parse(readLocal(notesKey(account)) ?? "{}");
+    return data && typeof data === "object" ? (data as Record<string, Note[]>) : {};
+  } catch {
+    return {};
   }
 }
 
@@ -338,9 +353,10 @@ export default function GuidedDay() {
   const [stuck, setStuck] = useState(false); // Stuck? in Focus: a smaller step, the first move or another goal, no question
   const [rollingId, setRollingId] = useState<string | null>(null); // a goal that keeps going whose next few are being planned
   const [mailGoals, setMailGoals] = useState<Record<string, string>>({});
+  const [notes, setNotes] = useState<Record<string, Note[]>>({});
   const [addWords, setAddWords] = useState<string | null>(null); // words whose plan couldn't be made, back in the box
-  // Until she goes anywhere, the home offers the goal she was last on: its next step and Start (coming back, Nov 4).
-  const [welcome, setWelcome] = useState(true);
+  // The goal she just switched away from: the home offers every other current goal's next step (coming back, Nov 4).
+  const [leftId, setLeftId] = useState<string | null>(null);
   const today = useToday();
   // The goals panel (Nov 4): every open plan, and as Suggestions the deadlines and asking email with no plan yet.
   const plans = openPlans(goal, goals);
@@ -352,7 +368,7 @@ export default function GuidedDay() {
   // No open plan: the home is the front door, whose line says what Zeno does (Nov 4: never "your goals are below").
   const frontDoor = screen === "ready" && !onDesk && plans.length === 0;
   // Coming back: the goal she was last on (the server's current one, her own last pick) and its next step, never a new pick.
-  const resume = welcome && fresh && screen === "ready" && !onDesk && goal ? openSteps(goal)[0] ?? null : null;
+  const resume = fresh && screen === "ready" && !onDesk && goal && goal.id !== leftId ? openSteps(goal)[0] ?? null : null;
   const history = useRef<Turn[]>([]);
   const cache = useRef<Saved | null>(null);
   const tapped = useRef<string | null>(null); // the turn in flight came from a chip, not the type box: the words it shows
@@ -576,6 +592,7 @@ export default function GuidedDay() {
     setDay(data);
     setCanvasOn(Boolean(readCanvas(data.account)));
     setMailGoals(readMailGoals(data.account));
+    setNotes(readNotes(data.account));
     if (moved.current) return false;
     setGoal(plan);
     setGoals(null);
@@ -778,6 +795,8 @@ export default function GuidedDay() {
       { role: "user", content: text },
       { role: "assistant", content: res.reply },
     ]);
+    const about = before.screen === "focus" ? openSteps(before.goal)[0] : before.view === "desk" ? proposedStep(before.goal, before.chosen) : null;
+    if (about && res.reply.trim()) keepNote(about.id, { you: theirs, zeno: res.reply });
     // What the turn remembered stays quiet (Vi, Nov 2): it shows in Memory, and private facts only on this device.
     keep(res.private);
     // shortcut: a step already on the calendar is not offered again (booking it would double-book); add "Move to …?" if people ask.
@@ -845,6 +864,15 @@ export default function GuidedDay() {
     return aloud(spoken(said));
   }
 
+  function keepNote(stepId: string, note: Note) {
+    const mine = account();
+    if (!mine) return;
+    const all = readNotes(mine);
+    const next = { ...all, [stepId]: [...(all[stepId] ?? []), note].slice(-NOTES_A_STEP) };
+    writeLocal(notesKey(mine), JSON.stringify(Object.fromEntries(Object.entries(next).slice(-NOTE_STEPS))));
+    setNotes(next);
+  }
+
   // The finished card slides onto the pile while the next card rises with Zeno's line; a skipped one (null) never does.
   function fileAway(step: Step | null, nextLine: string) {
     setStamping(false);
@@ -864,6 +892,7 @@ export default function GuidedDay() {
 
   // The stopwatch runs at the tap, with a calm line under the card and nothing said.
   function enterFocus() {
+    window.scrollTo({ top: 0 });
     setOptions([]);
     setOfferKeys([]);
     setDraft(null);
@@ -1009,7 +1038,6 @@ export default function GuidedDay() {
   // moment ("Your draft is open in Gmail."); otherwise the day's opening is back.
   function goHome(said?: string) {
     opened.current += 1;
-    setWelcome(false);
     setOfferKeys([]);
     setDraft(null);
     setTyping(false);
@@ -1037,6 +1065,7 @@ export default function GuidedDay() {
     const others = openPlans(current, latest.current.goals).filter((one) => one.id !== current?.id);
     if (others.length === 1) return void openPlan(others[0]);
     leaveForHome();
+    setLeftId(current?.id ?? null);
   }
 
   // ---------- A goal's desk (Vi, Nov 3: she picks the goal, Zeno picks the step) ----------
@@ -1056,7 +1085,7 @@ export default function GuidedDay() {
     setHear(false);
     setProposedId(null);
     setAddWords(null);
-    setWelcome(false);
+    setLeftId(null);
     // The home's line never sits under a desk's step card.
     setLine("");
     setView("desk");
@@ -1630,9 +1659,11 @@ export default function GuidedDay() {
       // A goal that keeps going rests after a session: the next is for another day (live, Nov 3: Sam was pushed into a
       // second run). With its steps all done, its next few are being planned, or Plan my next few tries again.
       if (goal?.rhythm) {
-        // Rest after a real session (15 min or more); a 5-minute setup step goes straight on (round 2, Nov 4).
+        // Rest after a real session (15 min or more) of a weekly habit; a 5-minute setup step, or a goal kept a day at a time
+        // ("4 hours a day", "20 minutes a day"), goes straight on (rounds 2 and 3, Nov 4).
         const last = goal.steps.filter((one) => one.status === "done" && one.doneAt).sort((a, b) => (a.doneAt! < b.doneAt! ? -1 : 1)).at(-1);
-        if (step && (last?.minutes ?? 0) < 15) return [say("Keep going", () => void startStep(step)), home, enough];
+        const daily = /\b(?:a|per|each|every)\s+day\b|\bdaily\b|\bal d[ií]a\b/i.test(goal.rhythm);
+        if (step && (daily || (last?.minutes ?? 0) < 15)) return [say("Keep going", () => void startStep(step)), home, enough];
         if (step) return [home, say("Keep going", () => void startStep(step)), enough];
         return rollingId === goal.id ? [home, enough] : [say("Plan my next few", () => void rollOn(goal)), home, enough];
       }
@@ -1686,6 +1717,7 @@ export default function GuidedDay() {
               prompt: brief || assignment ? { course: brief?.course ?? assignment?.course ?? "", text: brief?.instructions ?? "", url: httpsOnly(assignment?.url) } : undefined,
               stopped: stoppedLine(goal, zone(), today),
               mail: mailId ? { id: mailId, gmail: gmail && `${gmail}#inbox/${encodeURIComponent(mailId)}` } : undefined,
+              notes,
             }
           : undefined
       }
@@ -1766,7 +1798,7 @@ export default function GuidedDay() {
           // The next person at a shared computer must not read anyone's private facts or Canvas link, even before
           // /api/day said whose browser this is (keys as in src/lib/vault.ts and src/lib/canvas-store.ts).
           try {
-            for (const key of Object.keys(localStorage)) if (/^zeno\.(vault|canvas)\./.test(key)) localStorage.removeItem(key);
+            for (const key of Object.keys(localStorage)) if (/^zeno\.(vault|canvas)\.|^zeno:notes:/.test(key)) localStorage.removeItem(key);
           } catch {
             // Unreadable storage holds nothing to clear.
           }
