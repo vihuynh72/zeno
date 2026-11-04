@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { signIn, signOut } from "next-auth/react";
 import type {
   ActivateRequest,
   AddGoalRequest,
+  AddGoalResponse,
   BookResponse,
   CalendarBlock,
   CanvasAssignment,
@@ -23,6 +24,8 @@ import type {
   MemoryResponse,
   NextStepsRequest,
   OpeningResponse,
+  PlanAnswer,
+  PlanQuestion,
   PlanRequest,
   PrivateFact,
   ProfileResponse,
@@ -91,6 +94,7 @@ import type { Note } from "@/components/goal-desk";
 import DayView, { useToday, type Sheet, type View } from "@/components/day-view";
 import { httpsOnly } from "@/components/desk-rows";
 import { nextBlock } from "@/components/goal-match";
+import { PlanAsk, PlanThinking, revealMs } from "@/components/plan-thinking";
 
 const SIGNED_OUT_LINE = "Zeno helps you start the thing you keep putting off.";
 const THINK_FAIL = "I couldn't think that through just now. Try again?";
@@ -127,8 +131,9 @@ type Opening = { text: string; options: string[]; at?: string; sig?: string };
 type Saved = { v: 4; part: string; day: Day; opening: Opening | null; setupDone: boolean };
 // One answer on the screen: the first is its big button, the rest links under it.
 type Answer = { label: string; run(): void };
-// A goal's desk while its plan is made (a deadline's steps, an email's reply): its title, due date and the card's line.
-type Planning = { title: string; due: string | null; line: string };
+// A goal's desk while its plan is made (a deadline's steps, an email's reply): its title, due date and the card's line;
+// view: an add's questions or Muse's thinking under the card (plan-thinking.tsx).
+type Planning = { title: string; due: string | null; line: string; view?: ReactNode };
 
 const SAVED_KEY = "zeno:day";
 const scannedKey = (account: string) => `zeno:scanned:${account}`;
@@ -1294,20 +1299,30 @@ export default function GuidedDay() {
   }
 
   // "+ Add a goal" and the front door (Nov 4): her words go to Muse as they are (POST /api/goal/add), with no talk turn,
-  // and stay on the desk until it answers. More goals from the same words join the panel. A plan that couldn't be made
-  // sends her home with her words back in the box.
-  async function addGoal(text: string) {
+  // and stay on the desk until it answers, under "Muse is planning…" with only what is really happening. A goal too vague
+  // to plan well comes back as Zeno's questions, asked one at a time on the desk, and the same words go again with her
+  // answers (that call never asks). Once the plan is back, Muse's lines show one by one before it opens (Vi, Nov 4). More
+  // goals from the same words join the panel. A plan that couldn't be made sends her home with her words back in the box.
+  // `was`: the step running when she first asked, carried across Zeno's questions (the desk has left Focus by then).
+  async function addGoal(text: string, answers?: PlanAnswer[], was = runningNow()) {
     const words = text.trim();
     const key = `add:${words.toLowerCase()}`;
     if (!words || making.current.has(key)) return;
     making.current.add(key);
-    const was = runningNow();
     const ticket = openDesk(true);
     const shown = words.length > 160 ? words.slice(0, 160).trimEnd() : words.replace(/[.!?…\s]+$/, "");
-    setPlanning({ title: "New goal", due: null, line: `Planning: ${shown}…` });
-    const res = await post<GoalResponse>("/api/goal/add", { text: words } satisfies AddGoalRequest);
+    const planningWith = (view: ReactNode) => setPlanning({ title: "New goal", due: null, line: `Planning: ${shown}…`, view });
+    // Only what is true while it waits: the server reads this week's free time only when a calendar is connected.
+    const calendar = day?.sources.calendar === "ok" ? ["Checking your calendar"] : [];
+    planningWith(<PlanThinking live={[answers ? "Reading your answers" : "Reading your goal", ...calendar]} />);
+    const res = await post<AddGoalResponse>("/api/goal/add", { text: words, ...(answers && { answers }) } satisfies AddGoalRequest);
     making.current.delete(key);
     if (res.state === "signed-out") return showSignedOut();
+    if (res.state === "ask" && Array.isArray(res.questions)) {
+      // She left the desk while Muse read it: her words wait in the box.
+      if (ticket !== opened.current) return setAddWords(words);
+      return askNext(words, res.questions, [], was);
+    }
     // Only whole plans join the panel: a bad entry must never take the page down.
     const others = res.state === "ok" && Array.isArray(res.others) ? res.others.filter((one) => typeof one?.id === "string" && Array.isArray(one.steps)) : [];
     for (const other of others) takeGoal(other);
@@ -1316,10 +1331,17 @@ export default function GuidedDay() {
       else setAddWords(words);
       return;
     }
-    setPlanning(null);
     if (res.state === "ok") {
       // A goal she already had opens instead of a copy, and the line says so (round 6: a repeat came back without a word).
       const known = latest.current.goals.some((one) => one.id === res.goal.id);
+      // Muse's lines are about the plan it just made, so a goal she already had opens without them.
+      const lines = known || !Array.isArray(res.thinking) ? [] : res.thinking.filter((line) => typeof line === "string");
+      if (lines.length > 0) {
+        planningWith(<PlanThinking live={[]} lines={lines} first={openSteps(res.goal)[0]?.title} />);
+        await new Promise((done) => setTimeout(done, revealMs(lines.length)));
+        if (ticket !== opened.current) return takeNew(res.goal);
+      }
+      setPlanning(null);
       pausedFor(was);
       changeGoal(res.goal);
       // More goals from the same words are in the list now, and the line says so (live, Nov 4: one just appeared there).
@@ -1328,11 +1350,19 @@ export default function GuidedDay() {
       else if (known) setLine("You already have this goal, so here it is.");
       return;
     }
+    setPlanning(null);
     setAddWords(words);
     if (was) return backToFocus(res.state === "bad-request" ? NO_GOAL : ADD_FAIL);
     goHome();
     keepCurrent();
     setNote(res.state === "bad-request" ? NO_GOAL : ADD_FAIL);
+  }
+  // Zeno's questions, one at a time: the card says it, her answers are chips under it, and after the last the plan is made.
+  function askNext(words: string, questions: PlanQuestion[], answers: PlanAnswer[], was: ReturnType<typeof runningNow>) {
+    const question = questions[answers.length];
+    if (!question || typeof question.question !== "string" || !Array.isArray(question.options)) return void addGoal(words, answers, was);
+    const answer = (said: string) => askNext(words, questions, [...answers, { question: question.question, answer: said }], was);
+    setPlanning({ title: "New goal", due: null, line: question.question, view: <PlanAsk key={answers.length} question={question} onAnswer={answer} /> });
   }
 
   // "Add from a photo" (Vi, Nov 3 night): Muse Spark reads a photo or screenshot of an assignment once, and its plan

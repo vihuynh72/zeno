@@ -195,8 +195,9 @@ export type EmailDraft = { to: string; subject: string; body: string; url: strin
 // POST /api/goal body: { title, due?, steps: { title, minutes }[], start?: boolean }. Saves the plan without
 // the model; start: true also starts step 1, so a tap starts the timer at once.
 export type GoalResponse =
-  // others: more goals made from the same words (POST /api/goal/add, when one message named several goals).
-  | { state: "ok"; goal: Goal; others?: Goal[] }
+  // others: more goals made from the same words (POST /api/goal/add, when one message named several goals); thinking:
+  // what that plan rests on, up to 5 lines of at most 60 characters, shown as it opens (POST /api/goal/add only).
+  | { state: "ok"; goal: Goal; others?: Goal[]; thinking?: string[] }
   | { state: "signed-out" | "bad-request" | "error" };
 
 // POST /api/prep body: { stepId; canvas?: CanvasBrief }; up to 3 sources, found from the goal and step titles, and the
@@ -345,7 +346,12 @@ export type CompanionNow =
 // them into a short title, a due date when one is said, a rhythm when the goal keeps going, and the first steps, and
 // saves it as the current plan. Answers with GoalResponse; bad-request when the words hold no goal, error when they held
 // goals that could not be worded without a private detail (Nov 4: titles are stored, so the detail stays out).
-export type AddGoalRequest = { text: string };
+// A goal too vague to plan well (one goal, no answers yet) answers "ask" with up to 2 questions of 2-3 tap answers each;
+// the page asks them one at a time and posts the same text again with `answers`, and that call never asks (Vi, Nov 4).
+export type AddGoalRequest = { text: string; answers?: PlanAnswer[] };
+export type PlanQuestion = { question: string; options: string[] };
+export type PlanAnswer = { question: string; answer: string };
+export type AddGoalResponse = GoalResponse | { state: "ask"; questions: PlanQuestion[] };
 
 // POST /api/goal/next body: a goal that keeps going (rhythm set) gets its next few steps from what is done so far.
 // Answers with GoalResponse. It never changes which goal is current: the goal comes back with its status as it was.
