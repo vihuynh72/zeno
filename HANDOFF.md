@@ -27,7 +27,7 @@ Vi's answers (9-11 AM):
 - **Simulations:** 5-6 personas with diverse goals, not 10.
 - **Code freeze:** 2 PM PT.
 
-**Shipped** (agent branches merged into `nov4/final`, each checked; production `8bba60e`):
+**Shipped** (agent branches merged into `nov4/final`, each checked; production `6955fc0` after the afternoon round below):
 - `nov4/basics` (91f2007):
   - Remove / Mark done for goals, with a 6 s Undo. The round-7 fix below lengthened it to 30 s+.
   - Talk tools that ask before they act.
@@ -87,6 +87,43 @@ Vi's answers (9-11 AM):
   - Live: "I'm doing the Meta hackathon" found the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026, dev.meta.ai) and planned "Build project for Meta hackathon, due today". Everyday goals never look up and aren't slower.
   - Off-switch: `looks` in `src/app/api/goal/add/route.ts`. The add route's limit is now 40 s.
 - **Production: `8bba60e`** (12:27 PM). No runtime errors in the 3 h before it. All 43 self-checks, tsc, eslint and the build pass.
+
+**Afternoon UX round (Vi, 12:35 PM)**
+
+Vi's asks:
+- an ✕ on each goal card in the left panel to delete it fast
+- Google/Apple-style design that a first-timer gets in 30 seconds
+- icons and familiar patterns with few words, and no intro or tips
+
+Freeze moved to 3 PM.
+
+- **Contract** `0977535`: `src/components/icons.tsx`, one outline icon set; `week`, `popOut` and `music` were added later.
+- **`nov4/ux-main`** (d07b151):
+  - The goal card ✕ turns the card into "Remove this goal? [Remove] Keep", then the 30 s+ Undo.
+  - Icons on Start, Skip, Adjust, Mark done, Remove, Done, Stuck?, Stop, Photo, + Add goal, back, and the header.
+  - A copy diet; the front door now reads "Tell me a goal. I'll help you do it, step by step."
+- **`nov4/ux-sheets`** (f9397ff): icons and a copy diet on the sheets.
+  - Every sheet closes with a round ✕.
+  - Mail: Reply, Goal, Step, Gmail ↗. Apps: 3-5 words each. Memory: Forget is a trash icon.
+  - "Connect an app" in the account menu is renamed "App token". An empty Week is one line.
+- **Round 9** (the 30-second first-time test, three personas on 06ffd83): 4 / 3 / 3. First screen understood in 3-8 s; plan, start, finish and remove-with-Undo each take 1-2 taps. Fixes:
+  - `da35fbd`:
+    - Today · Week · Apps in the header (icons only on a phone). All three testers had to guess the Week sat inside Today.
+    - Why keeps its reasons under the "what changed" line.
+    - "Remove this goal?" on the card confirm.
+    - No stray "·" separators.
+    - The memory link gets its icon.
+  - `nov4/dates` (6fcf868): a goal that names a month but no day, or an event without a date, asks "When is …?" ("When is Emma's birthday?" Early / Mid / Late December). Zeno never guesses a day.
+  - `nov4/polish9` (170ce71):
+    - On a phone, Why sits under Start.
+    - Pop out and Music are icons, and "I'll stay quiet." is gone.
+    - The links read "Find links" and "Add a Google Doc".
+- **Test account** `testuser.vihuynh27.work@gmail.com` (Google name Maya, created by Vi Nov 4). Claude tested on production with real Google:
+  - the hackathon lookup and a plan using real free time
+  - Mail summaries on two self-sent test emails (sent with Vi's OK), Draft a reply, Make it a goal
+  - Book it on the real calendar (an event 1:05-1:10 PM)
+  - security mail opening in Gmail, never in Zeno
+- **Production: `6955fc0`** (1:55 PM).
 
 **Connected live on production (Nov 4, by Claude with Vi's OK, demo account in Vi's Chrome):** Notion (Class Notes page only, read-only) and Trello (read, 30 days). Both round trips work, and the app's suggestions showed real Canvas items.
 
