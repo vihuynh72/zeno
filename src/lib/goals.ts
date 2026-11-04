@@ -317,6 +317,19 @@ export async function setStepStatus(email: string, stepId: string, status: StepS
   return (await changeStepStatus(email, stepId, status))?.goal ?? null;
 }
 
+// Skip (Vi, Nov 4): a todo step goes after every other step of its goal, which keep their order; null when it is not
+// theirs or not todo.
+export async function moveStepLater(email: string, stepId: string): Promise<Goal | null> {
+  await ensureSchema();
+  const sql = getSql();
+  const [moved] = await sql`
+    UPDATE steps s SET position = (SELECT max(position) + 1 FROM steps WHERE goal_id = s.goal_id AND user_email = ${email})
+    WHERE s.id = ${stepId} AND s.user_email = ${email} AND s.status = 'todo'
+    RETURNING s.goal_id
+  `;
+  return moved ? goalFrom(await goalQuery(email, String(moved.goal_id))) : null;
+}
+
 // setStepStatus, plus the status the step had before, so a route can tell a new finish from a repeated tap.
 export async function changeStepStatus(
   email: string,

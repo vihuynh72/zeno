@@ -46,6 +46,12 @@ export default function PrepPack({ step, canvas }: { step: Step; canvas?: Canvas
   // Opened or answered: the pack scrolls clear of the sticky dock, as the answers do, but never so far that the step's
   // card leaves the top of the screen.
   useEffect(() => {
+    // In a laptop's "For this goal" column, which scrolls on its own, only that column moves (Vi, Nov 4).
+    const column = pack.current?.closest(".aside");
+    if (column && getComputedStyle(column).overflowY === "auto") {
+      pack.current?.scrollIntoView({ block: "nearest" });
+      return;
+    }
     const bottom = pack.current?.getBoundingClientRect().bottom ?? 0;
     const dockTop = document.querySelector(".dock")?.getBoundingClientRect().top ?? innerHeight;
     // Never past the step card's top under the sticky goal strip (Nov 4).

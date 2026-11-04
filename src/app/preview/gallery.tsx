@@ -4,7 +4,7 @@ import { useRef, useSyncExternalStore } from "react";
 import type { CalendarBlock, Choice, Goal, Memory, Progress, Step } from "@/lib/day";
 import type { VaultFact } from "@/lib/vault";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
-import { checkinMinute, FOCUS, foundLine, slotLabel, stoppedLine, suggestionRow } from "@/components/day-flow";
+import { checkinMinute, FOCUS, foundLine, slotLabel, suggestionRow } from "@/components/day-flow";
 import type { Booking } from "@/components/booking-chip";
 import DayView, { type DayViewProps, type Today } from "@/components/day-view";
 import { CANVAS_DEADLINES, CANVAS_MEMORIES, SAMPLE_CANVAS } from "./canvas-samples";
@@ -183,10 +183,9 @@ const QUIZ = { title: "BIO 101: Quiz 6 (Ch. 6)", date: dayFrom(1), daysLeft: 1 }
 const ASKING = TODAY.emails[0];
 const today = () => dayFrom(0);
 const suggestions = (...choices: Choice[]) => choices.map((choice) => suggestionRow(choice, today()));
-const zoneNow = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 const HOME_LINE = "You finished two essay steps yesterday. You're free until Biology lecture at 1:30.";
 // The desk's Start and its links, for a plan with more than one step open.
-const DESK_CHIPS = (minutes: number) => [`Start · ${minutes} min`, "Something smaller", "Another step"];
+const DESK_CHIPS = (minutes: number) => [`Start · ${minutes} min`, "Skip", "Adjust"];
 // An email's reply plan, its email remembered by id.
 const REPLY: Goal = { id: "sample-reply-goal", title: "Answer Prof. Lin", due: null, steps: [step("r1", "Reply to Prof. Lin about Office hours this week?", 2, "todo")] };
 // Focus on the essay's third step, 9 minutes in.
@@ -258,7 +257,23 @@ const STATES: Record<string, Fixture> = {
     goal: ESSAY,
     proposed: ESSAY.steps[2],
     chips: DESK_CHIPS(15),
-    materials: { stopped: stoppedLine(ESSAY, zoneNow(), today()) },
+  },
+  // "For this goal" with everything in it (Vi, Nov 4): the study group from the calendar, free time to book, the Canvas
+  // email about the essay, links, the Canvas prompt and a page from an app, and her notes.
+  "goal-workspace": {
+    view: "desk",
+    goal: ESSAY,
+    proposed: ESSAY.steps[2],
+    chips: DESK_CHIPS(15),
+    deskOffer: { ...offer("aside:s3", block("s3", "Draft the opening paragraph", 60, 15)), label: "Book it" },
+    appItems: [
+      { app: "notion", id: "n1", title: "History essay outline", url: "https://www.notion.so/sample", kind: "page", due: null, detail: "Three points, each with a source." },
+      { app: "trello", id: "t1", title: "Buy printer ink", url: "https://trello.com/c/sample", kind: "task", due: null, detail: null },
+    ],
+    materials: {
+      prompt: { course: "HIST 17A", text: "Argue whether Reconstruction succeeded, using two primary sources.", url: "https://sample.instructure.com/courses/1/assignments/2" },
+      notes: { s3: [{ you: "Can I open with a quote?", zeno: "Yes, if it sets up your first point. Keep it to one line." }] },
+    },
   },
   // A Canvas assignment's plan: its prompt lies on the desk, with Open in Canvas.
   "goal-desk-canvas": {
@@ -293,7 +308,6 @@ const STATES: Record<string, Fixture> = {
     line: FOCUS.calm,
     quiet: true,
     chips: FOCUS_CHIPS,
-    materials: { stopped: stoppedLine(ESSAY, zoneNow(), today()) },
   },
   // Stuck? asks nothing: a smaller piece, or another goal.
   "desk-stuck": {
@@ -302,7 +316,6 @@ const STATES: Record<string, Fixture> = {
     line: FOCUS.calm,
     quiet: true,
     chips: ["Done", "Make it smaller", "Switch goal"],
-    materials: { stopped: stoppedLine(ESSAY, zoneNow(), today()) },
   },
   // After Done: the bar fills, over halfway, and the free time before the next event.
   "desk-done": {
@@ -312,7 +325,6 @@ const STATES: Record<string, Fixture> = {
     chips: DONE_CHIPS,
     celebrate: true,
     progress: progress({ week: week(PAST, "done"), stepsThisWeek: 6 }),
-    materials: { stopped: stoppedLine(ESSAY_DONE, zoneNow(), today()) },
   },
   // The plan's last step: back to the goals.
   "desk-last-step": {
@@ -322,7 +334,6 @@ const STATES: Record<string, Fixture> = {
     chips: ["Back to my goals", "That's enough today"],
     celebrate: true,
     progress: progress({ week: week(PAST, "done"), stepsThisWeek: 7 }),
-    materials: { stopped: stoppedLine(ESSAY_ALL, zoneNow(), today()) },
   },
   "quick-replies": {
     screen: "talk",

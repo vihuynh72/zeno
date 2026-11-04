@@ -10,7 +10,7 @@ registerHooks({
 });
 const {
   activateGoal, changeStepStatus, currentGoal, doneTitles, editGoal, finishedDays, finishedYesterday, getGoal, insertStep, openGoals, orderGoals, recentSteps,
-  replaceRemainingSteps, savePrep, setGoal, setGoalDue, setStepStatus, stepsDoneSince, stepTitles, titleKey, weekStart,
+  moveStepLater, replaceRemainingSteps, savePrep, setGoal, setGoalDue, setStepStatus, stepsDoneSince, stepTitles, titleKey, weekStart,
 } = await import("./goals.ts");
 const { getSql } = await import("./db.ts");
 const { localDate } = await import("./tz.ts");
@@ -138,6 +138,11 @@ try {
   assert.equal(last?.steps.at(-1)?.title, "Send the invites", "no step named: after the last");
   assert.equal(await insertStep(anyone, party.id, { title: "x", minutes: 1 }, runs.steps[0].id), null, "another goal's step");
   assert.equal(await insertStep("someone-else@zeno.local", party.id, { title: "x", minutes: 1 }), null, "another person's goal");
+  // Skip: a todo step goes after every other step; a running one, or another person's, stays put.
+  const skipped = await moveStepLater(anyone, venue);
+  assert.deepEqual(skipped?.steps.map((step) => step.title), ["Open the party board", "Pick a theme", "List 3 venues", "Send the invites", "Book the venue"]);
+  assert.equal(await moveStepLater(anyone, piece?.steps[0].id ?? ""), null, "a running step");
+  assert.equal(await moveStepLater("someone-else@zeno.local", venue), null, "another person's step");
   // A new current goal puts a step left running elsewhere back in line, as opening a plan does; a paused one doesn't.
   await setGoal(anyone, "Fix the bike", [{ title: "Find the pump", minutes: 5 }], null, { paused: true });
   assert.equal((await getGoal(anyone, party.id))?.steps[0].status, "doing", "a paused new goal leaves the clock alone");

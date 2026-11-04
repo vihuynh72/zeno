@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import type { CanvasAssignment, CanvasBrief, DayEmail, DayEvent, Deadline, DoneStep, FreeSlot, Goal, Memory, Progress, SourceState, Step } from "@/lib/day";
 import { localDate } from "@/lib/tz";
+import type { AppItem } from "@/lib/connect";
 import type { VaultFact } from "@/lib/vault";
 import type { VoiceError, VoicePhase } from "@/lib/use-voice";
 import { barCaption, cardSize, clock, dueLine, openSteps, type Fact, type PanelRow, type Screen } from "@/components/day-flow";
@@ -14,7 +15,7 @@ import Desk from "@/components/desk";
 import { bookedEvents } from "@/components/desk-rows";
 import FocusMusic from "@/components/focus-music";
 import FocusPop from "@/components/focus-pop";
-import { DeskMaterials, GoalStrip, StepsList, type Materials } from "@/components/goal-desk";
+import { GoalAside, GoalStrip, StepsList, type Materials } from "@/components/goal-desk";
 import MemorySheet from "@/components/memory-sheet";
 import StreakRow from "@/components/streak-row";
 import VoiceRing from "@/components/voice-ring";
@@ -74,6 +75,8 @@ export type DayViewProps = {
   celebrate?: boolean; // a Done just happened: show the streak row
   bookings?: Record<string, Booking>; // booking chips by key
   offers?: Booking[]; // booking chips that answer Zeno's line
+  deskOffer?: Booking; // "For this goal": the next free time that fits the desk's step
+  appItems?: AppItem[]; // what connected apps have waiting, matched to the open goal in "For this goal"
   timer?: number | null; // Focus's planned minutes when the tap said so ("Start · 5 min"), shown beside the stopwatch
   quiet?: boolean; // the line under the Focus card is one of Zeno's quiet ones (calm, check-in, welcome back): muted
   brief?: CanvasBrief; // the Canvas assignment the plan is for, so the sources search uses its instructions
@@ -183,6 +186,8 @@ export default function DayView(props: DayViewProps) {
   const frontDoor = home && screen === "ready" && !panelOn;
   // Sources are found for the step the desk shows (after a Done, the one up next).
   const sourceStep = next ?? top ?? (screen === "checkin" ? openSteps(goal)[0] : props.proposed) ?? null;
+  // A goal open (Vi, Nov 4): a laptop's three columns, the goals | the open goal | "For this goal".
+  const aside = desk && !planning && goal ? goal : null;
 
   const mainRef = useRef<HTMLElement>(null);
   const pillsRef = useRef<HTMLDivElement>(null);
@@ -285,8 +290,14 @@ export default function DayView(props: DayViewProps) {
   );
 
   return (
-    // .page: with the goals panel, a laptop's grid (the panel left, main right) and a phone's home under the hello.
-    <div className="page flex min-h-dvh flex-col overflow-x-clip bg-desk text-ink" data-panel={panelOn || undefined} data-away={!home || undefined}>
+    // .page: with the goals panel, a laptop's grid (the panel left, main, and with a goal open "For this goal" right)
+    // and a phone's home under the hello.
+    <div
+      className="page flex min-h-dvh flex-col overflow-x-clip bg-desk text-ink"
+      data-panel={panelOn || undefined}
+      data-away={!home || undefined}
+      data-ws={aside ? true : undefined}
+    >
       <header className="mx-auto flex w-full max-w-[1224px] items-center justify-between gap-2 px-4 pt-4 sm:px-8 sm:pt-6 short:pt-3">
         <div className="flex items-center gap-3 sm:gap-6">
           {/* The mark goes home, to the goals; Today opens the sheet with Today and Week (Nov 4: "Desk" meant nothing). */}
@@ -506,7 +517,12 @@ export default function DayView(props: DayViewProps) {
           {screen === "signed-out" && props.signInFailed ? "Google sign-in didn't finish. Try again." : frontDoor ? null : props.note}
         </p>
 
-        <div ref={pillsRef} className="mt-4 flex w-full max-w-[760px] flex-col items-center gap-2 empty:mt-0 sm:mt-6 short:mt-4">
+        {/* On a goal's desk, Skip and Adjust sit beside Start on a laptop (Vi, Nov 4). */}
+        <div
+          ref={pillsRef}
+          data-row={(next !== null && !lead) || undefined}
+          className="answers mt-4 flex w-full max-w-[760px] flex-col items-center gap-2 empty:mt-0 sm:mt-6 short:mt-4"
+        >
           {lead && offerChip(lead, true)}
           {big !== null && (
             // aria-disabled, not disabled, so a waiting button keeps keyboard focus.
@@ -568,7 +584,6 @@ export default function DayView(props: DayViewProps) {
         {desk && !planning && goal && (
           <>
             <StepsList key={goal.id} steps={steps} marked={marked} onPropose={screen === "ready" ? on.propose : undefined} />
-            <DeskMaterials key={sourceStep?.id ?? "none"} materials={props.materials} step={sourceStep} brief={props.brief} steps={steps} />
             <p className="mt-10 w-full max-w-[760px] text-[16px] text-ink-2">Steps by Muse, Meta&apos;s AI</p>
           </>
         )}
@@ -603,6 +618,22 @@ export default function DayView(props: DayViewProps) {
           </>
         )}
       </main>
+
+      {aside && (
+        <GoalAside
+          key={sourceStep?.id ?? "none"}
+          goal={aside}
+          step={sourceStep}
+          materials={props.materials}
+          brief={props.brief}
+          today={props.today}
+          offer={props.deskOffer}
+          apps={props.appItems}
+          onBook={() => props.deskOffer && on.book(props.deskOffer.key)}
+          onUndo={() => props.deskOffer && on.unbook(props.deskOffer.key)}
+          onReply={on.reply}
+        />
+      )}
 
       {panelOn && (
         <GoalsPanel

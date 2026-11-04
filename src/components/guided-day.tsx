@@ -76,7 +76,6 @@ import {
   slotLabel,
   soonEvent,
   spoken,
-  stoppedLine,
   suggestionRow,
   todayLine,
   untilNext,
@@ -88,6 +87,7 @@ import type { Booking } from "@/components/booking-chip";
 import type { Note } from "@/components/goal-desk";
 import DayView, { useToday, type Sheet, type View } from "@/components/day-view";
 import { httpsOnly } from "@/components/desk-rows";
+import { nextBlock } from "@/components/goal-match";
 
 const SIGNED_OUT_LINE = "Zeno helps you start the thing you keep putting off.";
 const THINK_FAIL = "I couldn't think that through just now. Try again?";
@@ -147,6 +147,11 @@ const upsert = (goals: Goal[], goal: Goal) => (goals.some((one) => one.id === go
 const smallerText = (step: Step) =>
   `Make "${step.title}" smaller: add a first piece of 2 to 5 minutes right before it, keep "${step.title}" after it, and change no other step.`;
 const showText = (step: Step) => `Show me how to do "${step.title}": the very first move, or one short example. Don't change my steps.`;
+// Adjust (Vi, Nov 4): Zeno asks what should change; each answer is a talk turn that proposes the change, and a tap
+// confirms it before anything is saved. The tool is named so the yes saves it (live, Nov 4: a bare "save it?" got
+// "I'll break those steps up" and no change).
+const ADJUST_ASK = "What should change?";
+const confirm = (tool: string) => `Say the change in a few words and ask me before you save it; when I say yes, save it with ${tool}.`;
 
 function readSaved(): Saved | null {
   try {
@@ -1322,6 +1327,33 @@ export default function GuidedDay() {
     tap(showText(step), "Show me how");
   }
 
+  // Skip on the desk (Vi, Nov 4): the step goes to the end of its goal and the one after it shows, with no model call.
+  // The server keeps the new order (PATCH /api/steps/[id] { later: true }), so a reload, the goals list and the apps agree.
+  function skip(step: Step) {
+    const plan = latest.current.goal;
+    if (!plan) return;
+    const after = nextProposal(plan, step.id);
+    changeGoal({ ...plan, steps: [...plan.steps.filter((one) => one.id !== step.id), step] });
+    setProposedId(after);
+    setLine("");
+    void getJson<StepResponse>(`/api/steps/${encodeURIComponent(step.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ later: true }),
+    }).then((res) => {
+      if (res.state === "signed-out") showSignedOut();
+      // Only while nothing has moved on, so a Start tapped meanwhile keeps its running step.
+      else if (res.state === "ok" && latest.current.screen === "ready") takeGoal(res.goal);
+    });
+  }
+
+  // Adjust on the desk (Vi, Nov 4): Zeno asks what should change, with taps for the usual answers (screenAnswers).
+  function adjust() {
+    setOptions([]);
+    setOfferKeys([]);
+    setLine(ADJUST_ASK);
+  }
+
   function talk() {
     if (!voice.supported) {
       setNote(VOICE_NOTE.unsupported);
@@ -1648,6 +1680,28 @@ export default function GuidedDay() {
   const mailId = goal ? mailGoals[goal.id] : undefined;
   const gmail = httpsOnly(day?.mailUrl);
 
+  // "For this goal" (Vi, Nov 4): the next free time that fits the desk's step, asked once per step and offered as one tap
+  // (Book it); nothing is written before that tap. Only with a calendar Zeno may write to, for a step not booked yet.
+  const slotStep =
+    onDesk && screen === "ready" && !planning && proposed && !proposed.scheduledAt && day?.sources.calendar === "ok" && day.calendarWrite === "ok"
+      ? proposed
+      : null;
+  const freeAsked = useRef(new Set<string>());
+  const askFree = useEffectEvent(() => {
+    const ask = slotStep;
+    if (!ask || freeAsked.current.has(ask.id)) return;
+    freeAsked.current.add(ask.id);
+    void post<FreeResponse>("/api/calendar/free", { minutes: ask.minutes ?? 15, days: 2 }).then((res) => {
+      if (res.state === "signed-out") return showSignedOut();
+      const block = res.state === "ok" ? nextBlock(ask, res.slots) : null;
+      if (block) offer(`aside:${ask.id}`, [block], "Book it");
+    });
+  });
+  const slotId = slotStep?.id ?? null;
+  useEffect(() => {
+    if (slotId) askFree();
+  }, [slotId]);
+
   // Every screen has one big button (the first answer) and small links for the rest (Vi, Nov 2).
   function screenAnswers(): Answer[] {
     const say = (label: string, run: () => void): Answer => ({ label, run });
@@ -1687,20 +1741,20 @@ export default function GuidedDay() {
       // Saved answers wait for /api/day; a plan being made has no Start yet.
       if (!fresh || planning || !proposed) return [];
       const start = proposed;
-      return [
-        say(start.minutes ? `Start · ${start.minutes} min` : "Start", () => void startStep(start)),
-        ...asked,
-        say("Something smaller", () => tap(smallerText(start), "Something smaller")),
-        // Zeno's line was about the step before, so it goes with it (round 2: a stale line sat under the new step).
-        ...(asked.length === 0 && openSteps(goal).length > 1
-          ? [
-              say("Another step", () => {
-                setProposedId(nextProposal(goal, start.id));
-                setLine("");
-              }),
-            ]
-          : []),
-      ];
+      const begin = say(start.minutes ? `Start · ${start.minutes} min` : "Start", () => void startStep(start));
+      if (line === ADJUST_ASK) {
+        const ask = (label: string, text: string) => say(label, () => tap(text, label));
+        return [
+          begin,
+          ask("Smaller steps", `Make my steps smaller: split the longer ones into shorter parts. ${confirm("update_steps")}`),
+          ...(goal?.rhythm ? [ask("Fewer days a week", `Fewer days a week for this goal. ${confirm("edit_goal")}`)] : []),
+          ask("New due date", "I need a new due date for this goal. Ask me which date, with a few dates to tap, and save the one I pick with set_due."),
+          other,
+        ];
+      }
+      // Skip and Adjust beside Start (Vi, Nov 4), once Zeno's question, if any, is answered.
+      if (asked.length > 0) return [begin, ...asked];
+      return [begin, ...(openSteps(goal).length > 1 ? [say("Skip", () => skip(start))] : []), say("Adjust", adjust)];
     }
     // The home's actions are the goals panel and the front door (Nov 4), never a model option such as "Plan tomorrow";
     // coming back, the goal she was last on starts with one tap.
@@ -1787,7 +1841,6 @@ export default function GuidedDay() {
         onDesk && goal && !planning
           ? {
               prompt: brief || assignment ? { course: brief?.course ?? assignment?.course ?? "", text: brief?.instructions ?? "", url: httpsOnly(assignment?.url) } : undefined,
-              stopped: stoppedLine(goal, zone(), today),
               mail: mailId ? { id: mailId, gmail: gmail && `${gmail}#inbox/${encodeURIComponent(mailId)}` } : undefined,
               notes,
             }
@@ -1823,6 +1876,7 @@ export default function GuidedDay() {
       celebrate={celebrate}
       bookings={bookings}
       offers={offers}
+      deskOffer={screen === "ready" && proposed ? bookings[`aside:${proposed.id}`] : undefined}
       timer={timer}
       quiet={line === quietLine}
       brief={brief}
