@@ -16,7 +16,9 @@ import { popCard, type PopCard } from "@/components/pop-card";
 type PipApi = { window: Window | null; requestWindow(options: { width: number; height: number }): Promise<Window> };
 const pipApi = () => (window as Window & { documentPictureInPicture?: PipApi }).documentPictureInPicture;
 
-const SIZE = { width: 320, height: 200 }; // about an index card; the browser may keep a size the person gave it before
+// Tall enough for a two-line step, the stopwatch, the quiet line and Done at Chrome's 125% pop-out zoom (live, Nov 3: at
+// 320x200 the card scrolled and hid Done). The browser may keep a size the person gave it before.
+const SIZE = { width: 340, height: 260 };
 const LAST_MS = 4000; // how long "That's all of <goal>." shows before the window closes
 const subscribeNever = () => () => {};
 
