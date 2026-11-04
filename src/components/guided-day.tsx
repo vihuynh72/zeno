@@ -1560,7 +1560,7 @@ export default function GuidedDay() {
       if (offers.some((one) => one.state !== "booked")) return [say("No thanks", () => goHome()), other];
       // A booked offer answered Zeno's question, so one way home (live, Nov 2: it was a dead end); a plain question
       // still waits for Talk or the keyboard.
-      return offers.length ? [say("Back to my day", () => goHome())] : [];
+      return offers.length ? [say("Back to my goals", () => goHome())] : [];
     }
     if (screen === "focus" && step) {
       if (!fresh) return [];
@@ -1588,7 +1588,7 @@ export default function GuidedDay() {
       // While free time is asked for, nothing shows, so no button changes under a tap.
       const wrapOffer = offerKeys.length ? bookings[offerKeys[0]] : undefined;
       if (offerKeys.length && !wrapOffer) return [];
-      return [say(wrapOffer && wrapOffer.state !== "booked" ? "No thanks" : "Back to my day", () => goHome())];
+      return [say(wrapOffer && wrapOffer.state !== "booked" ? "No thanks" : "Back to my goals", () => goHome())];
     }
     return [];
   }

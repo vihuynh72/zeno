@@ -459,13 +459,13 @@ const STATES: Record<string, Fixture> = {
     chips: ["No thanks"],
   },
   // A small plan left, or no calendar to write to: nothing offered.
-  "wrap-quiet": { screen: "wrap", goal: roadmap("done", "done", "todo", "todo"), line: "Saved. I'll bring it back next time.", chips: ["Back to my day"] },
+  "wrap-quiet": { screen: "wrap", goal: roadmap("done", "done", "todo", "todo"), line: "Saved. I'll bring it back next time.", chips: ["Back to my goals"] },
   "wrap-booked": {
     screen: "wrap",
     goal: roadmap("done", "done", "todo", "todo"),
     line: "Booked. Tomorrow's streak is planned.",
     offers: [offer("s3", { ...TOMORROW, eventId: "e2" }, "booked")],
-    chips: ["Back to my day"],
+    chips: ["Back to my goals"],
   },
   desk: { line: HOME_LINE, goal: roadmap("done", "doing", "todo", "todo"), sheet: "today" },
   "desk-quiet": {
