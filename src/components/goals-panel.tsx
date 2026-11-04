@@ -301,10 +301,9 @@ function RemoveAsk({ title, onRemove, onKeep }: { title: string; onRemove(): voi
         onKeep();
       }}
     >
-      <p id={id} className="flex min-w-0 text-[18px] font-bold">
-        <span className="shrink-0">Remove &quot;</span>
-        <span className="truncate">{title}</span>
-        <span className="shrink-0">&quot;?</span>
+      {/* Short and whole (round 9: a long title read 'Remove "Run a 5K to g…"?'); the card it covers names the goal. */}
+      <p id={id} className="text-[18px] font-bold">
+        Remove this goal?<span className="sr-only"> {title}</span>
       </p>
       <div className="flex items-center gap-2">
         {/* She asked for this question with the ✕ a moment ago, so its answer takes focus. */}
@@ -393,7 +392,8 @@ export function Suggestions({ rows, caughtUp, onPick, onHide, onKeep, onMemory }
           </li>
         ))}
       </ul>
-      <button ref={memory} type="button" data-answer onClick={onMemory} className="link -ml-1">
+      <button ref={memory} type="button" data-answer onClick={onMemory} className="link -ml-1 gap-2">
+        <Icon name="memory" className="h-5 w-5" />
         What Zeno remembers
       </button>
     </section>

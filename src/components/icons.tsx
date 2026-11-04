@@ -24,6 +24,12 @@ const PATHS = {
       <path d="M3.5 10h17M8 3v4M16 3v4" />
     </>
   ),
+  week: (
+    <>
+      <rect x="3.5" y="5" width="17" height="15.5" rx="2" />
+      <path d="M3.5 10h17M8 3v4M16 3v4M9.2 10v10.5M14.8 10v10.5" />
+    </>
+  ),
   apps: (
     <>
       <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />

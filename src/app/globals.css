@@ -562,7 +562,7 @@ button:active .tap {
   flex-wrap: wrap;
   justify-content: center;
   align-items: center;
-  column-gap: 8px;
+  column-gap: 20px;
   color: var(--ink-2);
 }
 .link {

@@ -378,19 +378,26 @@ export default function DayView(props: DayViewProps) {
           ) : (
             <div className="flex items-center gap-2 text-[24px] font-bold">{mark}</div>
           )}
-          {/* Words alone on a phone, where the icons would push the account button off the edge beside a streak. */}
-          {signedIn && (
-            <button type="button" onClick={() => on.sheet("today")} className="link gap-2" data-lead>
-              <Icon name="calendar" className="h-5 w-5 max-sm:hidden" />
-              Today
-            </button>
-          )}
-          {signedIn && (
-            <button type="button" onClick={() => on.sheet("apps")} className="link gap-2">
-              <Icon name="apps" className="h-5 w-5 max-sm:hidden" />
-              Apps
-            </button>
-          )}
+          {/* Today, Week and Apps (round 9: all three first-timers had to guess the Week sat inside Today). A phone shows the
+              icons alone, at 44px, so the account button keeps its place beside a streak. */}
+          {signedIn &&
+            ([
+              ["today", "calendar", "Today"],
+              ["week", "week", "Week"],
+              ["apps", "apps", "Apps"],
+            ] as const).map(([sheet, icon, label]) => (
+              <button
+                key={sheet}
+                type="button"
+                onClick={() => on.sheet(sheet)}
+                title={label}
+                className="link gap-2 max-sm:min-h-11 max-sm:min-w-11 max-sm:justify-center"
+                data-lead={sheet === "today" || undefined}
+              >
+                <Icon name={icon} className="h-5 w-5" />
+                <span className="max-sm:sr-only">{label}</span>
+              </button>
+            ))}
         </div>
         <div className="flex min-h-14 items-center gap-2 sm:gap-4">
           {screen && screen !== "signed-out" && streak > 0 && (
@@ -632,14 +639,9 @@ export default function DayView(props: DayViewProps) {
           {otherOffers.length > 0 && <div className="flex flex-wrap justify-center gap-2">{otherOffers.map((offer) => offerChip(offer))}</div>}
           {(links.length > 0 || hear) && (
             <div className="links">
-              {/* Each "·" travels with the link after it; on a phone, where the row wraps, space alone sets them apart. */}
+              {/* Space alone sets the choices apart, each with its icon (round 9: a wrapped row began with a stray "·"). */}
               {links.map((label, i) => (
                 <span key={i} className="flex items-center gap-2">
-                  {i > 0 && (
-                    <span aria-hidden="true" className="max-sm:hidden">
-                      ·
-                    </span>
-                  )}
                   <button type="button" data-answer aria-disabled={props.busy} onClick={() => answer(firstLink + i)} className="link gap-1.5">
                     {/* Words alone in Focus on a phone, so Pop out and Music stay on the one row. */}
                     {iconOf(label) && <Icon name={iconOf(label)!} className={`h-5 w-5 ${screen === "focus" ? "max-sm:hidden" : ""}`} />}
@@ -649,11 +651,6 @@ export default function DayView(props: DayViewProps) {
               ))}
               {hear && (
                 <span className="flex items-center gap-2">
-                  {links.length > 0 && (
-                    <span aria-hidden="true" className="max-sm:hidden">
-                      ·
-                    </span>
-                  )}
                   <button
                     type="button"
                     onClick={() => {
