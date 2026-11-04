@@ -1,8 +1,52 @@
 # Zeno handoff
 
-Last updated: 2026-11-03 afternoon, by Claude (session 4: the Nov 3 round, a goal-first day; before it the Nov 2 round,
-the tidy round, the Nov 4 sprint and the pre-recording build, all live-tested on production).
+Last updated: 2026-11-04 early morning, by Claude (session 4: the Nov 4 overnight round, goals for anyone; before it
+the Nov 3 night round, the Nov 3 goal-first round, the Nov 2 round, the tidy round and the pre-recording build).
 Read this first, then the Linear doc **"Zeno hackathon build plan (Nov 4)"** (project Zeno, team VI).
+
+## 0. The Nov 4 overnight round: goals for anyone (branch `nov4/goals`, Linear VI-365)
+
+Vi, Nov 3 evening: the app was "in a terrible position"; test it in Chrome and with 10 simulated people, for any goal,
+not just classwork. Vi's answers: a goals sidebar on a laptop (the list is the home on a phone), rolling plans with a
+rhythm for life goals, the video follows Maya plus one life goal, "Everything, record later". **Spec:
+`docs/PLAN-NOV4-GOALS.md`.** Contract `fdbac0b`; four tracks (shell, desk, server, week), each reviewed, merged here;
+then review fixes, Claude's own Chrome test, round 2 of the simulation and its fixes.
+
+- **The home:**
+  - A first run that found nothing to read opens straight on the front door: "Tell me a goal…", a box ("What do you
+    want to get done?", Enter adds a line, Make a plan or Cmd/Ctrl+Enter sends), Add from a photo, Suggestions under it.
+  - With goals: the hello card, and on a laptop the goals sidebar on the left (every open goal by due date: title, a
+    bar that fills only with finished steps, "Next: …", "due Thu Nov 12 · 9 days left" or the rhythm).
+  - Coming back (a reload or a new visit): "Pick up where you left off:" with the current goal's next step and one
+    Start. It is the server's current goal, her own last pick, never a new one.
+- **Adding goals:** `POST /api/goal/add` reads up to 3 goals from one message (dates in her zone, a rhythm for goals
+  that keep going, 4-10 steps whose last finishes the job). Money, health and immigration goals are reworded so no
+  private detail is stored ("Sort out the card payment plan"), costing a second Muse call (12-15 s). Goals named in
+  talk while another is open are saved for later and join the sidebar at once.
+- **The goal page:** Zeno's line always shows under the card; one Next everywhere; while a step runs Done is the big
+  button; Stuck? → Make it smaller (a 2-5 min piece before the step; the server moves the running clock onto it) ·
+  Show me how · Switch goal · Stop for now; the strip is sticky; the next 5 steps show, the rest under "N more steps";
+  "For this step"; "Steps by Muse, Meta's AI".
+- **Rolling goals:** a goal with a rhythm never finishes by running out of steps; after its last session (tap or
+  talk) or when it is opened with none left, `POST /api/goal/next` plans the next 3-5 ("Planned your next few: …").
+  It never changes the current goal.
+- **Today and Week:** without Google, the goals plus "Connect your calendar and mail (optional)"; the Week lists each
+  day's finished steps (`doneThisWeek`), goals due that day, Coming up, Ongoing, and prev/next arrows.
+- **Talk:** finishes only on a said finish ("Sent the email", "Ya lo pagué" count; a question never does); no "Start
+  now?" or trailing questions while a step runs; due dates settable ("by Friday"); corrections first for "is this
+  correct?"; typed and tapped turns are answered on screen only, spoken ones aloud.
+- **Verified:** all 31 checks (every `*.check.ts`, listen-check, day-flow and week-grid in LA and Tokyo), tsc, eslint,
+  build. Claude's Chrome test of a local production build as a throwaway user (laptop) and a 390x844 headless phone:
+  two goals from one sentence, Start, Make it smaller with the clock carried across a reload, Done, the Week, a due
+  date by typing, a goal named mid-step, Show me how, Stop for now, words with no goal, a rolling goal planning its
+  next few, a money goal reworded, coming back.
+- **The 10-person simulation:** round 1 (Nov 3 evening) averaged 2.8 of 5; round 2 (Nov 4, 1 AM, on `80ddf7a`)
+  averaged 3.2 (Maya 4, Jordan 3, Priya 4, Sam 2, Lucia 3, Kenji 3, Ruth 4, Alex 3, Amara 3, Dana 3). Reports and
+  synthesis: scratchpad `sim/synthesis-round2.json`. Its two blockers (the reply landing under the sticky strip after
+  typing; a blank home on coming back) are fixed in `5e63641`.
+- **Known gaps:** steps can still run 45-90 min (a server fix caps them, in progress); habits run as a checklist (no
+  day picker or rest days); the Week doesn't place future steps on days; Today repeats the goals without saying what
+  to do first; long AI waits (10-25 s) for some adds and talk turns.
 
 ## 0. The Nov 3 night round: more ways in (branch `nov3/extensions`, Linear VI-364)
 
