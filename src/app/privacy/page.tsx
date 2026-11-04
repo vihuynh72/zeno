@@ -16,7 +16,7 @@ export default function Privacy() {
         ← Zeno
       </Link>
       <h1 className="mt-4 text-[32px] font-bold leading-tight">Zeno and your data</h1>
-      <p className="mt-2 text-ink-2">Updated November 3, 2026</p>
+      <p className="mt-2 text-ink-2">Updated November 4, 2026</p>
 
       <h2 className="mt-10 text-[22px] font-bold">What Zeno reads</h2>
       <p className="mt-3">
@@ -32,9 +32,10 @@ export default function Privacy() {
         If you add an assignment from a photo, Meta&apos;s model reads the photo once to make a plan, and Zeno never keeps it.
       </p>
       <p className="mt-3">
-        If you make a token in Connect an app, the apps you give it to (Muse Code, Claude Code or the Zeno Mac clock) can see
-        and change your goals and steps, but never your mail, your calendar or what Zeno remembers. Zeno keeps only a one-way
-        fingerprint of the token, with your time zone, and Turn off stops it at once.
+        If you make a token in Connect an app, or let Claude, ChatGPT or another AI app use Zeno, those apps (and the Zeno Mac
+        clock) can see and change your goals and steps, but never your mail, your calendar or what Zeno remembers. Zeno keeps
+        only a one-way fingerprint of each token, with your time zone and which app it&apos;s for, and Turn off in Connect an
+        app stops all of them at once.
       </p>
 
       <h2 className="mt-10 text-[22px] font-bold">What Zeno keeps</h2>

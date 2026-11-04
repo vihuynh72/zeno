@@ -103,6 +103,41 @@ export async function ensureSchema() {
             created_at TIMESTAMPTZ DEFAULT now()
           )
         `,
+        // Zeno in Claude or ChatGPT (src/lib/oauth.ts): registered apps, one-minute sign-in codes, and each connection's
+        // current access and refresh tokens. Codes and tokens are kept only as SHA-256 hashes.
+        sql`
+          CREATE TABLE IF NOT EXISTS oauth_clients (
+            client_id TEXT PRIMARY KEY,
+            client_name TEXT,
+            redirect_uris TEXT[] NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+          )
+        `,
+        sql`
+          CREATE TABLE IF NOT EXISTS oauth_codes (
+            code_hash TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL,
+            user_email TEXT NOT NULL,
+            time_zone TEXT NOT NULL,
+            redirect_uri TEXT NOT NULL,
+            code_challenge TEXT NOT NULL,
+            expires_at TIMESTAMPTZ NOT NULL
+          )
+        `,
+        sql`
+          CREATE TABLE IF NOT EXISTS oauth_tokens (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            client_id TEXT NOT NULL,
+            user_email TEXT NOT NULL,
+            time_zone TEXT NOT NULL,
+            access_hash TEXT UNIQUE NOT NULL,
+            access_expires_at TIMESTAMPTZ NOT NULL,
+            refresh_hash TEXT UNIQUE NOT NULL,
+            refresh_expires_at TIMESTAMPTZ NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+          )
+        `,
+        sql`CREATE INDEX IF NOT EXISTS oauth_tokens_user_idx ON oauth_tokens (user_email)`,
       ])
       .then(() => undefined)
       .catch((error) => {

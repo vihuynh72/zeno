@@ -41,7 +41,8 @@ const mcp = createMcpHandler(
 );
 
 // Streamable HTTP for MCP clients such as Muse Code and Claude Code, with "Authorization: Bearer zeno_…" from Zeno's
-// Connect an app. A missing, wrong or turned-off token gets 401.
+// Connect an app, or from Claude's or ChatGPT's sign-in to Zeno (src/lib/oauth.ts). A missing, wrong, expired or turned-off
+// token gets 401 with WWW-Authenticate naming /.well-known/oauth-protected-resource, where those apps find the sign-in.
 const handler = withMcpAuth(
   mcp,
   async (_request, token) => {
