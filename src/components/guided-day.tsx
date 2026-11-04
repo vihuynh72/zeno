@@ -1083,11 +1083,13 @@ export default function GuidedDay() {
   // ---------- A goal's desk (Vi, Nov 3: she picks the goal, Zeno picks the step) ----------
   // Opening a desk is choosing, so a late opening line never moves the screen, and Zeno stops talking.
   function openDesk(): number {
+    // A step running in Focus goes back in line, and the note says so (round 3: its clock vanished with no word).
+    const left = latest.current.screen === "focus" ? openSteps(latest.current.goal).find((one) => one.status === "doing") : undefined;
     void letGo();
     moved.current = true;
     voice.stop();
     talking.current = false;
-    setNote(null);
+    setNote(left ? `Paused "${left.title.replace(/[.!?]+$/, "")}". It waits in its goal.` : null);
     setTyping(false);
     setStuck(false);
     setDraft(null);
