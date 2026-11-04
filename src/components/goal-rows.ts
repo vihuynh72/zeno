@@ -16,11 +16,15 @@ export function sameGoal(a: string, b: string) {
 // The steps not done yet, the running one too.
 const left = (goal: Goal) => goal.steps.filter((step) => step.status === "todo" || step.status === "doing");
 
-// The Desk's plans: the current one first, as fresh as the page has it (so a plan made since the day loaded joins, and a
-// day saved before Nov 3, which lists none, still shows it), then the other open plans. Only plans with a step left, or
-// that keep going (a rhythm goal waiting for its next few, Nov 4).
+// The Desk's plans: the current one as fresh as the page has it (so a plan made since the day loaded joins, and a day
+// saved before Nov 3, which lists none, still shows it), and the other open plans, in the goals sidebar's order: by due
+// date, undated last, then by title (round 2, Nov 4: Today listed a goal due Nov 12 above one due Friday). Only plans
+// with a step left, or that keep going (a rhythm goal waiting for its next few).
 export function deskPlans(goal: Goal | null, goals: Goal[] | undefined): Goal[] {
-  return [...(goal ? [goal] : []), ...(goals ?? []).filter((plan) => plan.id !== goal?.id)].filter((plan) => left(plan).length > 0 || plan.rhythm);
+  const byDue = (a: Goal, b: Goal) => (a.due === b.due ? 0 : !a.due ? 1 : !b.due ? -1 : a.due < b.due ? -1 : 1);
+  return [...(goal ? [goal] : []), ...(goals ?? []).filter((plan) => plan.id !== goal?.id)]
+    .filter((plan) => left(plan).length > 0 || plan.rhythm)
+    .sort((a, b) => byDue(a, b) || a.title.localeCompare(b.title));
 }
 
 export type Segment = "done" | "next" | "todo";

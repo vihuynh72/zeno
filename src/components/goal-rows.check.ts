@@ -31,13 +31,17 @@ assert.ok(!sameGoal("Lab report", "Reading notes"));
 assert.ok(!sameGoal("!!!", "Lab report"));
 assert.ok(!sameGoal("", ""));
 
-// The Desk's plans: the page's current plan first and fresh, then the day's other open plans; finished ones drop out.
+// The Desk's plans: the page's current plan fresh, with the day's other open plans in the sidebar's order (by due date,
+// undated last, then by title); finished ones drop out.
 const ids = (plans: Goal[]) => plans.map((plan) => `${plan.id}:${plan.steps.map((s) => s.status).join(",")}`);
 const listed = [goal("g-essay", "History essay", null, [step("todo"), step("todo")]), goal("g-lab", "Lab report", null)];
 const fresh = goal("g-essay", "History essay", null, [step("done"), step("doing")]);
 assert.deepEqual(ids(deskPlans(fresh, listed)), ["g-essay:done,doing", "g-lab:todo"]);
 assert.deepEqual(ids(deskPlans(goal("g-essay", "History essay", null, [step("done"), step("done")]), listed)), ["g-lab:todo"]);
-assert.deepEqual(ids(deskPlans(goal("g-new", "Reading notes", null), listed)), ["g-new:todo", "g-essay:todo,todo", "g-lab:todo"]);
+assert.deepEqual(ids(deskPlans(goal("g-new", "Reading notes", null), listed)), ["g-essay:todo,todo", "g-lab:todo", "g-new:todo"]);
+// Due soonest first, as the sidebar lists them (round 2, Nov 4), the current plan included.
+const dated = [goal("g-exam", "CS 146 exam", "2026-11-12"), goal("g-paper", "PHIL 134 paper", "2026-11-06")];
+assert.deepEqual(ids(deskPlans(goal("g-lab", "Lab report", null), dated)), ["g-paper:todo", "g-exam:todo", "g-lab:todo"]);
 assert.deepEqual(ids(deskPlans(null, listed)), ["g-essay:todo,todo", "g-lab:todo"]);
 // A day saved before Nov 3 has no list: only the current plan, when it has a step left.
 assert.deepEqual(ids(deskPlans(fresh, undefined)), ["g-essay:done,doing"]);

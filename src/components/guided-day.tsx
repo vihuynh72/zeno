@@ -1592,7 +1592,15 @@ export default function GuidedDay() {
         say(start.minutes ? `Start · ${start.minutes} min` : "Start", () => void startStep(start)),
         ...asked,
         say("Something smaller", () => tap(smallerText(start), "Something smaller")),
-        ...(asked.length === 0 && openSteps(goal).length > 1 ? [say("Another step", () => setProposedId(nextProposal(goal, start.id)))] : []),
+        // Zeno's line was about the step before, so it goes with it (round 2: a stale line sat under the new step).
+        ...(asked.length === 0 && openSteps(goal).length > 1
+          ? [
+              say("Another step", () => {
+                setProposedId(nextProposal(goal, start.id));
+                setLine("");
+              }),
+            ]
+          : []),
       ];
     }
     // The home's actions are the goals panel and the front door (Nov 4), never a model option such as "Plan tomorrow";
