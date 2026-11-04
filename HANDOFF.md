@@ -4,6 +4,52 @@ Last updated: 2026-11-03 afternoon, by Claude (session 4: the Nov 3 round, a goa
 the tidy round, the Nov 4 sprint and the pre-recording build, all live-tested on production).
 Read this first, then the Linear doc **"Zeno hackathon build plan (Nov 4)"** (project Zeno, team VI).
 
+## 0. The Nov 3 night round: more ways in (branch `nov3/extensions`, Linear VI-364)
+
+Vi asked what else would complete the app ("MCP, iOS app, Mac app"). A research run checked six options. Vi chose five,
+"big tonight", and main freezes after the video (DQ-4: yes). **Spec: `docs/PLAN-NOV3-APPS.md`.** The contract was
+`95e0531`. Five tracks were each reviewed as they landed, then merged here.
+
+- **Photo → plan:**
+  - "Add from a photo" sits under the home's goals.
+  - The browser shrinks the photo, and `POST /api/goal/snap` has Muse Spark read it (an image part plus strict JSON, at
+    minimal effort, in 2-7 s). Its plan's desk opens.
+  - The photo is never stored or logged.
+  - A browser that can't decode the file (an iPhone HEIC in Chrome) says so.
+  - The made-up handout for the video is `docs/demo/handout-phil134.html`.
+- **MCP and app tokens:**
+  - The `app_tokens` table holds one token per person, hashed; a new token turns the old one off.
+  - `POST` and `DELETE /api/app-token`, and the "Connect an app" sheet in the account menu.
+  - `/api/mcp` (mcp-handler 2.3.0) has five tools: `list_goals`, `next_step`, `plan_goal` (20 a day), `start_step` and
+    `finish_step`.
+  - `GET /api/companion/now` and `POST /api/companion/done` serve the Mac clock.
+  - Tokens reach goals and steps only.
+  - For the video, show Muse Code, never Claude or ChatGPT.
+- **Pop-out focus window:** `src/components/focus-pop.tsx`, using Document Picture-in-Picture.
+  - "Pop out" shows during Focus only, in Chrome and Edge 116+ and Firefox 151+ on desktop.
+  - It is an always-on-top card with the step, the stopwatch and Done, then "Nice. Next:" with Keep going.
+  - It never opens by itself.
+  - Record the whole display for it, because it is its own OS window.
+- **Installable app:**
+  - `src/app/manifest.ts`, with icons from the Z mark (`scripts/icons.mjs`). There is no service worker.
+  - A signed-out line helps judges past Google's unverified warning.
+  - README "Try Zeno" has the install steps.
+- **Mac menu-bar clock:**
+  - `mac/` is a SwiftPM MenuBarExtra, and `mac/make-app.sh` builds `Zeno Clock.app` (ad-hoc signed, not notarized).
+  - It authenticates with the app token, so there is no Google sign-in in the app.
+  - It is tested against `mac/mock-companion.py`.
+- **Review fixes at merge:**
+  - A stale page's "todo" never unfinishes a step finished from the Mac or MCP: a guard in `changeStepStatus`.
+  - A paused plan whose last step is finished elsewhere becomes done.
+  - A step started 3 h ago or more never shows as running to apps.
+  - MCP's optional arguments accept null.
+  - The sheet warns that a new token turns off the old one.
+  - The HEIC note.
+- **Not built (after Nov 4):**
+  - an iPhone app with a Lock Screen and Dynamic Island stopwatch (needs Vi's iPhone and Xcode)
+  - WhatsApp (its terms bar general AI assistants)
+  - OAuth for the Claude.ai and ChatGPT connectors
+
 ## 0. The Nov 3 round: a goal-first day (branch `nov3/goal-first`, Linear VI-357)
 
 Vi used production on Nov 3 and found the flow weak:

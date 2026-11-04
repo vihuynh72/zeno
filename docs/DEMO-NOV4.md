@@ -185,6 +185,27 @@ work is built on branches with Vercel preview deploys and merged after the final
 Before the final, Claude walks the demo path on production again (US0017). The account's state is Vi's call (DQ-5):
 by default no reset, so what Zeno learned stays, and the first sign-in is shown from the video.
 
+## Optional beats from the Nov 3 night round (about 30 s in all; drop the 10 s paradox opener to make room)
+
+- **Photo → plan (8-10 s, the strongest for "Use of Meta AI tooling"):**
+  1. Print `docs/demo/handout-phil134.html`, or show it on a second screen.
+  2. On the home, tap "Add from a photo" and take the photo.
+  3. Cut "Reading your photo…" (2-7 s).
+  4. The desk for "PHIL 134: Short Paper 2: Design and Attention" opens, due Fri, with the first step 5 min.
+  5. On a Mac, use a JPEG or PNG screenshot. An iPhone HEIC can't be read in Chrome; take the photo in Zeno on the phone
+     instead.
+- **Pop-out (10 s, shot 4):**
+  1. After Start, tap "Pop out".
+  2. The card floats over Google Docs (a normal window, not full screen) while you type.
+  3. Tap Done on the card.
+  4. Record the whole display, not a tab or a window.
+- **Muse can run Zeno (5-8 s, shot 7):** Muse Code with Zeno added as an MCP server (README, "Connect an AI app"):
+  1. Ask "What's my next step in Zeno?". It answers from Zeno.
+  2. Say "Mark it done", then cut to the goal bar filling.
+  3. Never put Claude or ChatGPT on camera.
+- **App icon (3-5 s):** Zeno in the Dock, installed from Chrome.
+- **Mac clock (2 s):** the menu bar shows the running step's clock during the Google Docs cutaway.
+
 ## Before every take
 
 - Chrome at 1440x900, zoom 100%, bookmarks bar hidden, other tabs closed, Do Not Disturb on.

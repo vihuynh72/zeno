@@ -116,7 +116,7 @@ function Connect() {
     <>
       <p className="text-ink-2">
         Lets Muse Code, Claude Code or the Zeno Mac clock see and update your goals and steps. Never your mail, your calendar or
-        what Zeno remembers.
+        what Zeno remembers. Making a token turns off the one you made before.
       </p>
       {rows ? (
         <>

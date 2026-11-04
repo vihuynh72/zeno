@@ -500,6 +500,18 @@ try {
   await changeStepStatus(switchEmail, early.steps[0].id, "done");
   assert.deepEqual(await doneTitles(switchEmail, "2026-11-03"), ["PHIL 134: Essay 2"], "its last step finished it");
   assert.deepEqual(await doneTitles(switchEmail, "2100-01-01"), [], "past its due date it is not listed");
+
+  // A stale page's "todo" never unfinishes a step finished elsewhere (the Mac clock, an MCP app).
+  const twoStep = await setGoal(switchEmail, "CS 146: Problem set 5", [{ title: "Read problem 1", minutes: 5 }, { title: "Solve problem 1", minutes: 20 }], null);
+  await changeStepStatus(switchEmail, twoStep.steps[0].id, "doing");
+  await changeStepStatus(switchEmail, twoStep.steps[0].id, "done");
+  const stale = await changeStepStatus(switchEmail, twoStep.steps[0].id, "todo");
+  assert.equal(stale?.goal.steps[0].status, "done", "a todo from a stale page leaves a finished step done");
+  // A paused plan whose last step is finished from an app becomes done, not paused forever.
+  await setGoal(switchEmail, "ENVS 119: Quiz 11", [{ title: "Review chapter 11", minutes: 10 }], null);
+  const finished = await changeStepStatus(switchEmail, twoStep.steps[1].id, "done");
+  const [row] = await sql`SELECT status FROM goals WHERE id = ${finished?.goal.id ?? ""}`;
+  assert.equal(row?.status, "done", "the paused plan's last step finished it");
 } finally {
   await sql`DELETE FROM goals WHERE user_email = ${switchEmail}`;
 }

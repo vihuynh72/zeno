@@ -52,7 +52,7 @@ const essay: Goal = {
   due: "2026-11-06",
   steps: [step("a", "done", 5), step("b", "todo", 10), step("c", "doing", 15, "2026-11-03T20:00:00.000Z"), step("d", "todo", null), step("e", "skipped", 5)],
 };
-assert.deepEqual(nowOf(essay), {
+assert.deepEqual(nowOf(essay, Date.parse("2026-11-03T20:12:00.000Z")), {
   state: "ok",
   step: { id: "c", title: "Step c", minutes: 15, startedAt: "2026-11-03T20:00:00.000Z", status: "doing" },
   goal: { title: "PHIL 134 essay", done: 1, total: 5, due: "2026-11-06" },
@@ -62,6 +62,8 @@ assert.ok(waiting.state === "ok" && waiting.step?.id === "b" && waiting.step.sta
 const finished = nowOf({ ...essay, due: null, steps: [step("a", "done", 5)] });
 assert.deepEqual(finished, { state: "ok", step: null, goal: { title: "PHIL 134 essay", done: 1, total: 1, due: null } });
 assert.deepEqual(nowOf(null), { state: "ok", step: null, goal: null });
+// A step started 3 hours ago or more is not running for apps (as on the web): the plan's first todo step shows, no clock.
+assert.deepEqual(nowOf(essay, Date.parse("2026-11-04T08:00:00.000Z")).step, { id: "b", title: "Step b", minutes: 10, startedAt: null, status: "todo" });
 
 // Short text with step ids, for next_step and list_goals.
 const now = new Date("2026-11-03T20:12:20.000Z");

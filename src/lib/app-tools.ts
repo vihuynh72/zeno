@@ -5,6 +5,7 @@ import type { CompanionNow, Goal, Step } from "@/lib/day";
 import { ensureSchema, getSql } from "@/lib/db";
 import { activateGoal, changeStepStatus, currentGoal, isId, openGoals } from "@/lib/goals";
 import { localDate } from "@/lib/tz";
+import { runningStep } from "@/components/day-flow";
 
 // What a connected app can do with its token (docs/PLAN-NOV3-APPS.md): the MCP tools at /api/mcp and the Mac clock's
 // /api/companion. Goals and steps only, never mail, calendar or memories. The person is always the token's owner, never
@@ -44,8 +45,17 @@ export function goalsText(goals: Goal[], currentId: string | null, now = new Dat
     .join("\n\n");
 }
 
+// A step started 3 hours ago or more counts as not running, as on the web (day-flow's runningStep): a tab closed
+// mid-step yesterday never shows as running in the Mac clock or next_step, and Done never finishes it (review, Nov 3).
+export function settled(goal: Goal | null, now = Date.now()): Goal | null {
+  if (!goal) return null;
+  const running = runningStep(goal, now);
+  return { ...goal, steps: goal.steps.map((step) => (step.status === "doing" && step !== running ? { ...step, status: "todo", startedAt: null } : step)) };
+}
+
 // next_step: the current plan's running step, else its next one.
-export function nextText(goal: Goal | null, now = new Date()): string {
+export function nextText(raw: Goal | null, now = new Date()): string {
+  const goal = settled(raw, now.getTime());
   if (!goal) return "No current goal. list_goals shows your goals, and plan_goal makes one.";
   const step = openOf(goal)[0];
   if (!step) return `Every step of ${goal.title} is done. plan_goal makes a new goal.`;
@@ -53,7 +63,8 @@ export function nextText(goal: Goal | null, now = new Date()): string {
 }
 
 // GET /api/companion/now: the same step for the Mac menu bar, in the CompanionNow shape.
-export function nowOf(goal: Goal | null): CompanionNow {
+export function nowOf(raw: Goal | null, now = Date.now()): CompanionNow {
+  const goal = settled(raw, now);
   const step = goal && openOf(goal)[0];
   return {
     state: "ok",
@@ -66,7 +77,7 @@ export const companionNow = async (email: string) => nowOf(await currentGoal(ema
 
 // The current plan's running step, finished (with changeStepStatus, as the app's Done); null when no step is running.
 async function finishRunning(email: string) {
-  const step = (await currentGoal(email))?.steps.find((one) => one.status === "doing");
+  const step = settled(await currentGoal(email))?.steps.find((one) => one.status === "doing");
   return step ? { step, changed: await changeStepStatus(email, step.id, "done") } : null;
 }
 
@@ -131,7 +142,7 @@ async function startStep(owner: TokenOwner, args: Record<string, unknown>): Prom
 
 async function finishStep(owner: TokenOwner, args: Record<string, unknown>): Promise<Said> {
   let done: { step: Step; changed: { goal: Goal } | null } | null;
-  if (args.step_id === undefined) {
+  if (args.step_id == null) {
     done = await finishRunning(owner.email);
     if (!done) return refuse("No step is running. Give a step_id, or start one with start_step.");
   } else {
@@ -177,7 +188,7 @@ export const APP_TOOLS: {
       type: "object",
       properties: {
         title: { type: "string", minLength: 1, maxLength: 120, description: "What to work on, like 'PHIL 134 essay'." },
-        due: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "The due date as YYYY-MM-DD, if there is one." },
+        due: { type: ["string", "null"], pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "The due date as YYYY-MM-DD, if there is one." },
       },
       required: ["title"],
     },
@@ -192,7 +203,7 @@ export const APP_TOOLS: {
   {
     name: "finish_step",
     description: "Mark a step done. Leave out step_id to finish the running step.",
-    input: { type: "object", properties: { step_id: STEP_ID } },
+    input: { type: "object", properties: { step_id: { ...STEP_ID, type: ["string", "null"] } } },
     run: finishStep,
   },
 ];

@@ -85,6 +85,8 @@ const THINK_FAIL = "I couldn't think that through just now. Try again?";
 const SAVE_FAIL = "I couldn't save that just now. Try again?";
 const OPEN_FAIL = "Couldn't open that. Try again.";
 const SNAP_FAIL = "I couldn't find an assignment in that photo.";
+// This browser can't open the file (an iPhone HEIC photo in Chrome): say so, never that the photo holds nothing.
+const PHOTO_UNREADABLE = "I can't open that kind of photo here. Try a screenshot or a JPEG.";
 const WRAP_LINE = "Saved. I'll bring it back next time.";
 const READING_LINE = "Reading your calendar and email…";
 const PASTE_LINE = "Paste a syllabus, a to-do list or notes. I'll pull out what matters.";
@@ -1028,7 +1030,7 @@ export default function GuidedDay() {
     const ticket = openDesk();
     setPlanning({ title: "Your assignment", due: null, line: "Reading your photo…" });
     const image = await shrinkPhoto(photo).catch(() => null);
-    const res = image ? await post<GoalResponse>("/api/goal/snap", { image } satisfies SnapRequest) : ({ state: "bad-request" } as const);
+    const res = image ? await post<GoalResponse>("/api/goal/snap", { image } satisfies SnapRequest) : ({ state: "unreadable" } as const);
     making.current.delete("snap");
     if (res.state === "signed-out") return showSignedOut();
     if (ticket !== opened.current) {
@@ -1038,7 +1040,7 @@ export default function GuidedDay() {
     setPlanning(null);
     if (res.state === "ok") return changeGoal(res.goal);
     goHome();
-    setNote(res.state === "bad-request" ? SNAP_FAIL : OPEN_FAIL);
+    setNote(res.state === "unreadable" ? PHOTO_UNREADABLE : res.state === "bad-request" ? SNAP_FAIL : OPEN_FAIL);
   }
 
   // Stuck? in Focus, "Make it smaller": the step goes back to todo (a plan change only rewrites todo steps), then Talk

@@ -234,13 +234,24 @@ export async function changeStepStatus(
         done_at = CASE WHEN ${status} IN ('done', 'skipped') THEN
           CASE WHEN status = ${status} THEN coalesce(done_at, now()) ELSE now() END END
       WHERE id = ${stepId} AND user_email = ${email}
+        -- Back to todo only from running: a stale page (its step was finished from the Mac clock or an MCP app) never
+        -- unfinishes it (found in review, Nov 3).
+        AND (${status} <> 'todo' OR status = 'doing')
     `,
-    // Nothing left to do finishes the goal; reopening a step brings it back.
+    // Nothing left to do finishes the goal, a paused one too (a step finished from an app while another plan was
+    // current); reopening a step brings it back. A paused goal with steps left stays paused, untouched.
     sql`
-      UPDATE goals SET updated_at = now(), status = CASE WHEN EXISTS (
-        SELECT 1 FROM steps WHERE goal_id = ${goalId} AND user_email = ${email} AND status IN ('todo', 'doing')
-      ) THEN 'active' ELSE 'done' END
-      WHERE id = ${goalId} AND user_email = ${email} AND status <> 'paused'
+      UPDATE goals SET
+        status = CASE
+          WHEN NOT EXISTS (SELECT 1 FROM steps WHERE goal_id = ${goalId} AND user_email = ${email} AND status IN ('todo', 'doing'))
+            THEN 'done'
+          WHEN status = 'paused' THEN 'paused'
+          ELSE 'active' END,
+        updated_at = CASE
+          WHEN status = 'paused' AND EXISTS (SELECT 1 FROM steps WHERE goal_id = ${goalId} AND user_email = ${email} AND status IN ('todo', 'doing'))
+            THEN updated_at
+          ELSE now() END
+      WHERE id = ${goalId} AND user_email = ${email}
     `,
     // With no goal left active, the most recently paused one comes back where it was left.
     sql`
