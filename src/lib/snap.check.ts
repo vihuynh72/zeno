@@ -128,9 +128,11 @@ assert.match(String(body.messages[0].content), /the last one finishes the job/);
 // Small steps, planned backward from the due date (round 2).
 assert.match(
   String(body.messages[0].content),
-  /steps: 3 to 12 in the order to do them[^.]*from 2 to 25\.[\s\S]*No step is longer than 25 minutes: split bigger work into parts[\s\S]*plan only its first part toward a clear milestone[\s\S]*Plan backward from the due date: what other people need time for comes first/,
+  /steps: 3 to 12 in the order to do them[^.]*from 2 to 25\.[\s\S]*No step is longer than 25 minutes: split bigger work into parts[\s\S]*Plan backward from the due date: what other people need time for comes first/,
 );
 assert.equal((body.response_format.json_schema.schema as unknown as { properties: { steps: { maxItems: number } } }).properties.steps.maxItems, 12);
+// A photo's task is planned whole, never a first part (review, Nov 4).
+assert.doesNotMatch(String(body.messages[0].content), /milestone/);
 assert.match(String(body.messages[0].content), /Write a number range with 'to', like '900 to 1200 words', never with a dash\./);
 assert.doesNotMatch(String(body.messages[0].content), /student/);
 assert.ok(!String(body.messages[0].content).includes("base64"), "the photo is only in the image part");

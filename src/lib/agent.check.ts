@@ -27,7 +27,7 @@ const {
   ASKS_FOR_BLOCK, checkCall, checkPlan, checkPlanRequest, cleanCanvas, cleanHeard, cleanHistory, datesText, DEFERRED, DEFERS, draftUrl, extractNotes,
   finalSay, goalsFrom, goalText, isDate, keepNotes, newPattern, nextSessions, notesFrom, openingNews, openingPrompt, othersText, parseOpening,
   parseReply, planDeadline, planFrom, planSessions, readGoals, roundSlots, rulePlan, ruleSessions, saidFinish, saveGoals, slotsText, SMALLER,
-  systemPrompt, talk, TOOLS, unasked, unclaimed, withoutRefs,
+  systemPrompt, talk, TOOLS, unasked, unclaimed, wantsNow, withoutRefs,
 } = await import("./agent.ts");
 const { freeLine, ruleOpening, ruleOptions, senderName } = await import("./brief.ts");
 const { dayToText, knownDeadlines } = await import("./context.ts");
@@ -186,9 +186,13 @@ assert.deepEqual(
       { id: undefined, title: "Clear the floor", minutes: 10 },
       { id: undefined, title: "Make the bed", minutes: null },
     ],
+    now: false,
   },
 );
 const fine = { title: "Clear the floor", minutes: 10 };
+// set_goal's now is Muse's reading that they want the new goal now; only true counts (review, Nov 4).
+assert.equal((checkCall(call("set_goal", { title: "Run a 5K", now: true, steps: [fine] }), null, refs) as { now?: boolean }).now, true);
+assert.equal((checkCall(call("set_goal", { title: "Run a 5K", now: "yes", steps: [fine] }), null, refs) as { now?: boolean }).now, false);
 // A goal that keeps going carries its rhythm (Nov 4), a few words; an empty one is none.
 assert.equal((checkCall(call("set_goal", { title: "Run a 5K", rhythm: " 3 runs a week ", steps: [fine] }), null, refs) as { rhythm?: string }).rhythm, "3 runs a week");
 assert.equal((checkCall(call("set_goal", { title: "Run a 5K", rhythm: "", steps: [fine] }), null, refs) as { rhythm?: string }).rhythm, null);
@@ -264,7 +268,9 @@ assert.deepEqual((checkCall(call("update_steps", { steps: [{ ref: "s4", title: "
   { id: "d", title: "Draft the intro", minutes: 25 },
   { id: undefined, title: "Make a playlist", minutes: null },
 ]);
-assert.ok(errorOf("update_steps", { steps: Array(13).fill(fine) }));
+// A plan they have may grow to 24 when a step is split (review, Nov 4: a full plan of 12 couldn't be split).
+assert.equal((checkCall(call("update_steps", { steps: Array(13).fill(fine) }), goal, refs) as { steps?: unknown[] }).steps?.length, 13, "a split grows the plan");
+assert.ok(errorOf("update_steps", { steps: Array(25).fill(fine) }));
 // A new step over 25 minutes, or one given new minutes over 25, is sent back to be split; a step saved long before Nov 4
 // keeps its own minutes, so the plan can still be reordered without touching it.
 const photos = { ...goal, steps: [...goal.steps, step("p", "Take and edit photos", 90, "todo")] };
@@ -356,6 +362,8 @@ assert.equal(finalSay("Done. Friday is the line. Find the number next. Start now
 assert.equal(finalSay("Done, moved the intro first.", false, false), "Moved the intro first.");
 assert.equal(finalSay("Done — invites now come after the place.", false, true), "Invites now come after the place.");
 assert.equal(finalSay("Done.", false, false), "Got it.");
+// A practice question with a lead-in is what they asked for, kept mid-step (review, Nov 4).
+assert.equal(finalSay('Okay. First question: "Why do you want this job?"', false, true), 'Okay. First question: "Why do you want this job?"');
 assert.equal(finalSay("Done! Next is the outline. Start now?", true, false), "Done! Next is the outline. Start now?", "a finish keeps both");
 assert.equal(finalSay("Done? Tap it when it is.", false, true), "Done? Tap it when it is.", "asking Done? claims nothing");
 assert.equal(finalSay("That is your story. Start now?", false, true), "That is your story.");
@@ -1208,10 +1216,11 @@ assert.match(planBody.messages[0].content, /The first step takes at most 5 minut
 for (const rule of [
   /Return 3 to 12 steps in the order to do them\.[^.]*minutes is an honest whole number from 2 to 25\./,
   /No step is longer than 25 minutes: split bigger work into parts named for what each part covers, like 'Write the intro' \(15\), 'Write reason 1' \(20\), 'Review trees: 3 practice problems' \(20\) or 'Shoot items 1 to 5' \(20\)\./,
-  /Size the whole job honestly first: a short paper, an exam's review or a small shop fits in 12 small steps; a thesis chapter or a whole website doesn't\. When the whole job doesn't fit, plan only its first part toward a clear milestone, like the first section drafted, and the last step finishes that part\./,
   /Plan backward from the due date: what other people need time for comes first, like invites and the venue for a party; anything printed, ordered or shipped gets an 'Order by <date>' step that leaves realistic delivery time; a call to an office says 'during office hours'\. Include what a first-timer wouldn't know to do, like for a first online shop: the account, payment and ID checks, listing fees, shipping settings and shop policies\./,
 ]) {
   assert.match(planBody.messages[0].content, rule);
+  // One assignment is planned whole: a first part alone would be marked done and its deadline would vanish (review, Nov 4).
+  assert.doesNotMatch(planBody.messages[0].content, /milestone|rhythm of work sessions/);
 }
 assert.doesNotMatch(planBody.messages[0].content, /up to 45|from 2 to 45/, "a deadline has no 45-minute sessions");
 const planSchema = (sent[0] as unknown as { response_format: { json_schema: { schema: { properties: { steps: { maxItems: number } } } } } }).response_format.json_schema.schema;
@@ -1330,11 +1339,11 @@ for (const rule of [
   /A goal saved to wait: say so with its date, like 'Saved in your goals: Renew my passport, due December 1\.', then stay on the current goal: send them back to a running step or name its next step, and never suggest starting anything in the new goal\./,
   /When they want to work on another of their goals now, like 'Let's do the scoring first' or a tap like 'Score first', call switch_goal with its title as listed in their other goals\./,
   // Small steps planned backward from the due date, in talk too.
-  /Steps you save with set_goal, update_steps or add_step: No step is longer than 25 minutes: split bigger work into parts named for what each part covers[^.]*\. The one exception: each session of a goal that keeps going, like a run or a practice interview, is one step of up to 45 minutes\. Size the whole job honestly first:[^\n]*the last step finishes that part\. Plan backward from the due date:[^\n]*shop policies\. Write a number range with 'to', like '900 to 1200 words', never with a dash\./,
+  /Steps you save with set_goal, update_steps or add_step: No step is longer than 25 minutes: split bigger work into parts named for what each part covers[^.]*\. The one exception: each session of a goal that keeps going, like a run or a practice interview, is one step of up to 45 minutes\. Size the whole job honestly first:[^\n]*Zeno plans more as they get done\. Plan backward from the due date:[^\n]*shop policies\. Write a number range with 'to', like '900 to 1200 words', never with a dash\./,
   // Round 2: "Saved: 10 to 11 AM weekdays", "locked in", "Map both out now?" with "Yes, plan it", "Photos feel smaller now",
   // and "due Nov 18" for a talk due Nov 20.
   /Say you saved, added, planned, changed or moved something only when a tool call this turn did it, and say where, like 'Added a step: Call the venue\.' or 'In Memory: runs at lunch\.' Never say how a change feels, like 'Feels smaller now'\./,
-  /You can't put steps on days or spread a plan over the week: if they ask, say so plainly and name the next step\. Tap options are things they'd say back that you can do now with a tool or an answer, never an offer no tool does, like 'Yes, plan it' or 'Map both out'\./,
+  /You can't spread a plan over the week or put every step on days: if they ask, say so plainly and name the next step \(you can still offer one calendar block for a step when they ask for one\)\. Tap options are things they'd say back that you can do now with a tool or an answer, never an offer no tool does, like 'Yes, plan it' or 'Map both out'\./,
   /When you say a goal is due, use its due date as listed; a date they gave for something else, like a rehearsal, is never its due date\./,
 ]) {
   assert.match(talkSent[1].content ?? "", rule);
@@ -1378,16 +1387,25 @@ for (const [said, waits] of [
   ["Taxes first, it's due tomorrow", false],
 ] as const) {
   reset();
-  replies.push(tools(fix("Do my taxes")), say("Okay."));
+  // Muse marks now: true when it reads the words as "now" (set_goal's now); both have to agree.
+  replies.push(tools(call("set_goal", { title: "Do my taxes", steps: [fine], now: !waits }, "Do my taxes")), say("Okay."));
   const named = await talk(idle, null, [], said);
   assert.deepEqual(calls, [`setGoal Do my taxes${waits ? " paused" : ""}`], said);
   assert.equal(named.goal?.id, waits ? "goal-1" : "goal-2", said);
   if (waits) assert.match(results()[0].note, /^Saved in their goals list, to wait\. Say that in a few words; "History essay" stays current, so name its next step, "Write a thesis", and suggest nothing from the new goal now\.$/);
 }
+// A step running keeps a new goal waiting, even said for now (review, Nov 4: "call the bank first thing tomorrow"
+// stopped a running step); Switch goal is the way out of a step.
 reset();
-replies.push(tools(fix("Do my taxes")), say("Okay."));
+replies.push(tools(call("set_goal", { title: "Do my taxes", steps: [fine], now: true }, "Do my taxes")), say("Okay."));
 await talk(talkContext, null, [], "stop this, I need to do my taxes right now");
-assert.deepEqual(calls, ["setGoal Do my taxes"], "said for now, even while a step runs");
+assert.deepEqual(calls, ["setGoal Do my taxes paused"], "a running step keeps it waiting");
+// The words alone, or Muse alone, never make it current; "not right now", "first thing" and "this one first" never do.
+assert.equal(wantsNow("I need to do my taxes now", false), false, "Muse didn't read it as now");
+for (const said of ["add renew my passport, but not right now", "I don't need to do it now", "call the bank first thing tomorrow", "after I finish this one first", "buy a gift instead of making one", "I need to switch banks"]) {
+  assert.equal(wantsNow(said, true), false, said);
+}
+for (const said of ["I need to do my taxes now", "Let's do my taxes instead", "Taxes first, it's due tomorrow", "switch to the taxes"]) assert.equal(wantsNow(said, true), true, said);
 reset();
 replies.push(tools(fix("Do my taxes")), say("Okay."));
 await talk({ ...talkContext, goal: { ...goal, steps: goal.steps.map((item) => ({ ...item, status: "done" })) } }, null, [], "I need to do my taxes");
@@ -1405,6 +1423,21 @@ for (const title of ["Score all 40 hackathon submissions", "score all 40 hackath
   assert.deepEqual(switched.actions, [{ type: "goal-set", label: "Score all 40 hackathon submissions" }]);
   assert.equal(results()[1].ok, false, "start_step waits for her tap");
 }
+// Whole words only, and the current goal first (review, Nov 4: "Brunch with mom" switched to "Run", "art" to "Start my
+// taxes", and the current "Write essay" to a waiting "Write essay outline").
+const run = { id: "g-run", title: "Run", due: null, steps: [step("r1", "Lace up", 5, "todo")] };
+const taxes = { id: "g-tax", title: "Start my taxes", due: null, steps: [step("t1", "Find last year's return", 5, "todo")] };
+for (const title of ["Brunch with mom on Sunday", "art"]) {
+  reset();
+  replies.push(tools(call("switch_goal", { title })), say("Okay."));
+  await talk(idle, null, [], title, false, [], [run, taxes]);
+  assert.deepEqual(calls, [], title);
+  assert.match(results()[0].error, /is not one of their other open goals/, title);
+}
+reset();
+replies.push(tools(call("switch_goal", { title: "History essay" })), say("You're on it."));
+await talk(idle, null, [], "the history essay", false, [], [{ id: "g-out", title: "History essay outline", due: null, steps: [step("o1", "List points", 5, "todo")] }]);
+assert.deepEqual([calls, results()[0].note], [[], "That is already their current goal."]);
 reset();
 replies.push(tools(call("switch_goal", { title: "Prep the keynote" })), tools(call("switch_goal", { title: "History essay" })), say("You're on the essay already."));
 turn = await talk(idle, null, [], "Keynote first", false, [], [scoring]);
@@ -1425,7 +1458,9 @@ assert.equal(unclaimed("Saved: 10 to 11 AM weekdays. Done with picking the time?
 for (const claim of ["Noted.", "I've added it to your plan.", "Planned both out.", "Okay, booked it for 4.", "I'll remember that.", "Updated your steps."]) {
   assert.equal(unclaimed(claim), "", claim);
 }
-for (const advice of ["Save the file first.", "Add one line about the venue.", "Plan the first page.", "Your runs at lunch make sense.", "Book the venue first.", "That rejection stings."]) {
+// Advice that only starts with such a word, and a question, stay (review, Nov 4: "Added sugar hides in sauces." went).
+for (const advice of ["Save the file first.", "Add one line about the venue.", "Plan the first page.", "Your runs at lunch make sense.", "Book the venue first.", "That rejection stings.",
+  "Added sugar hides in sauces.", "Saved money adds up.", "Planned breaks help.", "You're locked in.", "Scheduled study beats cramming.", "I'll add it once you pick a day: Monday or Wednesday?"]) {
   assert.equal(unclaimed(advice), advice, advice);
 }
 reset();
@@ -1748,6 +1783,9 @@ assert.equal(one({ rhythm: "x".repeat(41) })[0].rhythm, null, "a long rhythm is 
 assert.deepEqual(one({ steps: [{ title: "x".repeat(81), minutes: 5 }, { title: "Read the visa letter", minutes: 5 }, { title: "Outline it", minutes: 1.5 }] }), [], "no step left, no goal");
 assert.deepEqual(one({ title: "  " }), []);
 assert.deepEqual(goalsFrom(JSON.stringify({ goals: [] }), today3), [], "words with no goal");
+// Up to 5 goals from one message (review, Nov 4: a 5-line list lost 2 lines with no word); a sixth is left out.
+const six = Array.from({ length: 6 }, (_, i) => ({ title: `Goal number ${i + 1}`, due: "", rhythm: "", steps: many(4) }));
+assert.equal(goalsFrom(JSON.stringify({ goals: six }), today3).length, 5);
 assert.deepEqual(goalsFrom(JSON.stringify({ goals: "taxes" }), today3), []);
 assert.throws(() => goalsFrom("Sure! Here are your goals", today3), /not JSON/);
 // What was dropped only for a private detail is named in `refused`, for one more try: a title, or every step a goal had.
@@ -1776,7 +1814,7 @@ const addBody = sent[0] as unknown as { reasoning_effort: string; response_forma
 assert.deepEqual([addBody.reasoning_effort, addBody.response_format.json_schema.name, addBody.response_format.json_schema.strict], ["minimal", "goals", true]);
 for (const rule of [
   /a parent, a worker, retired or anyone else/,
-  /one for each separate thing they want to get done, at most 3, the most urgent first/,
+  /one for each separate thing they want to get done, at most 5, the most urgent first/,
   /rather than 'Handle paperwork'\. Leave the date out of the title: it goes in due\. Titles are saved on Zeno's servers: leave out amounts they owe, health details/,
   /'before' a month is the day before it, like 'before April' is March 31\. Never a date before today, and never one they didn't say\./,
   /rhythm: only for a goal that keeps going/,
@@ -1790,7 +1828,7 @@ for (const rule of [
   // Small steps, a 45-minute session only for a goal that keeps going, planned backward from the due date.
   /No step is longer than 25 minutes: split bigger work into parts named for what each part covers/,
   /The one exception: each session of a goal that keeps going, like a run or a practice interview, is one step of up to 45 minutes\./,
-  /Size the whole job honestly first: a short paper, an exam's review or a small shop fits in 12 small steps; a thesis chapter or a whole website doesn't\. When the whole job doesn't fit, plan only its first part toward a clear milestone, like the first section drafted, and the last step finishes that part\./,
+  /Size the whole job honestly first: a short paper, an exam's review or a small shop fits in 12 small steps; a thesis chapter, a whole website or anything that takes weeks of work doesn't\. When it doesn't fit, give it a rhythm of work sessions, like '3 writing sessions a week', and plan only the next few sessions: Zeno plans more as they get done\./,
   /Plan backward from the due date: what other people need time for comes first/,
   /Use what they named, like an exam's topics/,
   // Live, Nov 4: "Write my 900-1200 word PHIL 134 paper" read as a phone number to the never-list, twice, and the add failed.
