@@ -121,6 +121,8 @@ Shots 7-8 cover how it's built (Meta AI use is 25% of judging) and the close.
   learned; never script a pattern it did not find.
 - **Shoot tip:** do not open the demo account on Nov 4 before this shot: the first opening of the day is the one that
   names the pattern. For a retake, remove `zeno:heard:<account>` from local storage first.
+- **Nov 4 overnight:** under the line, the card now says "Pick up where you left off:" with the next step of the goal she
+  was last on (or one due within 2 days) and one Start. That is the day-2 card the shot wants.
 
 ### 7. 2:35-2:52 · How it's built with Meta AI
 
@@ -221,6 +223,9 @@ by default no reset, so what Zeno learned stays, and the first sign-in is shown 
   delete only Zeno's session cookie in DevTools (Application → Cookies → the cookie, or cookies, whose names start
   with `__Secure-authjs.session-token`).
 - Sound on (it is off in that Chrome). A quiet room and the real microphone for shot 5.
+- Since the Nov 4 overnight round Zeno speaks after something said aloud (and the opening and heads-ups), not after a
+  tap or typing: a tapped Done shows "Nice. Next: …" without saying it. For Zeno's voice after a Done on camera, say
+  "done" in shot 5 instead of tapping.
 - On a reload, wait about 3 seconds for the card's Start (known issue) before tapping.
 - Shot 6: no opening of the demo account on Nov 4 before it; for a retake, remove `zeno:heard:<account>` from local
   storage first.

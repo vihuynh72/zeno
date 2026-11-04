@@ -41,8 +41,8 @@ then review fixes, Claude's own Chrome test, round 2 of the simulation and its f
   date by typing, a goal named mid-step, Show me how, Stop for now, words with no goal, a rolling goal planning its
   next few, a money goal reworded, coming back.
 - **The 10-person simulation (same ten personas each round, fresh users, a local production build):** round 1 (Nov 3
-  evening) 2.8 of 5; round 2 (1 AM) 3.2; round 3 (2:30 AM) 3.3; round 4 (4 AM) ROUND4. Reports and syntheses in the
-  scratchpad (`sim/synthesis-round2.json`, `-round3.json`, `-round4.json`).
+  evening) 2.8 of 5; round 2 (1 AM) 3.2; round 3 (2:30 AM) 3.3; round 4 (3:30 AM) 3.5; round 5 (4:15 AM) ROUND5. Reports and syntheses in the
+  scratchpad (`sim/synthesis-round2.json` to `-round5.json`).
 - **After round 2:** coming back offers "Pick up where you left off" (the current goal's next step, one Start); sending
   from the docked box brings the step and the reply into view; a first run with nothing to read opens straight on the
   front door; Enter adds a line there (one goal a line, up to 5); typed and tapped turns are answered on screen only;
@@ -54,7 +54,12 @@ then review fixes, Claude's own Chrome test, round 2 of the simulation and its f
   cleared at sign-out, Copy) and feed Zeno's memory after a reload; `edit_goal` changes the current goal ("I can do
   4 hours a day") instead of copying it; Start brings the clock to the top; Done stays above the dock on phones; a step
   paused by opening another goal says so; failed typed words come back in the box.
-- **Production:** deployed four times overnight (`64043a5`, `65edf91`, `2b3377f`, `33cec97`, then the latest); no
+- **After round 4:** coming back says "Pick up where you left off" only for a started goal (else "Start here"), shows its
+  due date, and a goal due within 2 days leads; a typed plan edit keeps Next on her step; taps (Done, That's enough
+  today) stay silent unless hands-free, while the opening and heads-ups are still spoken; Done stays above the dock
+  after long replies on a phone; notes skip taps; "Last done" replaces "Where you stopped"; the Week says "Due · N steps
+  left" on a deadline's day; no plan opens on "pick your days"; Zeno never says it tracks or keeps things.
+- **Production:** deployed six times overnight (`64043a5`, `65edf91`, `2b3377f`, `33cec97`, then the latest); no
   runtime errors. Each deploy passed all 31 checks, tsc, eslint and the build.
 - **Known gaps:** Make it smaller adds a piece before the step (Vi's design; testers in three rounds asked for a split
   instead); habits run as a checklist (no day picker or rest days); the Week doesn't place future steps on days; some
