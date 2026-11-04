@@ -541,7 +541,7 @@ export function datesText(timeZone: string, now = new Date()): string {
   return [
     `Today is ${name(today)}.`,
     ...weeks.flatMap((week, index) => (week.length > 0 ? [`${labels[index]}: ${week.map(name).join(", ")}.`] : [])),
-    "A weekday alone or with 'this' is the first one after today; 'next' and a weekday is that day next week; 'in 3 weeks' is 21 days after today; a month and day with no year is the next one on or after today; a month alone is its first day, like 'by January' is January 1.",
+    "A weekday alone or with 'this' is the first one after today; 'next' and a weekday is that day next week; 'in 3 weeks' is 21 days after today; a month and day with no year is the next one on or after today; 'by' a month is its first day, like 'by January' is January 1; early, mid or late in a month is its 1st, 11th or 21st, so they're ready in time; 'in' a month alone, like 'in December', names no day: never pick one.",
   ].join("\n");
 }
 
@@ -601,6 +601,7 @@ const addSchema = (asks: boolean, looks = false) => ({
 const ASK_RULE =
   "ask: only for one goal that names an area of life but not what done looks like, so plans for it differ a lot, like 'get fit', 'make more money' or 'be happier'. Then ask up to 2 short questions, warm and candid like a friend: first what done looks like, like 'What does fit mean for you?', then where they start, worded to fit any first answer and never asking what they already said, like 'How active are you now?'. " +
   "Also for one goal whose plan rests on one fact they didn't say: then ask just that 1 question, about one thing, like for an exam 'Which topic is weakest?' with 3 of that exam's usual topics as answers, one topic each, for paperwork, forms or documents someone asked them for, like an accountant, 'What did your accountant ask for?' with answers like 'W-2s and 1099s', for a shop 'Digital or physical?', for a job search 'Which field do you want next?', for a party 'Home or a venue?', and never what their words already say, like 'Digital or physical?' for digital planners. " +
+  "When the plan rests on a date they didn't give, of an event with no day, like 'my interview', 'her birthday' or 'the wedding', or a month with no day, like 'in December' or 'the final in May', that 1 question is when, before any other, like 'When is Emma's birthday?' with 'Early December', 'Mid December', 'Late December', or 'When is the interview?' with 'This week', 'In 2 weeks', 'In 3 weeks'; never for a date they said, like 'interview Friday', or a named public event, like 'the Meta hackathon'. " +
   "Each has 3 tap answers of at most 4 words, like 'Run a 5K', 'Lift 3x a week', 'More energy'. Never ask about health conditions, medicines, money owed, passwords or anything private. When you ask, thinking and goals are empty. Never ask about a call, a paper or another task that is clear as said, a habit most people plan the same way, or a goal with its result said, like 'call the bank', 'drink more water', 'run a 5K by January' or 'save $500 a month': plan it.";
 
 // Tuned live on Nov 4 against sentences from the ten simulated people (the 5K, the party and the taxes, the hospital
@@ -613,7 +614,7 @@ const ADD_LINES = [
   "goals: one for each separate thing they want to get done, at most 5, the most urgent first: due soonest, or it unblocks the rest. Each line they typed is usually its own goal, even when two lines are related, like 'Score the 40 submissions' and 'Write my judging writeup'; parts of one thing in one line stay one goal. When their words hold nothing to get done, like a greeting or a question, goals is empty.",
   "title: what they want done, specific and in their own words, starting with a verb, at most 60 characters, like 'Call the bank about my card' rather than 'Handle paperwork'. Leave the date out of the title: it goes in due. Titles are saved on Zeno's servers: leave out amounts they owe, health details and other private things.",
   RANGES,
-  "due: the date they said, as YYYY-MM-DD read from the dates listed, else empty; 'before' a month is the day before it, like 'before April' is March 31, and 'this year' is December 31. Never a date before today, and never one they didn't say.",
+  "due: the date they said, as YYYY-MM-DD read from the dates listed, else empty; 'before' a month is the day before it, like 'before April' is March 31, and 'this year' is December 31. Never a date before today, and never one they didn't say. A month with no day, like 'in December': due is empty for an event in it, like a birthday or an exam, else the month's last day as a soft deadline; either way a thinking line says the day is open and what that decides, like 'Birthday's day open: ready by early Dec'.",
   "rhythm: only for a goal that keeps going, like training, practicing, a habit or a job hunt: how often, in a few words, like '3 runs a week' or '20 minutes a day'. Use the rhythm they said, else an honest one. Empty for a goal that ends once a job is done, like an exam, a call or an event.",
   "steps, when rhythm is empty: 4 to 12 steps in order that finish the whole job. The first takes at most 5 minutes and can start right now. The last one finishes it, like sending, submitting, paying, booking, ordering or handing it in.",
   ONGOING,
@@ -714,15 +715,17 @@ export function asksFrom(raw: unknown): PlanQuestion[] {
 // like "Fits in small steps" or "Habit goal: needs a rhythm", echoes the prompt (plan-eval, Nov 4). A fact and what it
 // decides, like "Graphs weakest: 3 graph steps first", may name steps (round 8).
 const UNSAID =
-  /\b(not|no)\b[^:]*\b(given|named|said|stated|known|listed|mentioned|specified|info|details)\b|\bunknown\b|\bno (due )?date\b|\bno deadline\b|\brhythm\b|^[^:]*\bsteps?\b[^:]*$/i;
+  /\b(not|no)\b[^:]*\b(given|named|said|stated|known|listed|mentioned|specified|info|details)\b|\bunknown\b|\bno (due )?date\b|\bno deadline\b|\bdue\b[^:]*\b(empty|blank)\b|\bper (the )?rule\b|\brhythm\b|^[^:]*\bsteps?\b[^:]*$/i;
 
 // What a new plan rests on, shown line by line while it opens (never stored): up to 5 distinct lines of at most 60
 // characters, a longer one or padding left out, never cut. A line whose words all come from what they typed or answered
 // (`said`), like "300 followers, posts sometimes", only reads them back and decides nothing (round 8), so it goes too.
+// Round 9: an event's day left open is said, with what it decides, like "Birthday date unknown: ready by early Dec".
+const OPEN_DAY = /^(?!.*\bdue\b)[^:]*\b\w+('s)? (date|day) (unknown|open|unsure)\b[^:]*:\s*\S/i;
 export const thinkingFrom = (text: string, said: string[] = []) => {
   const heard = new Set(stems(said.join(" ")));
   const echo = (line: string) => stems(line).length > 0 && stems(line).every((stem) => heard.has(stem));
-  return shortStrings(fieldOf(text, "thinking"), 5, 60).filter((line) => !UNSAID.test(line) && !echo(line));
+  return shortStrings(fieldOf(text, "thinking"), 5, 60).filter((line) => (OPEN_DAY.test(line) || !UNSAID.test(line)) && !echo(line));
 };
 
 // The add's question: the dates, their words, their answers to Zeno's questions, the page she confirmed and this week's
@@ -766,10 +769,16 @@ const TASK =
 // shortcut: English and Spanish words only; add a language's when its people type goals.
 const NEEDS_FACT =
   /\b(exams?|midterms?|finals|quiz|asked (me )?for|accountants?|paperwork|documents|forms|etsy|shop|store|job|jobs|career|careers|part(y|ies)|birthday|examen|tienda|trabajo|fiesta|cumpleaños|contador(a)?|papeles|documentos)\b/i;
+// Round 9 (Nov 4): "a photo album for Emma's birthday in December" was planned at once, due Dec 1, a day she never gave.
+// An event with no day said (a month alone is none) may ask when it is, in one sentence of up to 20 words.
+const EVENT = /\b(birthdays?|interviews?|weddings?|toasts?|finals?|exams?|midterms?|recitals?|cumpleaños|entrevistas?|bodas?|examen)\b/i;
+const DAY =
+  /\d|\b(today|tonight|tomorrow|week|weekend|(mon|tues|wednes|thurs|fri|satur|sun)day|hoy|mañana|semana|lunes|martes|miércoles|jueves|viernes|sábado|domingo)\b/i;
 export const mayAsk = (words: string) => {
   const text = words.trim();
   const count = text.split(/\s+/).length;
-  return (count <= 8 && !CLEAR.test(text) && !TASK.test(text)) || (count <= 12 && !/[\n;,]/.test(text) && NEEDS_FACT.test(text));
+  const sentence = !/[\n;,]/.test(text);
+  return (count <= 8 && !CLEAR.test(text) && !TASK.test(text)) || (sentence && count <= 12 && NEEDS_FACT.test(text)) || (sentence && count <= 20 && EVENT.test(text) && !DAY.test(text));
 };
 
 // lookup: set only when a call that may look up (`looks`) found a real thing to look up; then nothing else is.

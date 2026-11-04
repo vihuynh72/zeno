@@ -2123,6 +2123,22 @@ for (const words of ["study for my CS 146 exam Friday", "send the paperwork my a
 for (const words of ["run a 5K by January", "call the bank this week", "PHIL paper due Friday", "save $3,000", "taxes, mom's party", "get fit\nread more", "get fit and eat well", "entrevista del jueves", "one two three four five six seven eight nine", "do my taxes", "I want to call the bank", "necesito terminar mi tarea", "call the bank this week, plan mom's birthday and do my taxes before April"]) {
   assert.ok(!mayAsk(words), words);
 }
+// Round 9 (Nov 4): "birthday in December" was planned due Dec 1, a day Ruth never gave. An event with no day said may ask
+// when it is, in one sentence of up to 20 words; with a day said it is as clear (and as fast) as before.
+for (const words of ["photo album for Emma's birthday in December", "I want to make a printed photo album for my granddaughter Emma for her birthday in December", "prepare for my job interview", "plan my sister's wedding toast", "study for the final in May"]) {
+  assert.ok(mayAsk(words), words);
+}
+for (const words of ["do the dishes tonight", "prepare for a product manager interview Friday", "plan my sister's wedding toast for Saturday", "study for the final on May 12", "study for the final, call the bank and do my taxes"]) {
+  assert.ok(!mayAsk(words), words);
+}
+assert.match(dates.at(-1)!, /'by' a month is its first day, like 'by January' is January 1; early, mid or late in a month is its 1st, 11th or 21st, so they're ready in time; 'in' a month alone, like 'in December', names no day: never pick one\.$/);
+assert.doesNotMatch(dates.at(-1)!, /a month alone is its first day/);
+assert.match(addBody.messages[0].content, /A month with no day, like 'in December': due is empty for an event in it, like a birthday or an exam, else the month's last day as a soft deadline; either way a thinking line says the day is open/);
+// The day left open is said with what it decides; a line that only reads the due rule back is padding.
+assert.deepEqual(
+  ["Birthday's day open: ready by early Dec", "Birthday date unknown: ready by early Dec", "Exam in May event: leave due empty", "December event: due left open per rule", "Date unknown: pace steadily", "Due date unknown: go slow", "Wedding date unknown: leave due empty", "Mid Dec means Dec 11: order early"].map((line) => thinkingFrom(JSON.stringify({ thinking: [line] })).length),
+  [1, 1, 0, 0, 0, 0, 0, 1],
+);
 
 // A goal too vague to plan well: Zeno's questions come back, checked (2 or 3 short answers each, never a private topic,
 // 2 at most), and nothing is planned; one call.
@@ -2159,6 +2175,8 @@ for (const rule of [
   /Each has 3 tap answers of at most 4 words[^.]*\. Never ask about health conditions, medicines, money owed, passwords or anything private\. When you ask, thinking and goals are empty\./,
   /Never ask about a call, a paper or another task that is clear as said, a habit most people plan the same way, or a goal with its result said[^:]*: plan it\./,
   // Round 8: one thing per question ('Which topics, and which is weakest?' with one-tap chips cut the exam in half).
+  // Round 9: a day they didn't give is asked, with chips in that month or weeks out, never guessed or asked of a named public event.
+  /When the plan rests on a date they didn't give[^.]*'in December' or 'the final in May', that 1 question is when, before any other, like 'When is Emma's birthday\?' with 'Early December', 'Mid December', 'Late December', or 'When is the interview\?' with 'This week', 'In 2 weeks', 'In 3 weeks'; never for a date they said, like 'interview Friday', or a named public event, like 'the Meta hackathon'\./,
   /Also for one goal whose plan rests on one fact they didn't say: then ask just that 1 question, about one thing, like for an exam 'Which topic is weakest\?' with 3 of that exam's usual topics as answers, one topic each, for paperwork, forms or documents someone asked them for, like an accountant, 'What did your accountant ask for\?'[^.]*'Home or a venue\?', and never what their words already say/,
 ]) {
   assert.match(askPrompt, rule);
