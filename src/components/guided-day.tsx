@@ -963,7 +963,11 @@ export default function GuidedDay() {
     // what changed, or clears it (round 8: the old reasons stayed next to the new plan). An added step keeps it.
     const after = res.goal;
     const was = after && [now.goal, ...now.goals].find((one) => one?.id === after.id);
-    if (changed && after && was && was.steps.some((one) => !after.steps.some((step) => step.title === one.title))) keepWhy(after.id, whatChanged(res.reply));
+    // Steps added without any gone (Nov 4: "also my 1098 and HSA form" added two) keep the reasons, with the line on top.
+    const gone = !!was && was.steps.some((one) => !after.steps.some((step) => step.title === one.title));
+    const added = was ? after.steps.filter((step) => !was.steps.some((one) => one.title === step.title)).length : 0;
+    if (changed && after && was && (gone || added >= 2))
+      keepWhy(after.id, gone ? whatChanged(res.reply) : [...whatChanged(res.reply), ...((mine && readWhy(mine)[after.id]) || [])].slice(0, 4));
     const next = nextScreen(now.screen ?? "ready", res.actions ?? [], res.goal, now.screen === "ready" && now.view === "desk");
     const done = now.screen === "focus" && next === "checkin" ? openSteps(now.goal)[0] : undefined;
     // A skip said in Focus leaves it this way too, so only a step really marked done gets the stamp, the sound and "Nice".
