@@ -41,8 +41,9 @@ then review fixes, Claude's own Chrome test, round 2 of the simulation and its f
   date by typing, a goal named mid-step, Show me how, Stop for now, words with no goal, a rolling goal planning its
   next few, a money goal reworded, coming back.
 - **The 10-person simulation (same ten personas each round, fresh users, a local production build):** round 1 (Nov 3
-  evening) 2.8 of 5; round 2 (1 AM) 3.2; round 3 (2:30 AM) 3.3; round 4 (3:30 AM) 3.5; round 5 (4:15 AM) 3.45 (flat: what is left is bigger builds or Vi's calls, below). Reports and syntheses in the
-  scratchpad (`sim/synthesis-round2.json` to `-round5.json`).
+  evening) 2.8 of 5; round 2 (1 AM) 3.2; round 3 (2:30 AM) 3.3; round 4 (3:30 AM) 3.5; round 5 (4:15 AM) 3.45; round 6 (5 AM, a regression check) 3.35. Flat since round 4: what is
+  left is bigger builds or Vi's calls (below). Reports and syntheses in the
+  scratchpad (`sim/synthesis-round2.json` to `-round6.json`).
 - **After round 2:** coming back offers "Pick up where you left off" (the current goal's next step, one Start); sending
   from the docked box brings the step and the reply into view; a first run with nothing to read opens straight on the
   front door; Enter adds a line there (one goal a line, up to 5); typed and tapped turns are answered on screen only;
@@ -63,8 +64,11 @@ then review fixes, Claude's own Chrome test, round 2 of the simulation and its f
   did nothing in `7ae25a2`); on the desk, Start starts the step Zeno's line names; Zeno says it can't set reminders.
 - **After round 5, last:** the first box opens with "Type your goal here, like:"; a finished step's notes stay under
   the next step until it has its own; a sidebar's due line may wrap to two lines.
-- **Production:** `749af72`, deployed nine times overnight (`64043a5`, `65edf91`, `2b3377f`, `2a91a12`, `33cec97`,
-  `7ae25a2`, `3e612ea`, `bf171f8`, `749af72`); no runtime errors in production. Each deploy passed all 31 checks, tsc, eslint and
+- **After round 6:** an add or a photo started mid-step keeps the step running until the new plan is saved (a failed
+  one returns to Focus with the clock untouched); a step's ref never shows in a tap answer; saves are said "Saved: …";
+  a goal or photo she already had opens with a line saying so.
+- **Production:** `714e851`, deployed ten times overnight (`64043a5`, `65edf91`, `2b3377f`, `2a91a12`, `33cec97`,
+  `7ae25a2`, `3e612ea`, `bf171f8`, `749af72`, `714e851`); no runtime errors in production. Each deploy passed all 31 checks, tsc, eslint and
   the build.
 - **Questions for Vi (from the simulation):** Make it smaller: keep the inserted piece (your design) or split the step
   so the plan never grows (7 of 10 asked)? Coming back: keep "a goal due within 2 days leads" (Claude's call tonight)?
