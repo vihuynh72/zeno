@@ -3,7 +3,7 @@
 **Zeno turns what you mean to do into steps you can start now.**
 
 **Live demo:** https://zeno-sigma-topaz.vercel.app
-**Demo video:** (YouTube link)
+**Demo video:** https://youtu.be/iTzh-54fgkg
 
 Say a goal. Muse Spark splits it into small steps, most of 25 minutes or less, and Zeno stays with you while you do them.
 
